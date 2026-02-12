@@ -1,0 +1,17 @@
+{
+  "name": "taq-event-team-bot",
+  "version": "1.0.0",
+  "description": "Reads Google Form responses from Google Sheets and posts to a Discord webhook with approval reactions.",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "googleapis": "^144.0.0"
+  }
+}
