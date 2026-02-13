@@ -1,12 +1,13 @@
 {
   "name": "taq-event-team-bot",
   "version": "0.0.0.1",
-  "description": "Reads Google Form responses from Google Sheets and posts to a Discord webhook with approval reactions.",
+  "description": "Reads Google Form responses from Google Sheets and posts to Discord with approval reactions.",
   "main": "src/index.js",
   "type": "commonjs",
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
+    "functions:mirror": "node scripts/generate-function-mirrors.js",
     "start:background": "node scripts/botctl.js start --background",
     "stop": "node scripts/botctl.js stop",
     "stop:background": "node scripts/botctl.js stop --background",
