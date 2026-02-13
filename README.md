@@ -242,6 +242,7 @@ npm start
 - `/accept` and `/deny` require both `Manage Server` and `Manage Roles`, or `Administrator`.
 - `/accept` and `/deny` can target by `message_id`, by `job_id`, or from inside the application thread.
 - If one `job_id` created multiple track posts, run `/accept` or `/deny` inside the target track thread/channel, or pass `message_id`.
+- Forced `/accept` and `/deny` also post the rendered accept/deny message template into that specific application thread.
 - `/setchannel` requires `Manage Server` (or `Administrator`).
 - `/setchannel` can be run with no options to set tester channel to the current channel.
 - `/setchannel` supports `log:#channel` to set the logs channel.

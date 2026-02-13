@@ -48,6 +48,7 @@ async function finalizeApplication(messageId, decision, sourceLabel, actorId) {
     decision,
     decisionReason
   );
+  await postForcedDecisionTemplateToThread(application, decision, decisionReason);
   await postClosureLog(application);
 
   return { ok: true };

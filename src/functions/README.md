@@ -2,7 +2,7 @@
 
 This directory is auto-generated from `src/index.js` and contains one top-level function per file for easier reading.
 
-Generated functions: 119
+Generated functions: 120
 
 - `normalizeCell.js`
 - `formatJobId.js`
@@ -89,6 +89,7 @@ Generated functions: 119
 - `getReviewersWithChannelAccess.js`
 - `getVoteSnapshot.js`
 - `postDecisionUpdate.js`
+- `postForcedDecisionTemplateToThread.js`
 - `makeMessageUrl.js`
 - `ensureLogsChannel.js`
 - `userDisplayName.js`
