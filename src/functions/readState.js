@@ -120,6 +120,12 @@ function readState() {
         logChannelId: isSnowflake(legacySettings.logChannelId)
           ? legacySettings.logChannelId
           : null,
+        bugChannelId: isSnowflake(legacySettings.bugChannelId)
+          ? legacySettings.bugChannelId
+          : null,
+        suggestionsChannelId: isSnowflake(legacySettings.suggestionsChannelId)
+          ? legacySettings.suggestionsChannelId
+          : null,
         approvedRoles: normalizedApprovedRoles,
         acceptAnnounceChannelId: isSnowflake(legacySettings.acceptAnnounceChannelId)
           ? legacySettings.acceptAnnounceChannelId

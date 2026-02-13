@@ -41,7 +41,7 @@ function buildSlashCommands() {
       ),
     new SlashCommandBuilder()
       .setName("setchannel")
-      .setDescription("Set application channels for Tester/Builder/CMD plus log channel")
+      .setDescription("Set app/log/bug/suggestions channels")
       .addChannelOption((option) =>
         option
           .setName("application_post")
@@ -70,6 +70,18 @@ function buildSlashCommands() {
         option
           .setName("log")
           .setDescription("Application log channel (defaults to tester/current)")
+          .setRequired(false)
+      )
+      .addChannelOption((option) =>
+        option
+          .setName("bug")
+          .setDescription("Bug report channel used by /bug")
+          .setRequired(false)
+      )
+      .addChannelOption((option) =>
+        option
+          .setName("suggestions")
+          .setDescription("Suggestion channel used by /suggestions")
           .setRequired(false)
       ),
     new SlashCommandBuilder()
@@ -195,6 +207,33 @@ function buildSlashCommands() {
           .setName("code_block")
           .setDescription("Wrap content lines in a code block")
           .setRequired(false)
+      ),
+    new SlashCommandBuilder()
+      .setName("bug")
+      .setDescription("Send a bug report to the configured bug channel")
+      .addStringOption((option) =>
+        option
+          .setName("message")
+          .setDescription("Bug details")
+          .setRequired(true)
+      ),
+    new SlashCommandBuilder()
+      .setName("suggestions")
+      .setDescription("Send a suggestion to the configured suggestions channel")
+      .addStringOption((option) =>
+        option
+          .setName("message")
+          .setDescription("Suggestion details")
+          .setRequired(true)
+      ),
+    new SlashCommandBuilder()
+      .setName("suggestion")
+      .setDescription("Alias of /suggestions")
+      .addStringOption((option) =>
+        option
+          .setName("message")
+          .setDescription("Suggestion details")
+          .setRequired(true)
       ),
     new SlashCommandBuilder()
       .setName("debug")

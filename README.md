@@ -8,7 +8,7 @@ Simple Node.js bot that:
 4. Requires a `2/3` supermajority of members with channel access to decide.
 5. Supports force override with `/accept` and `/deny`.
 6. Supports `/setchannel` so you can configure track channels in Discord (no code edit).
-7. `/setchannel` configures tester/builder/cmd post channels and log channel.
+7. `/setchannel` configures tester/builder/cmd post channels, log channel, bug channel, and suggestions channel.
 8. Creates a thread per application message for team discussion.
 9. Creates an `application-logs` channel and posts full close-history when an application is decided.
 10. Queues each application post as a persistent job (`job-000001`, etc.) and replays failed jobs in row order.
@@ -46,6 +46,8 @@ Required keys:
 - `DISCORD_CHANNEL_ID` (legacy tester fallback)
 - `DISCORD_LOGS_CHANNEL_NAME`
 - `DISCORD_LOGS_CHANNEL_ID` (optional fallback if you do not use `/setchannel`)
+- `DISCORD_BUG_CHANNEL_ID` (optional fallback if you do not use `/setchannel`)
+- `DISCORD_SUGGESTIONS_CHANNEL_ID` (optional fallback if you do not use `/setchannel`)
 - `ACCEPT_ANNOUNCE_CHANNEL_ID` (optional fallback if you do not use `/setaccept`)
 - `ACCEPT_ANNOUNCE_TEMPLATE` (optional; message sent to configured channel when accepted)
 - `DENY_DM_TEMPLATE` (optional; DM template sent to `discord_ID` when denied)
@@ -121,7 +123,17 @@ Behavior:
 
 Recommended:
 ```text
-/setchannel tester_post:#tester-apps builder_post:#builder-apps cmd_post:#cmd-apps log:#application-log
+/setchannel tester_post:#tester-apps builder_post:#builder-apps cmd_post:#cmd-apps log:#application-log bug:#bug-reports suggestions:#team-suggestions
+```
+
+Send a bug report (creates a thread for discussion):
+```text
+/bug message:App crashes when opening profile settings
+```
+
+Send a suggestion (creates a thread for discussion):
+```text
+/suggestions message:Add a quick filter for pending applications
 ```
 
 Set role granted on accepted applications:
@@ -226,7 +238,7 @@ npm start
 - After `/setchannel` succeeds, queued failed jobs are replayed immediately.
 - If you want to reprocess from the start, delete `.bot-state.json`.
 - Prefer `/setchannel` to set channel from Discord directly.
-- `/setchannel` updates per-track post channels (`tester_post`, `builder_post`, `cmd_post`) and the log channel.
+- `/setchannel` updates per-track post channels (`tester_post`, `builder_post`, `cmd_post`), log channel, `bug`, and `suggestions`.
 - Track routing is inferred from your form response values using keywords like `tester`, `builder`, and `cmd`/`command`. If none is found, it defaults to `tester`.
 - Multi-select role responses are supported. One row can post to multiple track channels (one application post per selected track).
 - Empty/unanswered form questions are omitted from Discord application posts and stored history.
@@ -245,7 +257,9 @@ npm start
 - Forced `/accept` and `/deny` also post the rendered accept/deny message template into that specific application thread.
 - `/setchannel` requires `Manage Server` (or `Administrator`).
 - `/setchannel` can be run with no options to set tester channel to the current channel.
-- `/setchannel` supports `log:#channel` to set the logs channel.
+- `/setchannel` supports `log:#channel`, `bug:#channel`, and `suggestions:#channel`.
+- `/bug` sends the report into the configured bug channel and opens a discussion thread.
+- `/suggestions` (and `/suggestion`) sends the idea into the configured suggestions channel and opens a discussion thread.
 - `/setapprole` requires both `Manage Server` and `Manage Roles`, or `Administrator`.
 - `/setapprole` requires exactly one `track` per command and overwrites that track's roles.
 - `/setapprole` supports up to 5 roles in one command: `role`, `role_2`, `role_3`, `role_4`, `role_5`.

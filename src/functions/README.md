@@ -2,7 +2,7 @@
 
 This directory is auto-generated from `src/index.js` and contains one top-level function per file for easier reading.
 
-Generated functions: 120
+Generated functions: 125
 
 - `normalizeCell.js`
 - `formatJobId.js`
@@ -39,6 +39,10 @@ Generated functions: 120
 - `setActiveChannel.js`
 - `getActiveLogsChannelId.js`
 - `setActiveLogsChannel.js`
+- `getActiveBugChannelId.js`
+- `setActiveBugChannel.js`
+- `getActiveSuggestionsChannelId.js`
+- `setActiveSuggestionsChannel.js`
 - `getActiveAcceptAnnounceChannelId.js`
 - `setActiveAcceptAnnounceChannel.js`
 - `getActiveAcceptAnnounceTemplate.js`
@@ -114,6 +118,7 @@ Generated functions: 120
 - `buildDebugReport.js`
 - `runDebugPostTest.js`
 - `formatDecisionLabel.js`
+- `relayFeedbackCommand.js`
 - `runDebugRoleAssignmentSimulation.js`
 - `runDebugDeniedDmSimulation.js`
 - `runDebugDecisionTest.js`

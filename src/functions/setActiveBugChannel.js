@@ -3,16 +3,16 @@
   Source of truth remains in src/index.js.
 */
 
-function setActiveLogsChannel(channelId) {
+function setActiveBugChannel(channelId) {
   if (!isSnowflake(channelId)) {
-    throw new Error("Invalid log channel id.");
+    throw new Error("Invalid bug channel id.");
   }
   const state = readState();
   state.settings = state.settings && typeof state.settings === "object"
     ? state.settings
     : {};
-  state.settings.logChannelId = channelId;
+  state.settings.bugChannelId = channelId;
   writeState(state);
 }
 
-module.exports = setActiveLogsChannel;
+module.exports = setActiveBugChannel;

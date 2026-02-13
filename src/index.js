@@ -57,6 +57,8 @@ const config = {
   controlLogFile: process.env.CONTROL_LOG_FILE || "logs/control-actions.log",
   logsChannelName: process.env.DISCORD_LOGS_CHANNEL_NAME || "application-logs",
   logsChannelId: process.env.DISCORD_LOGS_CHANNEL_ID,
+  bugChannelId: process.env.DISCORD_BUG_CHANNEL_ID,
+  suggestionsChannelId: process.env.DISCORD_SUGGESTIONS_CHANNEL_ID,
   acceptAnnounceChannelId: process.env.ACCEPT_ANNOUNCE_CHANNEL_ID,
   acceptAnnounceTemplate: process.env.ACCEPT_ANNOUNCE_TEMPLATE,
   denyDmTemplate: process.env.DENY_DM_TEMPLATE,
@@ -345,6 +347,8 @@ function defaultState() {
     settings: {
       channels: createEmptyTrackMap(),
       logChannelId: null,
+      bugChannelId: null,
+      suggestionsChannelId: null,
       approvedRoles: createEmptyTrackRoleMap(),
       acceptAnnounceChannelId: null,
       acceptAnnounceTemplate: null,
@@ -469,6 +473,12 @@ function readState() {
         channels: normalizedChannels,
         logChannelId: isSnowflake(legacySettings.logChannelId)
           ? legacySettings.logChannelId
+          : null,
+        bugChannelId: isSnowflake(legacySettings.bugChannelId)
+          ? legacySettings.bugChannelId
+          : null,
+        suggestionsChannelId: isSnowflake(legacySettings.suggestionsChannelId)
+          ? legacySettings.suggestionsChannelId
           : null,
         approvedRoles: normalizedApprovedRoles,
         acceptAnnounceChannelId: isSnowflake(legacySettings.acceptAnnounceChannelId)
@@ -743,7 +753,56 @@ function setActiveLogsChannel(channelId) {
     throw new Error("Invalid log channel id.");
   }
   const state = readState();
+  state.settings = state.settings && typeof state.settings === "object"
+    ? state.settings
+    : {};
   state.settings.logChannelId = channelId;
+  writeState(state);
+}
+
+function getActiveBugChannelId() {
+  const state = readState();
+  if (isSnowflake(state?.settings?.bugChannelId)) {
+    return state.settings.bugChannelId;
+  }
+  if (isSnowflake(config.bugChannelId)) {
+    return config.bugChannelId;
+  }
+  return null;
+}
+
+function setActiveBugChannel(channelId) {
+  if (!isSnowflake(channelId)) {
+    throw new Error("Invalid bug channel id.");
+  }
+  const state = readState();
+  state.settings = state.settings && typeof state.settings === "object"
+    ? state.settings
+    : {};
+  state.settings.bugChannelId = channelId;
+  writeState(state);
+}
+
+function getActiveSuggestionsChannelId() {
+  const state = readState();
+  if (isSnowflake(state?.settings?.suggestionsChannelId)) {
+    return state.settings.suggestionsChannelId;
+  }
+  if (isSnowflake(config.suggestionsChannelId)) {
+    return config.suggestionsChannelId;
+  }
+  return null;
+}
+
+function setActiveSuggestionsChannel(channelId) {
+  if (!isSnowflake(channelId)) {
+    throw new Error("Invalid suggestions channel id.");
+  }
+  const state = readState();
+  state.settings = state.settings && typeof state.settings === "object"
+    ? state.settings
+    : {};
+  state.settings.suggestionsChannelId = channelId;
   writeState(state);
 }
 
@@ -2415,7 +2474,7 @@ function buildSlashCommands() {
       ),
     new SlashCommandBuilder()
       .setName("setchannel")
-      .setDescription("Set application channels for Tester/Builder/CMD plus log channel")
+      .setDescription("Set app/log/bug/suggestions channels")
       .addChannelOption((option) =>
         option
           .setName("application_post")
@@ -2444,6 +2503,18 @@ function buildSlashCommands() {
         option
           .setName("log")
           .setDescription("Application log channel (defaults to tester/current)")
+          .setRequired(false)
+      )
+      .addChannelOption((option) =>
+        option
+          .setName("bug")
+          .setDescription("Bug report channel used by /bug")
+          .setRequired(false)
+      )
+      .addChannelOption((option) =>
+        option
+          .setName("suggestions")
+          .setDescription("Suggestion channel used by /suggestions")
           .setRequired(false)
       ),
     new SlashCommandBuilder()
@@ -2569,6 +2640,33 @@ function buildSlashCommands() {
           .setName("code_block")
           .setDescription("Wrap content lines in a code block")
           .setRequired(false)
+      ),
+    new SlashCommandBuilder()
+      .setName("bug")
+      .setDescription("Send a bug report to the configured bug channel")
+      .addStringOption((option) =>
+        option
+          .setName("message")
+          .setDescription("Bug details")
+          .setRequired(true)
+      ),
+    new SlashCommandBuilder()
+      .setName("suggestions")
+      .setDescription("Send a suggestion to the configured suggestions channel")
+      .addStringOption((option) =>
+        option
+          .setName("message")
+          .setDescription("Suggestion details")
+          .setRequired(true)
+      ),
+    new SlashCommandBuilder()
+      .setName("suggestion")
+      .setDescription("Alias of /suggestions")
+      .addStringOption((option) =>
+        option
+          .setName("message")
+          .setDescription("Suggestion details")
+          .setRequired(true)
       ),
     new SlashCommandBuilder()
       .setName("debug")
@@ -2999,6 +3097,99 @@ async function runDebugPostTest(interaction) {
 
 function formatDecisionLabel(decision) {
   return decision === STATUS_ACCEPTED ? "ACCEPTED" : "DENIED";
+}
+
+async function relayFeedbackCommand({
+  interaction,
+  commandLabel,
+  heading,
+  channelId,
+  emptyChannelMessage,
+}) {
+  if (!interaction.inGuild()) {
+    await interaction.reply({
+      content: "Run this command inside a server channel.",
+      ephemeral: true,
+    });
+    return;
+  }
+
+  if (!isSnowflake(channelId)) {
+    await interaction.reply({
+      content: emptyChannelMessage,
+      ephemeral: true,
+    });
+    return;
+  }
+
+  const message = interaction.options.getString("message", true).trim();
+  if (!message) {
+    await interaction.reply({
+      content: "Please provide a non-empty message.",
+      ephemeral: true,
+    });
+    return;
+  }
+
+  let targetChannel = null;
+  try {
+    targetChannel = await client.channels.fetch(channelId);
+  } catch {
+    targetChannel = null;
+  }
+
+  if (!targetChannel || !targetChannel.isTextBased()) {
+    await interaction.reply({
+      content: `The configured ${commandLabel} channel is invalid. Run /setchannel to fix it.`,
+      ephemeral: true,
+    });
+    return;
+  }
+
+  const content = [
+    heading,
+    `**From:** <@${interaction.user.id}>`,
+    `**Source Channel:** <#${interaction.channelId}>`,
+    "",
+    message,
+  ].join("\n");
+
+  const postedMessage = await targetChannel.send({
+    content,
+    allowedMentions: { parse: [] },
+  });
+
+  let threadId = null;
+  let threadWarning = null;
+  try {
+    const thread = await createThread(
+      postedMessage.channelId,
+      postedMessage.id,
+      `${commandLabel} - ${message}`
+    );
+    threadId = thread?.id || null;
+  } catch (err) {
+    threadWarning = `Could not create thread: ${err.message}`;
+  }
+
+  const lines = [`Posted in <#${postedMessage.channelId}>.`];
+  if (interaction.guildId) {
+    lines.push(makeMessageUrl(interaction.guildId, postedMessage.channelId, postedMessage.id));
+    if (threadId) {
+      lines.push(makeMessageUrl(interaction.guildId, threadId, threadId));
+    }
+  }
+  if (!interaction.guildId && threadId) {
+    lines.push(`Thread ID: ${threadId}`);
+  }
+  if (threadWarning) {
+    lines.push(threadWarning);
+  }
+
+  await interaction.reply({
+    content: lines.join("\n"),
+    ephemeral: true,
+  });
 }
 
 async function runDebugRoleAssignmentSimulation({
@@ -3702,6 +3893,10 @@ client.on("interactionCreate", async (interaction) => {
       interaction.commandName === "setacceptmsg" ||
       interaction.commandName === "setaccept";
     const isStructuredMsg = interaction.commandName === "structuredmsg";
+    const isBug = interaction.commandName === "bug";
+    const isSuggestions =
+      interaction.commandName === "suggestions" ||
+      interaction.commandName === "suggestion";
     const isDebug = interaction.commandName === "debug";
     const isStop = interaction.commandName === "stop";
     const isRestart = interaction.commandName === "restart";
@@ -3713,6 +3908,8 @@ client.on("interactionCreate", async (interaction) => {
       !isSetDenyMsg &&
       !isSetAcceptMsg &&
       !isStructuredMsg &&
+      !isBug &&
+      !isSuggestions &&
       !isDebug &&
       !isStop &&
       !isRestart
@@ -3736,6 +3933,30 @@ client.on("interactionCreate", async (interaction) => {
       memberPerms.has(PermissionsBitField.Flags.Administrator) ||
       (memberPerms.has(PermissionsBitField.Flags.ManageGuild) &&
         memberPerms.has(PermissionsBitField.Flags.ManageRoles));
+
+    if (isBug) {
+      await relayFeedbackCommand({
+        interaction,
+        commandLabel: "Bug Report",
+        heading: "🐞 **Bug Report**",
+        channelId: getActiveBugChannelId(),
+        emptyChannelMessage:
+          "Bug channel is not configured. Run `/setchannel bug:#channel` first.",
+      });
+      return;
+    }
+
+    if (isSuggestions) {
+      await relayFeedbackCommand({
+        interaction,
+        commandLabel: "Suggestion",
+        heading: "💡 **Suggestion**",
+        channelId: getActiveSuggestionsChannelId(),
+        emptyChannelMessage:
+          "Suggestions channel is not configured. Run `/setchannel suggestions:#channel` first.",
+      });
+      return;
+    }
 
     if (isDebug) {
       if (!canManageServer) {
@@ -4157,6 +4378,8 @@ client.on("interactionCreate", async (interaction) => {
       const builderChannelInput = interaction.options.getChannel("builder_post");
       const cmdChannelInput = interaction.options.getChannel("cmd_post");
       const logChannelInput = interaction.options.getChannel("log");
+      const bugChannelInput = interaction.options.getChannel("bug");
+      const suggestionsChannelInput = interaction.options.getChannel("suggestions");
 
       const providedTrackChannels = {
         [TRACK_TESTER]: testerChannelInput,
@@ -4170,7 +4393,11 @@ client.on("interactionCreate", async (interaction) => {
         const hasExistingTrackChannel = Object.values(resolvedTrackChannelIds).some((id) =>
           isSnowflake(id)
         );
-        const shouldAutoSetTesterFromCurrent = !hasExistingTrackChannel || !logChannelInput;
+        const hasNonTrackChannelOption = Boolean(
+          logChannelInput || bugChannelInput || suggestionsChannelInput
+        );
+        const shouldAutoSetTesterFromCurrent =
+          !hasExistingTrackChannel || !hasNonTrackChannelOption;
         if (shouldAutoSetTesterFromCurrent) {
           if (!interaction.channel || interaction.channel.type !== ChannelType.GuildText) {
             await interaction.reply({
@@ -4226,6 +4453,30 @@ client.on("interactionCreate", async (interaction) => {
           null;
       }
 
+      let nextBugChannelId = getActiveBugChannelId();
+      if (bugChannelInput) {
+        if (bugChannelInput.type !== ChannelType.GuildText) {
+          await interaction.reply({
+            content: "Please choose a guild text channel for `bug`.",
+            ephemeral: true,
+          });
+          return;
+        }
+        nextBugChannelId = bugChannelInput.id;
+      }
+
+      let nextSuggestionsChannelId = getActiveSuggestionsChannelId();
+      if (suggestionsChannelInput) {
+        if (suggestionsChannelInput.type !== ChannelType.GuildText) {
+          await interaction.reply({
+            content: "Please choose a guild text channel for `suggestions`.",
+            ephemeral: true,
+          });
+          return;
+        }
+        nextSuggestionsChannelId = suggestionsChannelInput.id;
+      }
+
       await interaction.deferReply({ ephemeral: true });
 
       for (const trackKey of APPLICATION_TRACK_KEYS) {
@@ -4235,6 +4486,12 @@ client.on("interactionCreate", async (interaction) => {
       }
       if (isSnowflake(nextLogChannelId)) {
         setActiveLogsChannel(nextLogChannelId);
+      }
+      if (isSnowflake(nextBugChannelId)) {
+        setActiveBugChannel(nextBugChannelId);
+      }
+      if (isSnowflake(nextSuggestionsChannelId)) {
+        setActiveSuggestionsChannel(nextSuggestionsChannelId);
       }
 
       const pendingBefore = readState().postJobs.length;
@@ -4277,6 +4534,14 @@ client.on("interactionCreate", async (interaction) => {
           `Application log channel: ${
             isSnowflake(nextLogChannelId) ? `<#${nextLogChannelId}>` : "not set"
           }`,
+          `Bug channel: ${
+            isSnowflake(nextBugChannelId) ? `<#${nextBugChannelId}>` : "not set"
+          }`,
+          `Suggestions channel: ${
+            isSnowflake(nextSuggestionsChannelId)
+              ? `<#${nextSuggestionsChannelId}>`
+              : "not set"
+          }`,
           replayLine,
           auditResult,
         ].join("\n"),
@@ -4300,6 +4565,14 @@ client.on("interactionCreate", async (interaction) => {
         }`,
         `**Log Channel:** ${
           isSnowflake(nextLogChannelId) ? `<#${nextLogChannelId}>` : "not set"
+        }`,
+        `**Bug Channel:** ${
+          isSnowflake(nextBugChannelId) ? `<#${nextBugChannelId}>` : "not set"
+        }`,
+        `**Suggestions Channel:** ${
+          isSnowflake(nextSuggestionsChannelId)
+            ? `<#${nextSuggestionsChannelId}>`
+            : "not set"
         }`,
       ]);
       return;
