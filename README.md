@@ -11,6 +11,8 @@ Simple Node.js bot that:
 7. `/setchannel` configures both application post and log channels together.
 8. Creates a thread per application message for team discussion.
 9. Creates an `application-logs` channel and posts full close-history when an application is decided.
+10. Queues each application post as a persistent job (`job-000001`, etc.) and replays failed jobs in row order.
+11. Can auto-grant a configured role when an application is accepted.
 
 ## Requirements
 
@@ -43,6 +45,7 @@ Required keys:
 - `DISCORD_LOGS_CHANNEL_NAME`
 - `DISCORD_LOGS_CHANNEL_ID` (optional fallback if you do not use `/setchannel`)
 - `DISCORD_THREAD_AUTO_ARCHIVE_MINUTES`
+- `DISCORD_APPROVED_ROLE_ID` (optional fallback if you do not use `/setapprole`)
 - `STATE_FILE`
 
 3. Place your Google service account key file in the project root as `service-account.json` (or update `GOOGLE_SERVICE_ACCOUNT_KEY_FILE`).
@@ -100,6 +103,21 @@ Optional:
 /setchannel application_post:#application-post application_log:#application-log
 ```
 
+Set role granted on accepted applications:
+```text
+/setapprole role:@YourRole
+```
+
+Get diagnostic info in your DMs:
+```text
+/debug mode:report
+```
+
+Run a live Discord posting test and get results in your DMs:
+```text
+/debug mode:post_test
+```
+
 ## Hosting
 
 ### PM2 (VPS or your own server)
@@ -151,6 +169,9 @@ npm start
 ## Notes
 
 - The bot stores processed row state in `.bot-state.json`.
+- Application posts are queued in `.bot-state.json` with persistent job IDs.
+- If posting fails, the failed job is kept and retried in strict row order.
+- After `/setchannel` succeeds, queued failed jobs are replayed immediately.
 - If you want to reprocess from the start, delete `.bot-state.json`.
 - Prefer `/setchannel` to set channel from Discord directly.
 - `/setchannel` auto-creates/uses a webhook from the selected application post channel.
@@ -165,5 +186,8 @@ npm start
 - On startup, the bot audits required permissions and exits with missing permission names if setup is incomplete.
 - `/accept` and `/deny` require both `Manage Server` and `Manage Roles`, or `Administrator`.
 - `/setchannel` requires `Manage Server` (or `Administrator`) and bot `Manage Webhooks`.
+- `/setapprole` requires both `Manage Server` and `Manage Roles`, or `Administrator`.
 - `/debug`, `/stop`, and `/restart` require `Manage Server`, or `Administrator`.
-- `/stop` writes an audit log with user ID, username, and guild details.
+- `/debug` sends results by DM; if DMs are closed, the bot warns you in-channel.
+- `/stop` and `/restart` write audit logs with user ID, username, and guild details to `control-actions.log` (or `CONTROL_LOG_FILE`), not Discord.
+- On accepted applications, bot attempts to grant the configured role to the resolved applicant Discord user.

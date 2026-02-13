@@ -51,8 +51,10 @@ const config = {
   channelId: process.env.DISCORD_CHANNEL_ID,
   pollIntervalMs: Number(process.env.POLL_INTERVAL_MS || 30000),
   stateFile: process.env.STATE_FILE || ".bot-state.json",
+  controlLogFile: process.env.CONTROL_LOG_FILE || "control-actions.log",
   logsChannelName: process.env.DISCORD_LOGS_CHANNEL_NAME || "application-logs",
   logsChannelId: process.env.DISCORD_LOGS_CHANNEL_ID,
+  approvedRoleId: process.env.DISCORD_APPROVED_ROLE_ID,
   threadArchiveMinutes: Number(
     process.env.DISCORD_THREAD_AUTO_ARCHIVE_MINUTES || 10080
   ),
@@ -61,6 +63,8 @@ const config = {
 const STATUS_PENDING = "pending";
 const STATUS_ACCEPTED = "accepted";
 const STATUS_DENIED = "denied";
+const DEBUG_MODE_REPORT = "report";
+const DEBUG_MODE_POST_TEST = "post_test";
 
 const ACCEPT_EMOJI = "✅";
 const DENY_EMOJI = "❌";
@@ -77,7 +81,61 @@ const REQUIRED_GUILD_PERMISSIONS = [
 let loggedNoChannelWarning = false;
 let loggedNoWebhookWarning = false;
 const WEBHOOK_URL_PATTERN = /^https:\/\/discord\.com\/api\/webhooks\/(\d+)\/([^/?\s]+)$/i;
+const JOB_ID_PATTERN = /^job-(\d+)$/i;
+const JOB_TYPE_POST_APPLICATION = "post_application";
 const ignoredWebhookUrls = new Set();
+let isProcessingPostJobs = false;
+
+function normalizeCell(value) {
+  if (value === undefined || value === null) {
+    return "";
+  }
+  return String(value);
+}
+
+function formatJobId(sequence) {
+  return `job-${String(sequence).padStart(6, "0")}`;
+}
+
+function parseJobIdSequence(jobId) {
+  if (typeof jobId !== "string") {
+    return 0;
+  }
+  const match = JOB_ID_PATTERN.exec(jobId.trim());
+  if (!match) {
+    return 0;
+  }
+  const sequence = Number(match[1]);
+  if (!Number.isInteger(sequence) || sequence <= 0) {
+    return 0;
+  }
+  return sequence;
+}
+
+function compareJobsByOrder(a, b) {
+  const rowDiff = a.rowIndex - b.rowIndex;
+  if (rowDiff !== 0) {
+    return rowDiff;
+  }
+
+  const aSeq = parseJobIdSequence(a.jobId);
+  const bSeq = parseJobIdSequence(b.jobId);
+  if (aSeq > 0 && bSeq > 0 && aSeq !== bSeq) {
+    return aSeq - bSeq;
+  }
+
+  const aCreated = Date.parse(a.createdAt || "");
+  const bCreated = Date.parse(b.createdAt || "");
+  if (!Number.isNaN(aCreated) && !Number.isNaN(bCreated) && aCreated !== bCreated) {
+    return aCreated - bCreated;
+  }
+
+  return String(a.jobId).localeCompare(String(b.jobId));
+}
+
+function sortPostJobsInPlace(postJobs) {
+  postJobs.sort(compareJobsByOrder);
+}
 
 function defaultState() {
   return {
@@ -85,10 +143,13 @@ function defaultState() {
     applications: {},
     threads: {},
     controlActions: [],
+    nextJobId: 1,
+    postJobs: [],
     settings: {
       channelId: null,
       webhookUrl: null,
       logChannelId: null,
+      approvedRoleId: null,
     },
   };
 }
@@ -97,6 +158,68 @@ function readState() {
   try {
     const raw = fs.readFileSync(config.stateFile, "utf8");
     const parsed = JSON.parse(raw);
+    const postJobs = [];
+    const usedJobIds = new Set();
+    let generatedSequence = 1;
+    let highestSeenSequence = 0;
+    const rawJobs = Array.isArray(parsed.postJobs) ? parsed.postJobs : [];
+
+    for (const rawJob of rawJobs) {
+      if (!rawJob || typeof rawJob !== "object") {
+        continue;
+      }
+
+      const rowIndex = Number(rawJob.rowIndex);
+      if (!Number.isInteger(rowIndex) || rowIndex < 2) {
+        continue;
+      }
+
+      let jobSequence = parseJobIdSequence(rawJob.jobId);
+      if (jobSequence <= 0 || usedJobIds.has(formatJobId(jobSequence))) {
+        while (usedJobIds.has(formatJobId(generatedSequence))) {
+          generatedSequence += 1;
+        }
+        jobSequence = generatedSequence;
+      }
+
+      const normalizedJobId = formatJobId(jobSequence);
+      usedJobIds.add(normalizedJobId);
+      highestSeenSequence = Math.max(highestSeenSequence, jobSequence);
+      if (generatedSequence <= jobSequence) {
+        generatedSequence = jobSequence + 1;
+      }
+
+      postJobs.push({
+        jobId: normalizedJobId,
+        type: JOB_TYPE_POST_APPLICATION,
+        rowIndex,
+        headers: Array.isArray(rawJob.headers)
+          ? rawJob.headers.map(normalizeCell)
+          : [],
+        row: Array.isArray(rawJob.row) ? rawJob.row.map(normalizeCell) : [],
+        createdAt:
+          typeof rawJob.createdAt === "string"
+            ? rawJob.createdAt
+            : new Date().toISOString(),
+        attempts:
+          Number.isInteger(rawJob.attempts) && rawJob.attempts >= 0
+            ? rawJob.attempts
+            : 0,
+        lastAttemptAt:
+          typeof rawJob.lastAttemptAt === "string" ? rawJob.lastAttemptAt : null,
+        lastError: typeof rawJob.lastError === "string" ? rawJob.lastError : null,
+      });
+    }
+    sortPostJobsInPlace(postJobs);
+
+    let nextJobId = Number(parsed.nextJobId);
+    if (!Number.isInteger(nextJobId) || nextJobId < 1) {
+      nextJobId = 1;
+    }
+    if (nextJobId <= highestSeenSequence) {
+      nextJobId = highestSeenSequence + 1;
+    }
+
     return {
       lastRow: typeof parsed.lastRow === "number" ? parsed.lastRow : 1,
       applications:
@@ -107,14 +230,22 @@ function readState() {
         parsed.threads && typeof parsed.threads === "object" ? parsed.threads : {},
       controlActions:
         Array.isArray(parsed.controlActions) ? parsed.controlActions : [],
+      nextJobId,
+      postJobs,
       settings:
         parsed.settings && typeof parsed.settings === "object"
           ? {
               channelId: parsed.settings.channelId || null,
               webhookUrl: parsed.settings.webhookUrl || null,
               logChannelId: parsed.settings.logChannelId || null,
+              approvedRoleId: parsed.settings.approvedRoleId || null,
             }
-          : { channelId: null, webhookUrl: null, logChannelId: null },
+          : {
+              channelId: null,
+              webhookUrl: null,
+              logChannelId: null,
+              approvedRoleId: null,
+            },
     };
   } catch {
     return defaultState();
@@ -210,6 +341,26 @@ function setActiveLogsChannel(channelId) {
   writeState(state);
 }
 
+function getActiveApprovedRoleId() {
+  const state = readState();
+  if (isSnowflake(state.settings.approvedRoleId)) {
+    return state.settings.approvedRoleId;
+  }
+  if (isSnowflake(config.approvedRoleId)) {
+    return config.approvedRoleId;
+  }
+  return null;
+}
+
+function setActiveApprovedRole(roleId) {
+  if (!isSnowflake(roleId)) {
+    throw new Error("Invalid approved role id.");
+  }
+  const state = readState();
+  state.settings.approvedRoleId = roleId;
+  writeState(state);
+}
+
 function sanitizeThreadName(name) {
   return (
     name.replace(/[^\p{L}\p{N}\s\-_]/gu, "").trim().slice(0, 90) ||
@@ -222,9 +373,182 @@ function makeApplicationContent(headers, row) {
   for (let i = 0; i < headers.length; i += 1) {
     const key = (headers[i] || `Field ${i + 1}`).trim();
     const value = row[i] || "(empty)";
-    lines.push(`**${key}:** ${String(value)}`);
+    lines.push(`${key}: ${String(value)}`);
   }
   return lines.join("\n");
+}
+
+function inferApplicantDiscordValue(headers, row) {
+  let fallback = null;
+  for (let i = 0; i < headers.length; i += 1) {
+    const value = String(row[i] || "").trim();
+    if (!value) {
+      continue;
+    }
+    const header = String(headers[i] || "").toLowerCase();
+    const isDiscordId = header.includes("discord") && header.includes("id");
+    if (isDiscordId) {
+      return value;
+    }
+    const isDiscordField = header.includes("discord");
+    if (isDiscordField && !fallback) {
+      fallback = value;
+    }
+    const isUserId = (header.includes("user") || header.includes("member")) && header.includes("id");
+    if (isUserId && !fallback) {
+      fallback = value;
+    }
+  }
+  return fallback;
+}
+
+function extractDiscordUserId(value) {
+  if (!value) {
+    return null;
+  }
+  const raw = String(value).trim();
+  const mentionMatch = raw.match(/^<@!?(\d{17,20})>$/);
+  if (mentionMatch) {
+    return mentionMatch[1];
+  }
+  const snowflakeMatch = raw.match(/\b(\d{17,20})\b/);
+  if (snowflakeMatch) {
+    return snowflakeMatch[1];
+  }
+  return null;
+}
+
+function normalizeDiscordLookupQuery(value) {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return null;
+  }
+  return raw.replace(/^@/, "").trim() || null;
+}
+
+async function resolveApplicantDiscordUser(channelId, headers, row) {
+  const rawValue = inferApplicantDiscordValue(headers, row);
+  if (!rawValue) {
+    return { rawValue: null, userId: null };
+  }
+
+  const directId = extractDiscordUserId(rawValue);
+  if (directId) {
+    return { rawValue, userId: directId };
+  }
+
+  const query = normalizeDiscordLookupQuery(rawValue);
+  if (!query) {
+    return { rawValue, userId: null };
+  }
+
+  try {
+    const channel = await client.channels.fetch(channelId);
+    if (!channel || !("guild" in channel) || !channel.guild) {
+      return { rawValue, userId: null };
+    }
+
+    const matches = await channel.guild.members.fetch({ query, limit: 10 });
+    if (!matches || matches.size === 0) {
+      return { rawValue, userId: null };
+    }
+
+    const needle = query.toLowerCase();
+    const exact =
+      matches.find((member) => member.user.username.toLowerCase() === needle) ||
+      matches.find((member) => (member.user.globalName || "").toLowerCase() === needle) ||
+      matches.find((member) => (member.displayName || "").toLowerCase() === needle);
+    const chosen = exact || matches.first();
+    return { rawValue, userId: chosen?.id || null };
+  } catch {
+    return { rawValue, userId: null };
+  }
+}
+
+function makeApplicationPostContent({
+  rowIndex,
+  applicationId,
+  applicantMention,
+  applicantRawValue,
+  headers,
+  row,
+}) {
+  const lines = [`📥 **New Application** (Row ${rowIndex})`];
+  if (applicationId) {
+    lines.push(`🧩 **Application ID:** \`${applicationId}\``);
+  }
+  if (applicantMention) {
+    lines.push(`👤 **Discord User:** ${applicantMention}`);
+  } else if (applicantRawValue) {
+    lines.push(`👤 **Discord User:** ${applicantRawValue}`);
+  }
+  lines.push("", toCodeBlock(makeApplicationContent(headers, row)));
+  return lines.join("\n");
+}
+
+function toCodeBlock(text) {
+  const safe = String(text || "").replace(/```/g, "``\u200b`");
+  return `\`\`\`txt\n${safe}\n\`\`\``;
+}
+
+function splitMessageByLength(text, maxLength = 1900) {
+  const lines = String(text || "").split("\n");
+  const chunks = [];
+  let current = "";
+
+  for (const line of lines) {
+    const candidate = current ? `${current}\n${line}` : line;
+    if (candidate.length <= maxLength) {
+      current = candidate;
+      continue;
+    }
+
+    if (current) {
+      chunks.push(current);
+      current = "";
+    }
+
+    if (line.length <= maxLength) {
+      current = line;
+      continue;
+    }
+
+    for (let i = 0; i < line.length; i += maxLength) {
+      chunks.push(line.slice(i, i + maxLength));
+    }
+  }
+
+  if (current) {
+    chunks.push(current);
+  }
+
+  return chunks.length > 0 ? chunks : [""];
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getRetryAfterMsFromBody(body) {
+  if (!body) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(body);
+    if (typeof parsed.retry_after === "number" && parsed.retry_after >= 0) {
+      return Math.ceil(parsed.retry_after * 1000);
+    }
+  } catch {
+    // ignore malformed or non-JSON bodies
+  }
+  return null;
+}
+
+async function sendDebugDm(user, text) {
+  const chunks = splitMessageByLength(text);
+  for (const chunk of chunks) {
+    await user.send(chunk);
+  }
 }
 
 function inferApplicantName(headers, row) {
@@ -240,6 +564,49 @@ function inferApplicantName(headers, row) {
 
 function requiredVotesCount(eligibleCount) {
   return Math.ceil((eligibleCount * 2) / 3);
+}
+
+function allocateNextJobId(state) {
+  if (!Number.isInteger(state.nextJobId) || state.nextJobId < 1) {
+    state.nextJobId = 1;
+  }
+  const jobId = formatJobId(state.nextJobId);
+  state.nextJobId += 1;
+  return jobId;
+}
+
+function buildTrackedRowSet(state) {
+  const trackedRows = new Set();
+
+  if (Array.isArray(state.postJobs)) {
+    for (const job of state.postJobs) {
+      if (Number.isInteger(job?.rowIndex) && job.rowIndex >= 2) {
+        trackedRows.add(job.rowIndex);
+      }
+    }
+  }
+
+  for (const application of Object.values(state.applications || {})) {
+    if (Number.isInteger(application?.rowIndex) && application.rowIndex >= 2) {
+      trackedRows.add(application.rowIndex);
+    }
+  }
+
+  return trackedRows;
+}
+
+function createPostJob(state, headers, row, rowIndex) {
+  return {
+    jobId: allocateNextJobId(state),
+    type: JOB_TYPE_POST_APPLICATION,
+    rowIndex,
+    headers: (Array.isArray(headers) ? headers : []).map(normalizeCell),
+    row: (Array.isArray(row) ? row : []).map(normalizeCell),
+    createdAt: new Date().toISOString(),
+    attempts: 0,
+    lastAttemptAt: null,
+    lastError: null,
+  };
 }
 
 async function getSheetsClient() {
@@ -275,7 +642,7 @@ async function readAllResponses() {
   return response.data.values || [];
 }
 
-async function sendWebhookMessage(content) {
+async function sendWebhookMessage(content, allowedMentions = { parse: [] }) {
   const webhookUrl = getActiveWebhookUrl();
   if (!webhookUrl) {
     throw new Error("No webhook URL configured.");
@@ -286,13 +653,41 @@ async function sendWebhookMessage(content) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       content,
-      allowed_mentions: { parse: [] },
+      allowed_mentions: allowedMentions,
     }),
   });
 
   if (!res.ok) {
     const body = await res.text();
     throw new Error(`Webhook send failed (${res.status}): ${body}`);
+  }
+
+  return res.json();
+}
+
+async function editWebhookMessage(messageId, content, allowedMentions = { parse: [] }) {
+  const webhookUrl = getActiveWebhookUrl();
+  if (!webhookUrl) {
+    throw new Error("No webhook URL configured.");
+  }
+  const parsed = parseWebhookUrl(webhookUrl);
+  if (!parsed) {
+    throw new Error("Invalid webhook URL configured.");
+  }
+
+  const url = `https://discord.com/api/v10/webhooks/${parsed.id}/${parsed.token}/messages/${messageId}`;
+  const res = await fetch(url, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      content,
+      allowed_mentions: allowedMentions,
+    }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Webhook edit failed (${res.status}): ${body}`);
   }
 
   return res.json();
@@ -352,14 +747,28 @@ async function verifyStartupWebhook() {
 async function addReaction(channelId, messageId, emoji) {
   const encodedEmoji = encodeURIComponent(emoji);
   const url = `https://discord.com/api/v10/channels/${channelId}/messages/${messageId}/reactions/${encodedEmoji}/@me`;
-  const res = await fetch(url, {
-    method: "PUT",
-    headers: {
-      Authorization: `Bot ${config.botToken}`,
-    },
-  });
-  if (!res.ok) {
+  const maxAttempts = 6;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const res = await fetch(url, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bot ${config.botToken}`,
+      },
+    });
+
+    if (res.ok) {
+      return;
+    }
+
     const body = await res.text();
+    if (res.status === 429 && attempt < maxAttempts) {
+      const retryAfterMs = getRetryAfterMsFromBody(body);
+      const waitMs = Math.max(300, retryAfterMs ?? 1000) + 100;
+      await sleep(waitMs);
+      continue;
+    }
+
     throw new Error(`Failed adding reaction ${emoji} (${res.status}): ${body}`);
   }
 }
@@ -512,6 +921,16 @@ function userDisplayName(user) {
   return user.username;
 }
 
+function appendControlLogToFile(entry) {
+  const logPath = path.resolve(config.controlLogFile);
+  const logDir = path.dirname(logPath);
+  if (logDir && logDir !== "." && !fs.existsSync(logDir)) {
+    fs.mkdirSync(logDir, { recursive: true });
+  }
+  const line = `${JSON.stringify(entry)}\n`;
+  fs.appendFileSync(logPath, line, "utf8");
+}
+
 async function logControlCommand(action, interaction) {
   const entry = {
     action,
@@ -536,6 +955,16 @@ async function logControlCommand(action, interaction) {
   console.log(
     `[CONTROL] ${action} by ${entry.username} (${entry.userId}) in ${entry.guildName || "DM"} (${entry.guildId || "n/a"})`
   );
+
+  try {
+    appendControlLogToFile(entry);
+  } catch (err) {
+    console.error(`Failed writing ${action} control log file:`, err.message);
+  }
+
+  if (action === "stop" || action === "restart") {
+    return;
+  }
 
   if (!interaction.guild) {
     return;
@@ -587,16 +1016,22 @@ async function postClosureLog(application) {
     const threadLink = application.threadId
       ? makeMessageUrl(channel.guild.id, application.threadId, application.threadId)
       : "_No thread_";
+    const approvedRoleNote =
+      application.approvedRoleResult && application.status === STATUS_ACCEPTED
+        ? application.approvedRoleResult.message
+        : "No role action recorded.";
 
     const log = [
       "📚 **Application Closed (History Log)**",
       `**Decision:** ${decisionLabel}`,
       `**Applicant:** ${application.applicantName || "Unknown"}`,
       `**Row:** ${application.rowIndex || "Unknown"}`,
+      `**Application ID:** ${application.applicationId || application.messageId || "Unknown"}`,
       `**Created At:** ${application.createdAt || "Unknown"}`,
       `**Decided At:** ${application.decidedAt || "Unknown"}`,
       `**Decision Source:** ${application.decisionSource || "Unknown"}`,
       `**Decided By:** ${application.decidedBy ? `<@${application.decidedBy}>` : "Unknown"}`,
+      `**Approved Role Action:** ${approvedRoleNote}`,
       `**Application Message:** ${messageLink}`,
       `**Discussion Thread:** ${threadLink}`,
       "",
@@ -607,6 +1042,121 @@ async function postClosureLog(application) {
     await logsChannel.send({ content: log, allowedMentions: { parse: [] } });
   } catch (err) {
     console.error("Failed posting closure log:", err.message);
+  }
+}
+
+async function grantApprovedRoleOnAcceptance(application) {
+  const approvedRoleId = getActiveApprovedRoleId();
+  if (!approvedRoleId) {
+    return {
+      status: "skipped_no_role_configured",
+      message: "No approved role configured.",
+      roleId: null,
+      userId: application.applicantUserId || null,
+    };
+  }
+
+  if (!application.applicantUserId) {
+    return {
+      status: "skipped_no_user",
+      message: "No applicant Discord user could be resolved from the form data.",
+      roleId: approvedRoleId,
+      userId: null,
+    };
+  }
+
+  try {
+    const channel = await client.channels.fetch(application.channelId);
+    if (!channel || !("guild" in channel) || !channel.guild) {
+      return {
+        status: "failed_no_guild",
+        message: "Could not resolve guild for role assignment.",
+        roleId: approvedRoleId,
+        userId: application.applicantUserId,
+      };
+    }
+
+    const guild = channel.guild;
+    const me = await guild.members.fetchMe();
+    if (!me.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
+      return {
+        status: "failed_missing_permission",
+        message: "Bot is missing Manage Roles permission.",
+        roleId: approvedRoleId,
+        userId: application.applicantUserId,
+      };
+    }
+
+    const role = await guild.roles.fetch(approvedRoleId);
+    if (!role) {
+      return {
+        status: "failed_role_not_found",
+        message: `Configured role ${approvedRoleId} was not found in this guild.`,
+        roleId: approvedRoleId,
+        userId: application.applicantUserId,
+      };
+    }
+
+    if (role.managed) {
+      return {
+        status: "failed_managed_role",
+        message: `Role <@&${approvedRoleId}> is managed by an integration and cannot be assigned.`,
+        roleId: approvedRoleId,
+        userId: application.applicantUserId,
+      };
+    }
+
+    if (me.roles.highest.comparePositionTo(role) <= 0) {
+      return {
+        status: "failed_role_hierarchy",
+        message: `Bot role is not high enough to assign <@&${approvedRoleId}>.`,
+        roleId: approvedRoleId,
+        userId: application.applicantUserId,
+      };
+    }
+
+    let member = null;
+    try {
+      member = await guild.members.fetch(application.applicantUserId);
+    } catch {
+      member = null;
+    }
+
+    if (!member) {
+      return {
+        status: "failed_member_not_found",
+        message: `Applicant user <@${application.applicantUserId}> is not in this server.`,
+        roleId: approvedRoleId,
+        userId: application.applicantUserId,
+      };
+    }
+
+    if (member.roles.cache.has(approvedRoleId)) {
+      return {
+        status: "already_has_role",
+        message: `Applicant already has role <@&${approvedRoleId}>.`,
+        roleId: approvedRoleId,
+        userId: application.applicantUserId,
+      };
+    }
+
+    await member.roles.add(
+      approvedRoleId,
+      `Application accepted (${application.applicationId || application.messageId})`
+    );
+    return {
+      status: "granted",
+      message: `Granted role <@&${approvedRoleId}> to <@${member.id}>.`,
+      roleId: approvedRoleId,
+      userId: member.id,
+    };
+  } catch (err) {
+    return {
+      status: "failed_error",
+      message: `Role assignment failed: ${err.message}`,
+      roleId: approvedRoleId,
+      userId: application.applicantUserId,
+    };
   }
 }
 
@@ -626,14 +1176,23 @@ async function finalizeApplication(messageId, decision, sourceLabel, actorId) {
   application.decidedAt = new Date().toISOString();
   application.decidedBy = actorId;
   application.decisionSource = sourceLabel;
+  let decisionReason =
+    sourceLabel === "vote"
+      ? "Decision reached with 2/3 channel supermajority."
+      : `Forced by <@${actorId}> using slash command.`;
+
+  if (decision === STATUS_ACCEPTED) {
+    const roleResult = await grantApprovedRoleOnAcceptance(application);
+    application.approvedRoleResult = roleResult;
+    decisionReason = `${decisionReason}\n${roleResult.message}`;
+  }
+
   writeState(state);
 
   await postDecisionUpdate(
     application,
     decision,
-    sourceLabel === "vote"
-      ? "Decision reached with 2/3 channel supermajority."
-      : `Forced by <@${actorId}> using slash command.`
+    decisionReason
   );
   await postClosureLog(application);
 
@@ -760,8 +1319,27 @@ function buildSlashCommands() {
           .setRequired(false)
       ),
     new SlashCommandBuilder()
+      .setName("setapprole")
+      .setDescription("Set the role granted when an application is accepted")
+      .addRoleOption((option) =>
+        option
+          .setName("role")
+          .setDescription("Role to grant on acceptance")
+          .setRequired(true)
+      ),
+    new SlashCommandBuilder()
       .setName("debug")
-      .setDescription("Run bot integration diagnostics"),
+      .setDescription("Run bot integration diagnostics and tests")
+      .addStringOption((option) =>
+        option
+          .setName("mode")
+          .setDescription("Choose which debug action to run")
+          .setRequired(true)
+          .addChoices(
+            { name: "report", value: DEBUG_MODE_REPORT },
+            { name: "post_test", value: DEBUG_MODE_POST_TEST }
+          )
+      ),
     new SlashCommandBuilder()
       .setName("stop")
       .setDescription("Stop the bot process"),
@@ -776,18 +1354,25 @@ async function isGuildCommandSetCurrent(rest, guildId, commands) {
     Routes.applicationGuildCommands(config.clientId, guildId)
   );
 
-  const existingNames = new Set(existing.map((cmd) => cmd.name));
-  const desiredNames = new Set(commands.map((cmd) => cmd.name));
+  const normalizeCommand = (command) => ({
+    name: command.name || "",
+    description: command.description || "",
+    type: command.type || 1,
+    options: Array.isArray(command.options) ? command.options : [],
+    default_member_permissions: command.default_member_permissions || null,
+    dm_permission:
+      typeof command.dm_permission === "boolean" ? command.dm_permission : null,
+    nsfw: typeof command.nsfw === "boolean" ? command.nsfw : false,
+  });
 
-  if (existingNames.size !== desiredNames.size) {
-    return false;
-  }
-  for (const item of desiredNames) {
-    if (!existingNames.has(item)) {
-      return false;
-    }
-  }
-  return true;
+  const normalizeSet = (items) =>
+    items
+      .map(normalizeCommand)
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((item) => JSON.stringify(item))
+      .join("\n");
+
+  return normalizeSet(existing) === normalizeSet(commands);
 }
 
 async function clearGlobalCommands(rest) {
@@ -930,6 +1515,7 @@ async function buildDebugReport(interaction) {
   const lines = [];
   const activeChannelId = getActiveChannelId();
   const activeWebhook = getActiveWebhookUrl();
+  const activeApprovedRoleId = getActiveApprovedRoleId();
 
   lines.push(`Bot User ID: ${client.user?.id || "unknown"}`);
   lines.push(`Configured Client ID: ${config.clientId || "missing"}`);
@@ -939,6 +1525,9 @@ async function buildDebugReport(interaction) {
   lines.push(`Interaction Guild ID: ${interaction.guildId || "none"}`);
   lines.push(`Active Channel ID: ${activeChannelId || "none"}`);
   lines.push(`Active Webhook Set: ${activeWebhook ? "yes" : "no"}`);
+  lines.push(`Active Approved Role ID: ${activeApprovedRoleId || "none"}`);
+  const state = readState();
+  lines.push(`Queued Post Jobs: ${Array.isArray(state.postJobs) ? state.postJobs.length : 0}`);
 
   const rest = new REST({ version: "10" }).setToken(config.botToken);
   try {
@@ -992,20 +1581,117 @@ async function buildDebugReport(interaction) {
   return lines.join("\n");
 }
 
-async function handleNewRow(state, headers, row, rowIndex) {
+async function runDebugPostTest(interaction) {
+  const configuredChannelId = getActiveChannelId();
+  if (!configuredChannelId) {
+    throw new Error("No active channel configured. Run /setchannel first.");
+  }
+
+  const activeWebhook = getActiveWebhookUrl();
+  if (!activeWebhook) {
+    throw new Error("No active webhook configured. Run /setchannel first.");
+  }
+
+  const triggeredAt = new Date().toISOString();
+  const content = [
+    "🧪 **Debug Application Post Test**",
+    "This is a live test post from `/debug mode:post_test`.",
+    `**Triggered By:** <@${interaction.user.id}>`,
+    `**Triggered At:** ${triggeredAt}`,
+    "",
+    "**Example Fields:**",
+    "**Name:** Debug Applicant",
+    "**Discord Name:** debug-user",
+    "**Reason:** Validate webhook post flow end-to-end",
+  ].join("\n");
+
+  const msg = await sendWebhookMessage(content);
+  const postedChannelId = msg.channel_id || configuredChannelId;
+  if (postedChannelId !== configuredChannelId) {
+    throw new Error(
+      `Webhook posted to channel ${postedChannelId}, expected ${configuredChannelId}. Run /setchannel again.`
+    );
+  }
+
+  const warnings = [];
+
+  try {
+    await addReaction(postedChannelId, msg.id, ACCEPT_EMOJI);
+    await addReaction(postedChannelId, msg.id, DENY_EMOJI);
+  } catch (err) {
+    warnings.push(`Reaction setup failed: ${err.message}`);
+  }
+
+  let threadId = null;
+  try {
+    const thread = await createThread(postedChannelId, msg.id, "Debug Application Test");
+    threadId = thread.id || null;
+    if (threadId) {
+      const threadChannel = await client.channels.fetch(threadId);
+      if (threadChannel && threadChannel.isTextBased()) {
+        await threadChannel.send({
+          content:
+            "This is a debug discussion thread test. No application state was changed.",
+          allowedMentions: { parse: [] },
+        });
+      }
+    }
+  } catch (err) {
+    warnings.push(`Thread creation failed: ${err.message}`);
+  }
+
+  let guildId = interaction.guildId || null;
+  if (!guildId) {
+    const channel = await client.channels.fetch(postedChannelId);
+    if (channel && "guildId" in channel && channel.guildId) {
+      guildId = channel.guildId;
+    }
+  }
+
+  return {
+    channelId: postedChannelId,
+    messageId: msg.id,
+    threadId,
+    messageUrl: guildId
+      ? makeMessageUrl(guildId, postedChannelId, msg.id)
+      : null,
+    threadUrl: guildId && threadId ? makeMessageUrl(guildId, threadId, threadId) : null,
+    warnings,
+  };
+}
+
+async function postApplicationForJob(state, job) {
   const configuredChannelId = getActiveChannelId();
   if (!configuredChannelId) {
     throw new Error("No target channel configured. Use /setchannel.");
   }
 
+  const headers = Array.isArray(job.headers) ? job.headers : [];
+  const row = Array.isArray(job.row) ? job.row : [];
+  const rowIndex = Number.isInteger(job.rowIndex) ? job.rowIndex : "unknown";
   const applicantName = inferApplicantName(headers, row);
-  const content = [
-    `📥 **New Application** (Row ${rowIndex})`,
-    "",
-    makeApplicationContent(headers, row),
-  ].join("\n");
+  const applicantDiscord = await resolveApplicantDiscordUser(
+    configuredChannelId,
+    headers,
+    row
+  );
+  const applicantMention = applicantDiscord.userId
+    ? `<@${applicantDiscord.userId}>`
+    : null;
+  const allowedMentions = applicantDiscord.userId
+    ? { parse: [], users: [applicantDiscord.userId] }
+    : { parse: [] };
 
-  const msg = await sendWebhookMessage(content);
+  const initialContent = makeApplicationPostContent({
+    rowIndex,
+    applicationId: null,
+    applicantMention,
+    applicantRawValue: applicantDiscord.rawValue,
+    headers,
+    row,
+  });
+
+  const msg = await sendWebhookMessage(initialContent, allowedMentions);
   const postedChannelId = msg.channel_id || configuredChannelId;
   if (postedChannelId !== configuredChannelId) {
     throw new Error(
@@ -1013,17 +1699,47 @@ async function handleNewRow(state, headers, row, rowIndex) {
     );
   }
 
-  await addReaction(postedChannelId, msg.id, ACCEPT_EMOJI);
-  await addReaction(postedChannelId, msg.id, DENY_EMOJI);
-  const thread = await createThread(postedChannelId, msg.id, `Application - ${applicantName}`);
+  const applicationId = msg.id;
+  const finalContent = makeApplicationPostContent({
+    rowIndex,
+    applicationId,
+    applicantMention,
+    applicantRawValue: applicantDiscord.rawValue,
+    headers,
+    row,
+  });
+  if (finalContent !== initialContent) {
+    try {
+      await editWebhookMessage(msg.id, finalContent, allowedMentions);
+    } catch (err) {
+      console.error(`[JOB ${job.jobId}] Failed updating application ID text:`, err.message);
+    }
+  }
+
+  try {
+    await addReaction(postedChannelId, msg.id, ACCEPT_EMOJI);
+    await addReaction(postedChannelId, msg.id, DENY_EMOJI);
+  } catch (err) {
+    console.error(`[JOB ${job.jobId}] Failed adding reactions:`, err.message);
+  }
+
+  let thread = null;
+  try {
+    thread = await createThread(postedChannelId, msg.id, `Application - ${applicantName}`);
+  } catch (err) {
+    console.error(`[JOB ${job.jobId}] Failed creating thread:`, err.message);
+  }
 
   state.applications[msg.id] = {
     messageId: msg.id,
+    applicationId: msg.id,
     channelId: postedChannelId,
-    threadId: thread.id,
+    threadId: thread?.id || null,
     status: STATUS_PENDING,
-    rowIndex,
+    rowIndex: typeof rowIndex === "number" ? rowIndex : null,
+    jobId: job.jobId,
     applicantName,
+    applicantUserId: applicantDiscord.userId || null,
     createdAt: new Date().toISOString(),
     submittedFields: headers.map((header, i) => {
       const key = (header || `Field ${i + 1}`).trim();
@@ -1031,58 +1747,172 @@ async function handleNewRow(state, headers, row, rowIndex) {
       return `**${key}:** ${String(value)}`;
     }),
   };
-  state.threads[thread.id] = msg.id;
+
+  if (thread?.id) {
+    state.threads[thread.id] = msg.id;
+  }
+}
+
+async function processQueuedPostJobs() {
+  if (isProcessingPostJobs) {
+    const state = readState();
+    return {
+      queuedBefore: Array.isArray(state.postJobs) ? state.postJobs.length : 0,
+      posted: 0,
+      failed: 0,
+      remaining: Array.isArray(state.postJobs) ? state.postJobs.length : 0,
+      busy: true,
+      failedJobId: null,
+      failedError: null,
+    };
+  }
+
+  if (!getActiveChannelId() || !getActiveWebhookUrl()) {
+    const state = readState();
+    return {
+      queuedBefore: Array.isArray(state.postJobs) ? state.postJobs.length : 0,
+      posted: 0,
+      failed: 0,
+      remaining: Array.isArray(state.postJobs) ? state.postJobs.length : 0,
+      busy: false,
+      failedJobId: null,
+      failedError: null,
+    };
+  }
+
+  isProcessingPostJobs = true;
+  try {
+    const state = readState();
+    if (!Array.isArray(state.postJobs) || state.postJobs.length === 0) {
+      return {
+        queuedBefore: 0,
+        posted: 0,
+        failed: 0,
+        remaining: 0,
+        busy: false,
+        failedJobId: null,
+        failedError: null,
+      };
+    }
+
+    sortPostJobsInPlace(state.postJobs);
+    const queuedBefore = state.postJobs.length;
+    let posted = 0;
+    let failed = 0;
+    let failedJobId = null;
+    let failedError = null;
+
+    while (state.postJobs.length > 0) {
+      const job = state.postJobs[0];
+      job.attempts = (Number.isInteger(job.attempts) ? job.attempts : 0) + 1;
+      job.lastAttemptAt = new Date().toISOString();
+
+      try {
+        await postApplicationForJob(state, job);
+        state.postJobs.shift();
+        posted += 1;
+        writeState(state);
+        console.log(`[JOB ${job.jobId}] Posted application for row ${job.rowIndex}.`);
+      } catch (err) {
+        job.lastError = err.message;
+        failed += 1;
+        failedJobId = job.jobId;
+        failedError = err.message;
+        writeState(state);
+        console.error(`[JOB ${job.jobId}] Failed posting row ${job.rowIndex}:`, err.message);
+        break;
+      }
+    }
+
+    return {
+      queuedBefore,
+      posted,
+      failed,
+      remaining: state.postJobs.length,
+      busy: false,
+      failedJobId,
+      failedError,
+    };
+  } finally {
+    isProcessingPostJobs = false;
+  }
 }
 
 async function pollOnce() {
+  const state = readState();
+  const values = await readAllResponses();
+
+  if (values.length > 0) {
+    const headers = Array.isArray(values[0]) ? values[0] : [];
+    const rows = values.slice(1);
+    const startDataRow = Math.max(2, state.lastRow + 1);
+    const endDataRow = rows.length + 1;
+    const trackedRows = buildTrackedRowSet(state);
+    let stateChanged = false;
+
+    if (startDataRow <= endDataRow) {
+      for (
+        let sheetRowNumber = startDataRow;
+        sheetRowNumber <= endDataRow;
+        sheetRowNumber += 1
+      ) {
+        const row = values[sheetRowNumber - 1] || [];
+        if (state.lastRow !== sheetRowNumber) {
+          state.lastRow = sheetRowNumber;
+          stateChanged = true;
+        }
+
+        if (row.every((cell) => !cell)) {
+          continue;
+        }
+
+        if (trackedRows.has(sheetRowNumber)) {
+          continue;
+        }
+
+        const job = createPostJob(state, headers, row, sheetRowNumber);
+        state.postJobs.push(job);
+        trackedRows.add(sheetRowNumber);
+        stateChanged = true;
+        console.log(`[JOB ${job.jobId}] Queued application post for row ${sheetRowNumber}.`);
+      }
+    }
+
+    if (stateChanged) {
+      sortPostJobsInPlace(state.postJobs);
+      writeState(state);
+    }
+  }
+
   if (!getActiveChannelId()) {
     if (!loggedNoChannelWarning) {
-      console.log("Polling paused: no active channel configured. Use /setchannel.");
+      console.log("Posting paused: no active channel configured. Use /setchannel.");
       loggedNoChannelWarning = true;
     }
     return;
   }
-
   loggedNoChannelWarning = false;
+
   if (!getActiveWebhookUrl()) {
     if (!loggedNoWebhookWarning) {
-      console.log("Polling paused: no webhook configured. Use /setchannel to auto-create one.");
+      console.log("Posting paused: no webhook configured. Use /setchannel to auto-create one.");
       loggedNoWebhookWarning = true;
     }
     return;
   }
   loggedNoWebhookWarning = false;
-  const state = readState();
-  const values = await readAllResponses();
 
-  if (values.length === 0) {
-    return;
-  }
-
-  const headers = values[0];
-  const rows = values.slice(1);
-  const startDataRow = Math.max(2, state.lastRow + 1);
-  const endDataRow = rows.length + 1;
-
-  if (startDataRow > endDataRow) {
-    return;
-  }
-
-  for (
-    let sheetRowNumber = startDataRow;
-    sheetRowNumber <= endDataRow;
-    sheetRowNumber += 1
-  ) {
-    const row = values[sheetRowNumber - 1] || [];
-    if (row.every((cell) => !cell)) {
-      state.lastRow = sheetRowNumber;
-      writeState(state);
-      continue;
+  const queueResult = await processQueuedPostJobs();
+  if (queueResult.posted > 0 || queueResult.failed > 0) {
+    const details = [
+      `queue=${queueResult.queuedBefore}`,
+      `posted=${queueResult.posted}`,
+      `remaining=${queueResult.remaining}`,
+    ];
+    if (queueResult.failed > 0 && queueResult.failedJobId) {
+      details.push(`blocked=${queueResult.failedJobId}`);
     }
-
-    await handleNewRow(state, headers, row, sheetRowNumber);
-    state.lastRow = sheetRowNumber;
-    writeState(state);
+    console.log(`Job run summary: ${details.join(", ")}`);
   }
 }
 
@@ -1153,6 +1983,7 @@ client.on("interactionCreate", async (interaction) => {
     const isAccept = interaction.commandName === "accept";
     const isDeny = interaction.commandName === "deny";
     const isSetChannel = interaction.commandName === "setchannel";
+    const isSetAppRole = interaction.commandName === "setapprole";
     const isDebug = interaction.commandName === "debug";
     const isStop = interaction.commandName === "stop";
     const isRestart = interaction.commandName === "restart";
@@ -1160,6 +1991,7 @@ client.on("interactionCreate", async (interaction) => {
       !isAccept &&
       !isDeny &&
       !isSetChannel &&
+      !isSetAppRole &&
       !isDebug &&
       !isStop &&
       !isRestart
@@ -1189,9 +2021,115 @@ client.on("interactionCreate", async (interaction) => {
         return;
       }
 
-      const report = await buildDebugReport(interaction);
+      await interaction.deferReply({ ephemeral: true });
+      const mode =
+        interaction.options.getString("mode", true) || DEBUG_MODE_REPORT;
+
+      let dmText = "";
+      let confirmText = "Debug result sent to your DMs.";
+
+      if (mode === DEBUG_MODE_REPORT) {
+        const report = await buildDebugReport(interaction);
+        dmText = [`🧪 Debug Report`, `Requested by: ${userDisplayName(interaction.user)}`, "", report].join(
+          "\n"
+        );
+      } else if (mode === DEBUG_MODE_POST_TEST) {
+        const result = await runDebugPostTest(interaction);
+        const lines = [
+          "🧪 Debug Post Test Completed",
+          `Requested by: ${userDisplayName(interaction.user)}`,
+          `Channel ID: ${result.channelId}`,
+          `Message ID: ${result.messageId}`,
+        ];
+        if (result.messageUrl) {
+          lines.push(`Message Link: ${result.messageUrl}`);
+        }
+        if (result.threadId) {
+          lines.push(`Thread ID: ${result.threadId}`);
+        }
+        if (result.threadUrl) {
+          lines.push(`Thread Link: ${result.threadUrl}`);
+        }
+        if (result.warnings.length > 0) {
+          lines.push(`Warnings: ${result.warnings.join(" | ")}`);
+        } else {
+          lines.push("Webhook post, reactions, and thread creation all succeeded.");
+        }
+        dmText = lines.join("\n");
+        confirmText = "Debug post test ran. Results sent to your DMs.";
+      } else {
+        throw new Error(`Unknown debug mode: ${mode}`);
+      }
+
+      try {
+        await sendDebugDm(interaction.user, dmText);
+      } catch (err) {
+        await interaction.editReply({
+          content:
+            "I could not DM you. Enable DMs from server members, then run /debug again.",
+        });
+        return;
+      }
+
+      await interaction.editReply({
+        content: confirmText,
+      });
+      return;
+    }
+
+    if (isSetAppRole) {
+      const canSetRole =
+        memberPerms.has(PermissionsBitField.Flags.Administrator) ||
+        (memberPerms.has(PermissionsBitField.Flags.ManageGuild) &&
+          memberPerms.has(PermissionsBitField.Flags.ManageRoles));
+      if (!canSetRole) {
+        await interaction.reply({
+          content:
+            "You need both Manage Server and Manage Roles (or Administrator) to run this command.",
+          ephemeral: true,
+        });
+        return;
+      }
+
+      if (!interaction.inGuild()) {
+        await interaction.reply({
+          content: "Run this command inside a server channel.",
+          ephemeral: true,
+        });
+        return;
+      }
+
+      const role = interaction.options.getRole("role", true);
+      if (!role) {
+        await interaction.reply({
+          content: "Role not found.",
+          ephemeral: true,
+        });
+        return;
+      }
+
+      setActiveApprovedRole(role.id);
+
+      let warning = "";
+      try {
+        const me = await interaction.guild.members.fetchMe();
+        if (!me.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
+          warning = "\nWarning: I do not currently have Manage Roles permission.";
+        } else {
+          const fullRole = await interaction.guild.roles.fetch(role.id);
+          if (fullRole && me.roles.highest.comparePositionTo(fullRole) <= 0) {
+            warning = "\nWarning: My top role must be above this role to assign it.";
+          }
+          if (fullRole?.managed) {
+            warning = "\nWarning: This is a managed/integration role and may not be assignable.";
+          }
+        }
+      } catch (err) {
+        warning = `\nWarning: Could not fully validate role assignability (${err.message}).`;
+      }
+
       await interaction.reply({
-        content: `Debug report:\n\`\`\`\n${report}\n\`\`\``,
+        content: `Approved application role set to <@&${role.id}>.${warning}`,
         ephemeral: true,
       });
       return;
@@ -1272,10 +2210,25 @@ client.on("interactionCreate", async (interaction) => {
         return;
       }
 
+      await interaction.deferReply({ ephemeral: true });
+
       const webhookUrl = await resolveWebhookForPostChannel(postChannel);
       setActiveWebhookUrl(webhookUrl);
       setActiveChannel(postChannel.id);
       setActiveLogsChannel(logChannelCandidate.id);
+
+      const pendingBefore = readState().postJobs.length;
+      const replayResult = await processQueuedPostJobs();
+      let replayLine = "No queued application jobs to replay.";
+      if (replayResult.busy) {
+        replayLine =
+          "Queued application replay is already running in another task; it will continue automatically.";
+      } else if (pendingBefore > 0) {
+        replayLine = `Queued application replay: posted ${replayResult.posted}/${pendingBefore} in row order. Remaining: ${replayResult.remaining}.`;
+        if (replayResult.failed > 0 && replayResult.failedJobId) {
+          replayLine += ` Blocked at ${replayResult.failedJobId}: ${replayResult.failedError}`;
+        }
+      }
 
       let auditResult = "Permission audit passed.";
       try {
@@ -1284,9 +2237,8 @@ client.on("interactionCreate", async (interaction) => {
         auditResult = `Permission audit failed: ${err.message}`;
       }
 
-      await interaction.reply({
-        content: `Application post channel set to <#${postChannel.id}>.\nApplication log channel set to <#${logChannelCandidate.id}>.\nWebhook auto-configured from post channel.\n${auditResult}`,
-        ephemeral: true,
+      await interaction.editReply({
+        content: `Application post channel set to <#${postChannel.id}>.\nApplication log channel set to <#${logChannelCandidate.id}>.\nWebhook auto-configured from post channel.\n${replayLine}\n${auditResult}`,
       });
       return;
     }
@@ -1344,11 +2296,26 @@ client.on("interactionCreate", async (interaction) => {
     });
   } catch (err) {
     console.error("Interaction handler failed:", err.message);
-    if (interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
-      await interaction.reply({
-        content: "Failed to process command.",
-        ephemeral: true,
-      });
+    if (!interaction.isRepliable()) {
+      return;
+    }
+
+    if (interaction.deferred && !interaction.replied) {
+      await interaction
+        .editReply({
+          content: "Failed to process command.",
+        })
+        .catch(() => {});
+      return;
+    }
+
+    if (!interaction.replied) {
+      await interaction
+        .reply({
+          content: "Failed to process command.",
+          ephemeral: true,
+        })
+        .catch(() => {});
     }
   }
 });
