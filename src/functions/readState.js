@@ -7,6 +7,10 @@ function readState() {
   try {
     const raw = fs.readFileSync(config.stateFile, "utf8");
     const parsed = JSON.parse(raw);
+    const legacySettings = parsed.settings && typeof parsed.settings === "object"
+      ? parsed.settings
+      : {};
+    const normalizedCustomTracks = setRuntimeCustomTracks(legacySettings.customTracks);
     const postJobs = [];
     const usedJobIds = new Set();
     let generatedSequence = 1;
@@ -88,19 +92,16 @@ function readState() {
       nextJobId = highestSeenSequence + 1;
     }
 
-    const legacySettings = parsed.settings && typeof parsed.settings === "object"
-      ? parsed.settings
-      : {};
     const normalizedChannels = normalizeTrackMap(legacySettings.channels);
     const normalizedApprovedRoles = normalizeTrackRoleMap(legacySettings.approvedRoles);
-    if (isSnowflake(legacySettings.channelId) && !normalizedChannels[TRACK_TESTER]) {
-      normalizedChannels[TRACK_TESTER] = legacySettings.channelId;
+    if (isSnowflake(legacySettings.channelId) && !normalizedChannels[DEFAULT_TRACK_KEY]) {
+      normalizedChannels[DEFAULT_TRACK_KEY] = legacySettings.channelId;
     }
     if (
       isSnowflake(legacySettings.approvedRoleId) &&
-      normalizedApprovedRoles[TRACK_TESTER].length === 0
+      normalizedApprovedRoles[DEFAULT_TRACK_KEY].length === 0
     ) {
-      normalizedApprovedRoles[TRACK_TESTER] = [legacySettings.approvedRoleId];
+      normalizedApprovedRoles[DEFAULT_TRACK_KEY] = [legacySettings.approvedRoleId];
     }
 
     return {
@@ -140,9 +141,11 @@ function readState() {
           legacySettings.denyDmTemplate.trim()
             ? legacySettings.denyDmTemplate
             : null,
+        customTracks: normalizedCustomTracks,
       },
     };
   } catch {
+    setRuntimeCustomTracks([]);
     return defaultState();
   }
 }

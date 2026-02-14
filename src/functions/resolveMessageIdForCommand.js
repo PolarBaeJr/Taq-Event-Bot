@@ -9,13 +9,56 @@ function resolveMessageIdForCommand(interaction) {
     return explicitMessageId;
   }
 
+  const explicitApplicationId = interaction.options.getString("application_id");
+  if (explicitApplicationId) {
+    const state = readState();
+    const needle = normalizeApplicationIdForLookup(explicitApplicationId);
+    if (!needle) {
+      return null;
+    }
+    const matches = [];
+    for (const [messageId, application] of Object.entries(state.applications || {})) {
+      const candidate = normalizeApplicationIdForLookup(
+        getApplicationDisplayId(application, messageId)
+      );
+      if (candidate === needle) {
+        matches.push({ messageId, application });
+      }
+    }
+
+    if (matches.length === 1) {
+      return matches[0].messageId;
+    }
+
+    if (interaction.channel) {
+      const threadScoped = matches.filter(
+        (match) => match.application?.threadId === interaction.channel.id
+      );
+      if (threadScoped.length === 1) {
+        return threadScoped[0].messageId;
+      }
+
+      const channelScoped = matches.filter(
+        (match) => match.application?.channelId === interaction.channel.id
+      );
+      if (channelScoped.length === 1) {
+        return channelScoped[0].messageId;
+      }
+    }
+
+    return null;
+  }
+
   const explicitJobId = interaction.options.getString("job_id");
   if (explicitJobId) {
     const state = readState();
-    const needle = String(explicitJobId).trim().toLowerCase();
+    const needle = normalizeJobIdForLookup(explicitJobId);
+    if (!needle) {
+      return null;
+    }
     const matches = [];
     for (const [messageId, application] of Object.entries(state.applications || {})) {
-      if (String(application?.jobId || "").toLowerCase() === needle) {
+      if (normalizeJobIdForLookup(application?.jobId) === needle) {
         matches.push({ messageId, application });
       }
     }

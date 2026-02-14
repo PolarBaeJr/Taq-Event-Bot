@@ -229,6 +229,57 @@ npm start
 4. Add all env vars to `.env`.
 5. Set `GOOGLE_SERVICE_ACCOUNT_JSON` (raw JSON or base64 JSON) for easiest deploy.
 
+## Server Update Flow
+
+Use this when new code is pushed and you want to update the running bot on your VPS.
+
+1. On the server, go to the bot folder and pull latest code:
+```bash
+cd ~/Taq-Event-Bot
+git pull --ff-only origin main
+```
+
+2. Install/update dependencies (safe for production):
+```bash
+npm ci --omit=dev
+```
+
+3. Restart the bot and reload environment:
+```bash
+pm2 restart taq-event-bot --update-env
+```
+
+4. Verify it is healthy:
+```bash
+pm2 status
+pm2 logs taq-event-bot --lines 100
+```
+
+If your process was not created yet:
+```bash
+pm2 start ecosystem.config.cjs --name taq-event-bot
+pm2 save
+```
+
+### Important: Git-Ignored Files
+
+`git pull` does not bring `.env`, `service-account.json`, or `.bot-state.json`.
+
+Sync them from your local machine:
+```bash
+scp -i ~/.ssh/Discordbot.key \
+  /path/to/your/project/.env \
+  /path/to/your/project/service-account.json \
+  /path/to/your/project/.bot-state.json \
+  opc@159.54.167.100:~/Taq-Event-Bot/
+```
+
+Then on server:
+```bash
+chmod 600 ~/Taq-Event-Bot/.env ~/Taq-Event-Bot/service-account.json
+pm2 restart taq-event-bot --update-env
+```
+
 ## Notes
 
 - The bot stores processed row state in `.bot-state.json`.

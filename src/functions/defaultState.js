@@ -20,6 +20,7 @@ function defaultState() {
       acceptAnnounceChannelId: null,
       acceptAnnounceTemplate: null,
       denyDmTemplate: null,
+      customTracks: getCustomTracksSnapshot(),
     },
   };
 }

@@ -1,6 +1,6 @@
 {
   "name": "taq-event-team-bot",
-  "version": "0.0.0.1",
+  "version": "0.1.0.0",
   "description": "Reads Google Form responses from Google Sheets and posts to Discord with approval reactions.",
   "main": "src/index.js",
   "type": "commonjs",
