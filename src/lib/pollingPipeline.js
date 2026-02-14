@@ -49,6 +49,11 @@ function createPollingPipeline(options = {}) {
   const buildResponseKey = typeof options.buildResponseKey === "function"
     ? options.buildResponseKey
     : () => null;
+  const buildResponseKeyFromApplication =
+    typeof options.buildResponseKeyFromApplication === "function"
+      ? options.buildResponseKeyFromApplication
+      : () => null;
+  const client = options.client || null;
   const statusPending = String(options.statusPending || "pending");
   const acceptEmoji = String(options.acceptEmoji || "✅");
   const denyEmoji = String(options.denyEmoji || "❌");
@@ -82,6 +87,155 @@ function createPollingPipeline(options = {}) {
 
   let isProcessingPostJobs = false;
   let loggedNoChannelWarning = false;
+
+  function normalizeComparableText(value) {
+    return String(value || "")
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function extractTrackLabelFromContent(content) {
+    const match = /(?:^|\n)[^\n]*\*\*Track:\*\*\s*([^\n]+)/i.exec(String(content || ""));
+    if (!match) {
+      return "";
+    }
+    return normalizeComparableText(match[1].replace(/[`*_~]/g, ""));
+  }
+
+  function extractApplicationIdFromContent(content) {
+    const match = /application id:\s*`?([A-Za-z0-9]+-\d+)`?/i.exec(
+      String(content || "")
+    );
+    return match ? String(match[1]).trim() : null;
+  }
+
+  function parseSubmittedFieldsFromPostContent(content) {
+    const blockMatch = /```(?:\w+)?\n?([\s\S]*?)```/.exec(String(content || ""));
+    if (!blockMatch) {
+      return [];
+    }
+
+    const body = String(blockMatch[1] || "").replace(/\r\n/g, "\n").trim();
+    if (!body) {
+      return [];
+    }
+
+    const chunks = body.split(/\n\s*\n/);
+    const submittedFields = [];
+    for (const chunk of chunks) {
+      const line = String(chunk || "").trim();
+      if (!line) {
+        continue;
+      }
+
+      const separatorIndex = line.indexOf(":");
+      if (separatorIndex <= 0) {
+        continue;
+      }
+
+      const key = line.slice(0, separatorIndex).trim();
+      const value = line.slice(separatorIndex + 1).trim();
+      if (!key || !value) {
+        continue;
+      }
+
+      submittedFields.push(`**${key}:** ${value}`);
+    }
+
+    return submittedFields;
+  }
+
+  function buildSubmittedFieldsFingerprint(submittedFields) {
+    return submittedFields
+      .map((line) => normalizeComparableText(line))
+      .filter(Boolean)
+      .join("|");
+  }
+
+  async function findExistingApplicationPostInChannel({
+    channelId,
+    trackLabel,
+    targetResponseKey,
+    targetSubmittedFieldsFingerprint,
+  }) {
+    if (!client || !channelId) {
+      return null;
+    }
+
+    let channel;
+    try {
+      channel = await client.channels.fetch(channelId);
+    } catch {
+      return null;
+    }
+
+    if (!channel || !channel.isTextBased() || !channel.messages?.fetch) {
+      return null;
+    }
+
+    const normalizedTrackLabel = normalizeComparableText(trackLabel);
+    let before = null;
+    const maxPages = 4;
+
+    for (let page = 0; page < maxPages; page += 1) {
+      let messages;
+      try {
+        messages = await withRateLimitRetry(
+          "Search existing application post",
+          async () => channel.messages.fetch({ limit: 100, before: before || undefined })
+        );
+      } catch {
+        return null;
+      }
+
+      if (!messages || messages.size === 0) {
+        break;
+      }
+
+      for (const message of messages.values()) {
+        if (client.user?.id && message.author?.id && message.author.id !== client.user.id) {
+          continue;
+        }
+
+        const content = String(message.content || "");
+        if (!content || !content.includes("**New Application**")) {
+          continue;
+        }
+
+        const messageTrackLabel = extractTrackLabelFromContent(content);
+        if (normalizedTrackLabel && messageTrackLabel !== normalizedTrackLabel) {
+          continue;
+        }
+
+        const submittedFields = parseSubmittedFieldsFromPostContent(content);
+        if (submittedFields.length === 0) {
+          continue;
+        }
+
+        const messageResponseKey = String(
+          buildResponseKeyFromApplication({ submittedFields }) || ""
+        ).trim();
+        if (targetResponseKey && messageResponseKey && messageResponseKey === targetResponseKey) {
+          return message;
+        }
+
+        if (
+          targetSubmittedFieldsFingerprint &&
+          buildSubmittedFieldsFingerprint(submittedFields) === targetSubmittedFieldsFingerprint
+        ) {
+          return message;
+        }
+      }
+
+      before = messages.lastKey();
+      if (!before) {
+        break;
+      }
+    }
+
+    return null;
+  }
 
   async function postApplicationForJob(state, job) {
     const headers = Array.isArray(job.headers) ? job.headers : [];
@@ -126,6 +280,13 @@ function createPollingPipeline(options = {}) {
     const rowIndex = Number.isInteger(job.rowIndex) ? job.rowIndex : "unknown";
     const applicantName = inferApplicantName(headers, row);
     const postedTrackSet = new Set(postedTrackKeys);
+    const responseKey = String(job.responseKey || "").trim() || buildResponseKey(headers, row);
+    const submittedFieldsForRow = extractAnsweredFields(headers, row).map(
+      ({ key, value }) => `**${key}:** ${value}`
+    );
+    const submittedFieldsFingerprint = buildSubmittedFieldsFingerprint(
+      submittedFieldsForRow
+    );
 
     for (const trackKey of pendingTrackKeys) {
       const trackLabel = getTrackLabel(trackKey);
@@ -144,46 +305,63 @@ function createPollingPipeline(options = {}) {
         : { parse: [] };
       const builtApplicationId = buildApplicationId(trackKey, job.jobId);
 
-      const initialContent = makeApplicationPostContent({
-        applicationId: builtApplicationId,
-        trackKey,
-        applicantMention,
-        applicantRawValue: applicantDiscord.rawValue,
-        headers,
-        row,
+      const existingMessage = await findExistingApplicationPostInChannel({
+        channelId: configuredChannelId,
+        trackLabel,
+        targetResponseKey: responseKey,
+        targetSubmittedFieldsFingerprint: submittedFieldsFingerprint,
       });
 
-      const msg = await sendChannelMessage(
-        configuredChannelId,
-        initialContent,
-        allowedMentions
-      );
-      const postedChannelId = msg.channelId || configuredChannelId;
+      let msg = existingMessage;
+      if (!msg) {
+        const initialContent = makeApplicationPostContent({
+          applicationId: builtApplicationId,
+          trackKey,
+          applicantMention,
+          applicantRawValue: applicantDiscord.rawValue,
+          headers,
+          row,
+        });
 
-      const applicationId = builtApplicationId || msg.id;
-      const finalContent = makeApplicationPostContent({
-        applicationId,
-        trackKey,
-        applicantMention,
-        applicantRawValue: applicantDiscord.rawValue,
-        headers,
-        row,
-      });
-      if (finalContent !== initialContent) {
-        try {
-          await withRateLimitRetry("Edit message", async () =>
-            msg.edit({
-              content: finalContent,
-              allowedMentions,
-            })
-          );
-        } catch (err) {
-          console.error(
-            `[JOB ${job.jobId}] Failed updating application ID text for ${trackLabel}:`,
-            err.message
-          );
+        msg = await sendChannelMessage(
+          configuredChannelId,
+          initialContent,
+          allowedMentions
+        );
+
+        const resolvedApplicationId = builtApplicationId || msg.id;
+        const finalContent = makeApplicationPostContent({
+          applicationId: resolvedApplicationId,
+          trackKey,
+          applicantMention,
+          applicantRawValue: applicantDiscord.rawValue,
+          headers,
+          row,
+        });
+        if (finalContent !== initialContent) {
+          try {
+            await withRateLimitRetry("Edit message", async () =>
+              msg.edit({
+                content: finalContent,
+                allowedMentions,
+              })
+            );
+          } catch (err) {
+            console.error(
+              `[JOB ${job.jobId}] Failed updating application ID text for ${trackLabel}:`,
+              err.message
+            );
+          }
         }
+      } else {
+        console.log(
+          `[JOB ${job.jobId}] Reused existing ${trackLabel} application post (${msg.id}) in channel ${configuredChannelId}.`
+        );
       }
+
+      const postedChannelId = msg.channelId || configuredChannelId;
+      const applicationId =
+        extractApplicationIdFromContent(msg.content) || builtApplicationId || msg.id;
 
       try {
         await addReaction(postedChannelId, msg.id, acceptEmoji);
@@ -195,40 +373,46 @@ function createPollingPipeline(options = {}) {
         );
       }
 
-      let thread = null;
-      try {
-        thread = await createThread(
-          postedChannelId,
-          msg.id,
-          `${trackLabel} Application - ${applicantName}`
-        );
-      } catch (err) {
-        console.error(
-          `[JOB ${job.jobId}] Failed creating thread for ${trackLabel}:`,
-          err.message
-        );
+      let threadId = msg.hasThread ? msg.thread?.id || msg.id : null;
+      if (!threadId) {
+        try {
+          const thread = await createThread(
+            postedChannelId,
+            msg.id,
+            `${trackLabel} Application - ${applicantName}`
+          );
+          threadId = thread?.id || null;
+        } catch (err) {
+          const errorMessage = String(err?.message || "");
+          if (errorMessage.toLowerCase().includes("already has a thread")) {
+            threadId = msg.id;
+          } else {
+            console.error(
+              `[JOB ${job.jobId}] Failed creating thread for ${trackLabel}:`,
+              err.message
+            );
+          }
+        }
       }
 
       state.applications[msg.id] = {
         messageId: msg.id,
         applicationId,
         channelId: postedChannelId,
-        threadId: thread?.id || null,
+        threadId,
         status: statusPending,
         trackKey,
         rowIndex: typeof rowIndex === "number" ? rowIndex : null,
-        responseKey: String(job.responseKey || "").trim() || buildResponseKey(headers, row),
+        responseKey,
         jobId: job.jobId,
         applicantName,
         applicantUserId: applicantDiscord.userId || null,
         createdAt: new Date().toISOString(),
-        submittedFields: extractAnsweredFields(headers, row).map(
-          ({ key, value }) => `**${key}:** ${value}`
-        ),
+        submittedFields: submittedFieldsForRow,
       };
 
-      if (thread?.id) {
-        state.threads[thread.id] = msg.id;
+      if (threadId) {
+        state.threads[threadId] = msg.id;
       }
 
       postedTrackSet.add(trackKey);

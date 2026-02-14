@@ -64,6 +64,12 @@ function createSlashCommandLifecycle(options = {}) {
       )
       .addChannelOption((option) =>
         option
+          .setName("accept_message")
+          .setDescription("Accepted-announcement channel used by /accept")
+          .setRequired(false)
+      )
+      .addChannelOption((option) =>
+        option
           .setName("bug")
           .setDescription("Bug report channel used by /bug")
           .setRequired(false)
@@ -78,6 +84,7 @@ function createSlashCommandLifecycle(options = {}) {
         option
           .setName("track")
           .setDescription("Track key/label for `post_channel` (supports custom tracks)")
+          .setAutocomplete(true)
           .setRequired(false)
       )
       .addChannelOption((option) =>
@@ -138,6 +145,7 @@ function createSlashCommandLifecycle(options = {}) {
           option
             .setName("track")
             .setDescription("Application track for these roles")
+            .setAutocomplete(true)
             .setRequired(true)
         )
         .addRoleOption((option) =>
@@ -329,6 +337,7 @@ function createSlashCommandLifecycle(options = {}) {
           option
             .setName("track")
             .setDescription("Optional track label override for debug tests")
+            .setAutocomplete(true)
             .setRequired(false)
         )
         .addStringOption((option) =>

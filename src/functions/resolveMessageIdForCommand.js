@@ -4,15 +4,32 @@
 */
 
 function resolveMessageIdForCommand(interaction) {
-  const explicitMessageId = interaction.options.getString("message_id");
-  if (explicitMessageId) {
-    return explicitMessageId;
+  function resolveUniqueMatch(matches) {
+    if (matches.length === 1) {
+      return matches[0].messageId;
+    }
+
+    if (interaction.channel) {
+      const threadScoped = matches.filter(
+        (match) => match.application?.threadId === interaction.channel.id
+      );
+      if (threadScoped.length === 1) {
+        return threadScoped[0].messageId;
+      }
+
+      const channelScoped = matches.filter(
+        (match) => match.application?.channelId === interaction.channel.id
+      );
+      if (channelScoped.length === 1) {
+        return channelScoped[0].messageId;
+      }
+    }
+
+    return null;
   }
 
-  const explicitApplicationId = interaction.options.getString("application_id");
-  if (explicitApplicationId) {
-    const state = readState();
-    const needle = normalizeApplicationIdForLookup(explicitApplicationId);
+  function resolveByApplicationId(state, rawApplicationId) {
+    const needle = normalizeApplicationIdForLookup(rawApplicationId);
     if (!needle) {
       return null;
     }
@@ -25,34 +42,11 @@ function resolveMessageIdForCommand(interaction) {
         matches.push({ messageId, application });
       }
     }
-
-    if (matches.length === 1) {
-      return matches[0].messageId;
-    }
-
-    if (interaction.channel) {
-      const threadScoped = matches.filter(
-        (match) => match.application?.threadId === interaction.channel.id
-      );
-      if (threadScoped.length === 1) {
-        return threadScoped[0].messageId;
-      }
-
-      const channelScoped = matches.filter(
-        (match) => match.application?.channelId === interaction.channel.id
-      );
-      if (channelScoped.length === 1) {
-        return channelScoped[0].messageId;
-      }
-    }
-
-    return null;
+    return resolveUniqueMatch(matches);
   }
 
-  const explicitJobId = interaction.options.getString("job_id");
-  if (explicitJobId) {
-    const state = readState();
-    const needle = normalizeJobIdForLookup(explicitJobId);
+  function resolveByJobId(state, rawJobId) {
+    const needle = normalizeJobIdForLookup(rawJobId);
     if (!needle) {
       return null;
     }
@@ -62,28 +56,33 @@ function resolveMessageIdForCommand(interaction) {
         matches.push({ messageId, application });
       }
     }
+    return resolveUniqueMatch(matches);
+  }
 
-    if (matches.length === 1) {
-      return matches[0].messageId;
+  const explicitMessageId = interaction.options.getString("message_id");
+  if (explicitMessageId) {
+    const trimmedMessageId = explicitMessageId.trim();
+    if (isSnowflake(trimmedMessageId)) {
+      return trimmedMessageId;
     }
 
-    if (interaction.channel) {
-      const threadScoped = matches.filter(
-        (match) => match.application?.threadId === interaction.channel.id
-      );
-      if (threadScoped.length === 1) {
-        return threadScoped[0].messageId;
-      }
+    const state = readState();
+    const compatibilityMatch =
+      resolveByApplicationId(state, trimmedMessageId) ||
+      resolveByJobId(state, trimmedMessageId);
+    return compatibilityMatch;
+  }
 
-      const channelScoped = matches.filter(
-        (match) => match.application?.channelId === interaction.channel.id
-      );
-      if (channelScoped.length === 1) {
-        return channelScoped[0].messageId;
-      }
-    }
+  const explicitApplicationId = interaction.options.getString("application_id");
+  if (explicitApplicationId) {
+    const state = readState();
+    return resolveByApplicationId(state, explicitApplicationId);
+  }
 
-    return null;
+  const explicitJobId = interaction.options.getString("job_id");
+  if (explicitJobId) {
+    const state = readState();
+    return resolveByJobId(state, explicitJobId);
   }
 
   if (interaction.channel && interaction.channel.type === ChannelType.PublicThread) {

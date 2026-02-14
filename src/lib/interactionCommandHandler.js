@@ -53,6 +53,89 @@ function createInteractionCommandHandler(options = {}) {
 
   return async function onInteractionCreate(interaction) {
     try {
+      if (interaction.isAutocomplete()) {
+        const focused = interaction.options.getFocused(true);
+        const supportsTrackAutocomplete =
+          focused?.name === "track" &&
+          (interaction.commandName === "setapprole" ||
+            interaction.commandName === "setchannel" ||
+            interaction.commandName === "debug");
+
+        if (!supportsTrackAutocomplete) {
+          await interaction.respond([]);
+          return;
+        }
+
+        const query = String(focused.value || "").trim().toLowerCase();
+        const tracks = getApplicationTracks()
+          .map((track) => {
+            const key = String(track?.key || "").trim();
+            const label = String(track?.label || key).trim() || key;
+            const aliases = Array.isArray(track?.aliases)
+              ? track.aliases
+                  .map((alias) => String(alias || "").trim().toLowerCase())
+                  .filter(Boolean)
+              : [];
+
+            if (!key) {
+              return null;
+            }
+
+            const keyLower = key.toLowerCase();
+            const labelLower = label.toLowerCase();
+            let score = 4;
+
+            if (!query) {
+              score = 0;
+            } else if (keyLower === query || labelLower === query || aliases.includes(query)) {
+              score = 0;
+            } else if (
+              keyLower.startsWith(query) ||
+              labelLower.startsWith(query) ||
+              aliases.some((alias) => alias.startsWith(query))
+            ) {
+              score = 1;
+            } else if (
+              keyLower.includes(query) ||
+              labelLower.includes(query) ||
+              aliases.some((alias) => alias.includes(query))
+            ) {
+              score = 2;
+            }
+
+            return {
+              key,
+              label,
+              score,
+            };
+          })
+          .filter(Boolean);
+
+        const suggestions = tracks
+          .filter((track) => track.score < 4)
+          .sort((a, b) => a.score - b.score || a.label.localeCompare(b.label))
+          .slice(0, 25)
+          .map((track) => ({
+            name: `${track.label} (${track.key})`.slice(0, 100),
+            value: track.key.slice(0, 100),
+          }));
+
+        if (suggestions.length > 0) {
+          await interaction.respond(suggestions);
+          return;
+        }
+
+        const fallback = tracks
+          .sort((a, b) => a.label.localeCompare(b.label))
+          .slice(0, 25)
+          .map((track) => ({
+            name: `${track.label} (${track.key})`.slice(0, 100),
+            value: track.key.slice(0, 100),
+          }));
+        await interaction.respond(fallback);
+        return;
+      }
+
       if (!interaction.isChatInputCommand()) {
         return;
       }
@@ -607,6 +690,7 @@ function createInteractionCommandHandler(options = {}) {
         const dynamicTrackInput = interaction.options.getString("track");
         const dynamicTrackChannelInput = interaction.options.getChannel("post_channel");
         const logChannelInput = interaction.options.getChannel("log");
+        const acceptMessageChannelInput = interaction.options.getChannel("accept_message");
         const bugChannelInput = interaction.options.getChannel("bug");
         const suggestionsChannelInput = interaction.options.getChannel("suggestions");
 
@@ -654,7 +738,10 @@ function createInteractionCommandHandler(options = {}) {
             isSnowflake(id)
           );
           const hasNonTrackChannelOption = Boolean(
-            logChannelInput || bugChannelInput || suggestionsChannelInput
+            logChannelInput ||
+              acceptMessageChannelInput ||
+              bugChannelInput ||
+              suggestionsChannelInput
           );
           const shouldAutoSetDefaultTrackFromCurrent =
             !hasExistingTrackChannel || !hasNonTrackChannelOption;
@@ -712,6 +799,18 @@ function createInteractionCommandHandler(options = {}) {
           }
         }
 
+        let nextAcceptAnnounceChannelId = getActiveAcceptAnnounceChannelId();
+        if (acceptMessageChannelInput) {
+          if (acceptMessageChannelInput.type !== ChannelType.GuildText) {
+            await interaction.reply({
+              content: "Please choose a guild text channel for `accept_message`.",
+              ephemeral: true,
+            });
+            return;
+          }
+          nextAcceptAnnounceChannelId = acceptMessageChannelInput.id;
+        }
+
         let nextBugChannelId = getActiveBugChannelIdForSetChannel();
         if (bugChannelInput) {
           if (bugChannelInput.type !== ChannelType.GuildText) {
@@ -745,6 +844,9 @@ function createInteractionCommandHandler(options = {}) {
         }
         if (isSnowflake(nextLogChannelId)) {
           setActiveLogsChannel(nextLogChannelId);
+        }
+        if (isSnowflake(nextAcceptAnnounceChannelId)) {
+          setActiveAcceptAnnounceChannel(nextAcceptAnnounceChannelId);
         }
         if (isSnowflake(nextBugChannelId)) {
           setActiveBugChannel(nextBugChannelId);
@@ -785,6 +887,11 @@ function createInteractionCommandHandler(options = {}) {
             `Application log channel: ${
               isSnowflake(nextLogChannelId) ? `<#${nextLogChannelId}>` : "not set"
             }`,
+            `Accept message channel: ${
+              isSnowflake(nextAcceptAnnounceChannelId)
+                ? `<#${nextAcceptAnnounceChannelId}>`
+                : "not set"
+            }`,
             `Bug channel: ${
               isSnowflake(nextBugChannelId) ? `<#${nextBugChannelId}>` : "not set"
             }`,
@@ -808,6 +915,11 @@ function createInteractionCommandHandler(options = {}) {
           ...trackChannelLogLines,
           `**Log Channel:** ${
             isSnowflake(nextLogChannelId) ? `<#${nextLogChannelId}>` : "not set"
+          }`,
+          `**Accept Message Channel:** ${
+            isSnowflake(nextAcceptAnnounceChannelId)
+              ? `<#${nextAcceptAnnounceChannelId}>`
+              : "not set"
           }`,
           `**Bug Channel:** ${
             isSnowflake(nextBugChannelId) ? `<#${nextBugChannelId}>` : "not set"

@@ -8,7 +8,7 @@ Simple Node.js bot that:
 4. Requires a `2/3` supermajority of members with channel access to decide.
 5. Supports force override with `/accept` and `/deny`.
 6. Supports `/setchannel` so you can configure track channels in Discord (no code edit).
-7. `/setchannel` configures tester/builder/cmd post channels, log channel, bug channel, and suggestions channel.
+7. `/setchannel` configures tester/builder/cmd post channels, log channel, accept-message channel, bug channel, and suggestions channel.
 8. Creates a thread per application message for team discussion.
 9. Creates an `application-logs` channel and posts full close-history when an application is decided.
 10. Queues each application post as a persistent job (`job-000001`, etc.) and replays failed jobs in row order.
@@ -48,7 +48,7 @@ Required keys:
 - `DISCORD_LOGS_CHANNEL_ID` (optional fallback if you do not use `/setchannel`)
 - `DISCORD_BUG_CHANNEL_ID` (optional fallback if you do not use `/setchannel`)
 - `DISCORD_SUGGESTIONS_CHANNEL_ID` (optional fallback if you do not use `/setchannel`)
-- `ACCEPT_ANNOUNCE_CHANNEL_ID` (optional fallback if you do not use `/setaccept`)
+- `ACCEPT_ANNOUNCE_CHANNEL_ID` (optional fallback if you do not use `/setaccept` or `/setchannel accept_message:#channel`)
 - `ACCEPT_ANNOUNCE_TEMPLATE` (optional; message sent to configured channel when accepted)
 - `DENY_DM_TEMPLATE` (optional; DM template sent to `discord_ID` when denied)
 - `DISCORD_THREAD_AUTO_ARCHIVE_MINUTES`
@@ -123,7 +123,7 @@ Behavior:
 
 Recommended:
 ```text
-/setchannel tester_post:#tester-apps builder_post:#builder-apps cmd_post:#cmd-apps log:#application-log bug:#bug-reports suggestions:#team-suggestions
+/setchannel tester_post:#tester-apps builder_post:#builder-apps cmd_post:#cmd-apps log:#application-log accept_message:#welcome-team bug:#bug-reports suggestions:#team-suggestions
 ```
 
 Send a bug report (creates a thread for discussion):
@@ -289,11 +289,12 @@ pm2 restart taq-event-bot --update-env
 - After `/setchannel` succeeds, queued failed jobs are replayed immediately.
 - If you want to reprocess from the start, delete `.bot-state.json`.
 - Prefer `/setchannel` to set channel from Discord directly.
-- `/setchannel` updates per-track post channels (`tester_post`, `builder_post`, `cmd_post`), log channel, `bug`, and `suggestions`.
+- `/setchannel` updates per-track post channels (`tester_post`, `builder_post`, `cmd_post`), log channel, `accept_message`, `bug`, and `suggestions`.
 - Track routing is inferred from your form response values using keywords like `tester`, `builder`, and `cmd`/`command`. If none is found, it defaults to `tester`.
 - Multi-select role responses are supported. One row can post to multiple track channels (one application post per selected track).
 - Empty/unanswered form questions are omitted from Discord application posts and stored history.
 - Polling deduplicates by response identity (timestamp + form identity fields), so row deletions/reordering in the sheet do not block new submissions.
+- Before posting, bot scans recent channel history and reuses an existing matching application post (same track + form-content fingerprint) to avoid reposting from another bot instance.
 - Multiple submissions from the same Discord ID are supported.
 - `DISCORD_LOGS_CHANNEL_NAME` controls default logs channel name (default `application-logs`).
 - `DISCORD_LOGS_CHANNEL_ID` overrides logs channel directly.
@@ -308,11 +309,12 @@ pm2 restart taq-event-bot --update-env
 - Forced `/accept` and `/deny` also post the rendered accept/deny message template into that specific application thread.
 - `/setchannel` requires `Manage Server` (or `Administrator`).
 - `/setchannel` can be run with no options to set tester channel to the current channel.
-- `/setchannel` supports `log:#channel`, `bug:#channel`, and `suggestions:#channel`.
+- `/setchannel` supports `log:#channel`, `accept_message:#channel`, `bug:#channel`, and `suggestions:#channel`.
 - `/bug` sends the report into the configured bug channel and opens a discussion thread.
 - `/suggestions` (and `/suggestion`) sends the idea into the configured suggestions channel and opens a discussion thread.
 - `/setapprole` requires both `Manage Server` and `Manage Roles`, or `Administrator`.
 - `/setapprole` requires exactly one `track` per command and overwrites that track's roles.
+- `track` options on `/setapprole`, `/setchannel`, and `/debug` support autocomplete suggestions.
 - `/setapprole` supports up to 5 roles in one command: `role`, `role_2`, `role_3`, `role_4`, `role_5`.
 - `/setapprole` writes a configuration update entry to the configured logs channel.
 - `/setdenymsg` requires `Manage Server` (or `Administrator`) and sets the denied-DM template.
