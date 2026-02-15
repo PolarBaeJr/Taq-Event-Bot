@@ -5,14 +5,15 @@ Simple Node.js bot that:
 1. Reads new Google Form responses from the linked Google Sheet.
 2. Routes applications to per-track channels (`Tester`, `Builder`, `CMD`) and posts with the bot account.
 3. Adds `✅` and `❌` reactions for approve/decline voting.
-4. Requires a `2/3` supermajority of members with channel access to decide.
-5. Supports force override with `/accept` and `/deny`.
+4. Uses per-track configurable vote thresholds (default `2/3`, minimum 1 vote) for decisions.
+5. Supports force override with `/accept` and `/deny` (with optional reason), and undo flow with `/reopen`.
 6. Supports `/setchannel` so you can configure track channels in Discord (no code edit).
 7. `/setchannel` configures tester/builder/cmd post channels, log channel, accept-message channel, bug channel, and suggestions channel.
-8. Creates a thread per application message for team discussion.
-9. Creates an `application-logs` channel and posts full close-history when an application is decided.
-10. Queues each application post as a persistent job (`job-000001`, etc.) and replays failed jobs in row order.
-11. Can auto-grant a configured role when an application is accepted.
+8. Posts applications, bug reports, and suggestions in embedded format.
+9. Creates a thread per application/feedback message for team discussion.
+10. Creates an `application-logs` channel and posts full close-history when an application is decided.
+11. Queues each application post as a persistent job (`job-000001`, etc.) and replays failed jobs in row order.
+12. Can auto-grant configured roles, send stale-pending reminders, post daily digests, and detect duplicate applications.
 
 ## Requirements
 
@@ -52,6 +53,11 @@ Required keys:
 - `ACCEPT_ANNOUNCE_TEMPLATE` (optional; message sent to configured channel when accepted)
 - `DENY_DM_TEMPLATE` (optional; DM template sent to `discord_ID` when denied)
 - `DISCORD_THREAD_AUTO_ARCHIVE_MINUTES`
+- `REMINDER_THRESHOLD_HOURS` (optional; stale pending reminder threshold, default `24`)
+- `REMINDER_REPEAT_HOURS` (optional; reminder repeat cadence, default `12`)
+- `DAILY_DIGEST_ENABLED` (optional; `true`/`false`, default `true`)
+- `DAILY_DIGEST_HOUR_UTC` (optional; `0-23`, default `15`)
+- `DUPLICATE_LOOKBACK_DAYS` (optional; duplicate detection lookback window, default `60`)
 - `DISCORD_TESTER_APPROVED_ROLE_IDS` (optional CSV list fallback if you do not use `/setapprole`)
 - `DISCORD_BUILDER_APPROVED_ROLE_IDS` (optional CSV list fallback if you do not use `/setapprole`)
 - `DISCORD_CMD_APPROVED_ROLE_IDS` (optional CSV list fallback if you do not use `/setapprole`)
@@ -136,6 +142,14 @@ Send a suggestion (creates a thread for discussion):
 /suggestions message:Add a quick filter for pending applications
 ```
 
+Track management:
+```text
+/track add name:Scripter aliases:scripter,scripts
+/track edit track:scripter name:Lead Scripter aliases:scripter,lead scripts
+/track remove track:scripter
+/track list
+```
+
 Set role granted on accepted applications:
 ```text
 /setapprole track:tester role:@TesterRole role_2:@HelperRole role_3:@AnotherRole
@@ -152,6 +166,29 @@ Set denied DM template (sent to applicant `discord_ID`):
 Set accepted announcement channel/message:
 ```text
 /setaccept channel:#welcome-team message:Welcome to {track} team, if you need any information please contact administrators.
+```
+
+Dashboard and settings:
+```text
+/dashboard
+/settings show
+/settings vote track:tester numerator:2 denominator:3 minimum_votes:2
+/settings reminders enabled:true threshold_hours:24 repeat_hours:12
+/settings reviewers track:tester mentions:@LeadReviewer @BackupReviewer
+/settings digest enabled:true hour_utc:15
+```
+
+Config backup/restore:
+```text
+/config export
+/config import json:{"settings":{"dailyDigest":{"enabled":true,"hourUtc":15}}}
+```
+
+Decision controls:
+```text
+/accept job_id:job-000123 reason:Strong trial + clean history
+/deny message_id:1234567890123456789 reason:Missing requirements
+/reopen job_id:job-000123 reason:Needs second review
 ```
 
 Post a structured bot message in the current channel:
@@ -298,23 +335,31 @@ pm2 restart taq-event-bot --update-env
 - Multiple submissions from the same Discord ID are supported.
 - `DISCORD_LOGS_CHANNEL_NAME` controls default logs channel name (default `application-logs`).
 - `DISCORD_LOGS_CHANNEL_ID` overrides logs channel directly.
+- Application posts are sent as embeds.
+- `/bug`, `/suggestions`, and `/suggestion` posts are sent as embeds.
 - Votes are counted only from non-bot users who can view the configured channel.
+- Vote rules are configurable per track via `/settings vote` (default `2/3`, min `1` vote).
 - Users reacting with both `✅` and `❌` are ignored until they keep only one side.
 - Slash commands auto-register to the guild from `DISCORD_GUILD_ID` or active `/setchannel` channel.
 - `DISCORD_GUILD_ID` is optional and only used as an explicit override.
 - On startup, the bot audits required permissions and exits with missing permission names if setup is incomplete.
 - `/accept` and `/deny` require both `Manage Server` and `Manage Roles`, or `Administrator`.
-- `/accept` and `/deny` can target by `message_id`, by `job_id`, or from inside the application thread.
+- `/accept` and `/deny` can target by `message_id`, by `job_id`, or from inside the application thread, and support optional `reason`.
 - If one `job_id` created multiple track posts, run `/accept` or `/deny` inside the target track thread/channel, or pass `message_id`.
 - Forced `/accept` and `/deny` also post the rendered accept/deny message template into that specific application thread.
+- `/reopen` reopens a decided application back to pending (it does not auto-revert prior side effects).
+- `/dashboard` shows per-track pending/accepted/denied counts, oldest pending age, and vote rule.
+- `/settings` controls vote rules, stale reminders, reviewer assignment, and daily digests.
+- `/config export` DMs JSON config backup; `/config import` restores settings from JSON.
 - `/setchannel` requires `Manage Server` (or `Administrator`).
 - `/setchannel` can be run with no options to set tester channel to the current channel.
 - `/setchannel` supports `log:#channel`, `accept_message:#channel`, `bug:#channel`, and `suggestions:#channel`.
-- `/bug` sends the report into the configured bug channel and opens a discussion thread.
-- `/suggestions` (and `/suggestion`) sends the idea into the configured suggestions channel and opens a discussion thread.
+- `/bug` sends an embedded bug report into the configured bug channel and opens a discussion thread.
+- `/suggestions` (and `/suggestion`) sends an embedded idea into the configured suggestions channel and opens a discussion thread.
 - `/setapprole` requires both `Manage Server` and `Manage Roles`, or `Administrator`.
 - `/setapprole` requires exactly one `track` per command and overwrites that track's roles.
-- `track` options on `/setapprole`, `/setchannel`, and `/debug` support autocomplete suggestions.
+- `track` options on `/setapprole`, `/setchannel`, `/debug`, `/track edit/remove`, and `/settings vote/reviewers` support autocomplete suggestions.
+- `/track` supports `add`, `edit`, `remove`, and `list`.
 - `/setapprole` supports up to 5 roles in one command: `role`, `role_2`, `role_3`, `role_4`, `role_5`.
 - `/setapprole` writes a configuration update entry to the configured logs channel.
 - `/setdenymsg` requires `Manage Server` (or `Administrator`) and sets the denied-DM template.
@@ -324,7 +369,11 @@ pm2 restart taq-event-bot --update-env
 - `/structuredmsg` requires `Manage Server` (or `Administrator`) and posts in the current channel.
 - Denied applications DM the resolved `discord_ID` user automatically (if available).
 - Supported denied-DM placeholders: `{user}`, `{user_id}`, `{applicant_name}`, `{track}`, `{application_id}`, `{job_id}`, `{server}`, `{decision_source}`, `{reason}`, `{decided_at}`.
-- Supported accepted-announcement placeholders: `{user}`, `{user_id}`, `{applicant_name}`, `{track}`, `{application_id}`, `{job_id}`, `{server}`, `{role_result}`, `{decided_at}`.
+- Supported accepted-announcement placeholders: `{user}`, `{user_id}`, `{applicant_name}`, `{track}`, `{application_id}`, `{job_id}`, `{server}`, `{role_result}`, `{reason}`, `{decided_at}`.
+- Stale pending reminders can be configured with `/settings reminders`.
+- Reviewer assignment rotation can be configured with `/settings reviewers`.
+- Daily digest schedule can be configured with `/settings digest`.
+- Duplicate application warnings are posted automatically when matching recent submissions are detected.
 - `/debug`, `/stop`, and `/restart` require `Manage Server`, or `Administrator`.
 - `/debug` sends results by DM; if DMs are closed, the bot warns you in-channel.
 - `/debug mode:post_test` supports `track` so you can test each application channel.

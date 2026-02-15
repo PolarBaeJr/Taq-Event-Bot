@@ -68,6 +68,26 @@ function createApplicationFormUtils(options = {}) {
     return answered.map(({ key, value }) => `${key}: ${value}`).join("\n\n");
   }
 
+  function truncateForEmbed(value, maxLength) {
+    const text = String(value || "");
+    if (text.length <= maxLength) {
+      return text;
+    }
+    return `${text.slice(0, Math.max(0, maxLength - 16))}\n...[truncated]`;
+  }
+
+  function resolveTrackEmbedColor(trackKey) {
+    const source = String(trackKey || "track").toLowerCase();
+    let hash = 0;
+    for (let i = 0; i < source.length; i += 1) {
+      hash = (hash * 31 + source.charCodeAt(i)) & 0xffffff;
+    }
+    if (hash === 0) {
+      return 0x2b2d31;
+    }
+    return hash;
+  }
+
   function inferApplicantDiscordValue(headers, row) {
     let fallback = null;
     for (let i = 0; i < headers.length; i += 1) {
@@ -165,18 +185,41 @@ function createApplicationFormUtils(options = {}) {
     headers,
     row,
   }) {
-    const lines = ["📥 **New Application**"];
-    lines.push(`🧭 **Track:** ${getTrackLabel(trackKey)}`);
+    const trackLabel = getTrackLabel(trackKey);
+    const detailsText = truncateForEmbed(makeApplicationContent(headers, row), 3800);
+    const fields = [
+      {
+        name: "Track",
+        value: trackLabel,
+        inline: true,
+      },
+    ];
     if (applicationId) {
-      lines.push(`🧩 **Application ID:** \`${applicationId}\``);
+      fields.push({
+        name: "Application ID",
+        value: `\`${applicationId}\``,
+        inline: true,
+      });
     }
-    if (applicantMention) {
-      lines.push(`👤 **Discord User:** ${applicantMention}`);
-    } else if (applicantRawValue) {
-      lines.push(`👤 **Discord User:** ${applicantRawValue}`);
+    if (applicantMention || applicantRawValue) {
+      fields.push({
+        name: "Discord User",
+        value: applicantMention || truncateForEmbed(applicantRawValue, 256),
+        inline: true,
+      });
     }
-    lines.push("", toCodeBlock(makeApplicationContent(headers, row)));
-    return lines.join("\n");
+
+    return {
+      content: applicantMention || "",
+      embeds: [
+        {
+          title: "📥 New Application",
+          color: resolveTrackEmbedColor(trackKey),
+          fields,
+          description: toCodeBlock(detailsText),
+        },
+      ],
+    };
   }
 
   async function sendDebugDm(user, text) {

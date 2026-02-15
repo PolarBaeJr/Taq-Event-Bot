@@ -84,6 +84,22 @@ function createPollingPipeline(options = {}) {
   const createPostJob = typeof options.createPostJob === "function"
     ? options.createPostJob
     : () => null;
+  const findDuplicateApplications =
+    typeof options.findDuplicateApplications === "function"
+      ? options.findDuplicateApplications
+      : () => [];
+  const postDuplicateWarning =
+    typeof options.postDuplicateWarning === "function"
+      ? options.postDuplicateWarning
+      : async () => {};
+  const announceReviewerAssignment =
+    typeof options.announceReviewerAssignment === "function"
+      ? options.announceReviewerAssignment
+      : async () => {};
+  const onApplicationCreated =
+    typeof options.onApplicationCreated === "function"
+      ? options.onApplicationCreated
+      : () => {};
 
   let isProcessingPostJobs = false;
   let loggedNoChannelWarning = false;
@@ -108,6 +124,75 @@ function createPollingPipeline(options = {}) {
       String(content || "")
     );
     return match ? String(match[1]).trim() : null;
+  }
+
+  function stripDecorators(value) {
+    return String(value || "")
+      .replace(/[`*_~]/g, "")
+      .replace(/^<@!?\d+>$/g, "")
+      .trim();
+  }
+
+  function getPrimaryEmbed(message) {
+    if (!message || !Array.isArray(message.embeds) || message.embeds.length === 0) {
+      return null;
+    }
+    return message.embeds[0];
+  }
+
+  function extractTrackLabelFromEmbed(embed) {
+    if (!embed || !Array.isArray(embed.fields)) {
+      return "";
+    }
+    const field = embed.fields.find((entry) =>
+      normalizeComparableText(entry?.name) === "track"
+    );
+    if (!field) {
+      return "";
+    }
+    return normalizeComparableText(stripDecorators(field.value));
+  }
+
+  function extractApplicationIdFromEmbed(embed) {
+    if (!embed || !Array.isArray(embed.fields)) {
+      return null;
+    }
+    const field = embed.fields.find((entry) =>
+      normalizeComparableText(entry?.name) === "application id"
+    );
+    if (!field) {
+      return null;
+    }
+    const raw = stripDecorators(field.value);
+    return raw || null;
+  }
+
+  function extractTrackLabelFromMessage(message) {
+    const fromContent = extractTrackLabelFromContent(message?.content);
+    if (fromContent) {
+      return fromContent;
+    }
+    return extractTrackLabelFromEmbed(getPrimaryEmbed(message));
+  }
+
+  function extractApplicationIdFromMessage(message) {
+    const fromContent = extractApplicationIdFromContent(message?.content);
+    if (fromContent) {
+      return fromContent;
+    }
+
+    const embed = getPrimaryEmbed(message);
+    const fromEmbedField = extractApplicationIdFromEmbed(embed);
+    if (fromEmbedField) {
+      return fromEmbedField;
+    }
+
+    const fromEmbedDescription = extractApplicationIdFromContent(embed?.description || "");
+    if (fromEmbedDescription) {
+      return fromEmbedDescription;
+    }
+
+    return null;
   }
 
   function parseSubmittedFieldsFromPostContent(content) {
@@ -144,6 +229,71 @@ function createPollingPipeline(options = {}) {
     }
 
     return submittedFields;
+  }
+
+  function parseSubmittedFieldsFromEmbed(embed) {
+    if (!embed || typeof embed !== "object") {
+      return [];
+    }
+
+    const fromDescription = parseSubmittedFieldsFromPostContent(embed.description || "");
+    if (fromDescription.length > 0) {
+      return fromDescription;
+    }
+
+    if (!Array.isArray(embed.fields)) {
+      return [];
+    }
+
+    const metadataNames = new Set(["track", "application id", "discord user"]);
+    const submittedFields = [];
+    for (const field of embed.fields) {
+      const name = stripDecorators(field?.name);
+      const value = stripDecorators(field?.value);
+      if (!name || !value) {
+        continue;
+      }
+      if (metadataNames.has(normalizeComparableText(name))) {
+        continue;
+      }
+      submittedFields.push(`**${name}:** ${value}`);
+    }
+    return submittedFields;
+  }
+
+  function parseSubmittedFieldsFromMessage(message) {
+    const fromContent = parseSubmittedFieldsFromPostContent(message?.content || "");
+    if (fromContent.length > 0) {
+      return fromContent;
+    }
+    return parseSubmittedFieldsFromEmbed(getPrimaryEmbed(message));
+  }
+
+  function isApplicationPostMessage(message) {
+    const content = normalizeComparableText(message?.content || "");
+    if (content.includes("new application")) {
+      return true;
+    }
+
+    const embed = getPrimaryEmbed(message);
+    const title = normalizeComparableText(embed?.title || "");
+    if (title.includes("new application")) {
+      return true;
+    }
+
+    return false;
+  }
+
+  function normalizeMessagePayload(payload, allowedMentions) {
+    if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+      return {
+        ...payload,
+      };
+    }
+    return {
+      content: String(payload || ""),
+      allowedMentions,
+    };
   }
 
   function buildSubmittedFieldsFingerprint(submittedFields) {
@@ -198,17 +348,20 @@ function createPollingPipeline(options = {}) {
           continue;
         }
 
-        const content = String(message.content || "");
-        if (!content || !content.includes("**New Application**")) {
+        if (!isApplicationPostMessage(message)) {
           continue;
         }
 
-        const messageTrackLabel = extractTrackLabelFromContent(content);
-        if (normalizedTrackLabel && messageTrackLabel !== normalizedTrackLabel) {
+        const messageTrackLabel = extractTrackLabelFromMessage(message);
+        if (
+          normalizedTrackLabel &&
+          messageTrackLabel &&
+          messageTrackLabel !== normalizedTrackLabel
+        ) {
           continue;
         }
 
-        const submittedFields = parseSubmittedFieldsFromPostContent(content);
+        const submittedFields = parseSubmittedFieldsFromMessage(message);
         if (submittedFields.length === 0) {
           continue;
         }
@@ -314,36 +467,43 @@ function createPollingPipeline(options = {}) {
 
       let msg = existingMessage;
       if (!msg) {
-        const initialContent = makeApplicationPostContent({
-          applicationId: builtApplicationId,
-          trackKey,
-          applicantMention,
-          applicantRawValue: applicantDiscord.rawValue,
-          headers,
-          row,
-        });
+        const initialPayload = normalizeMessagePayload(
+          makeApplicationPostContent({
+            applicationId: builtApplicationId,
+            trackKey,
+            applicantMention,
+            applicantRawValue: applicantDiscord.rawValue,
+            headers,
+            row,
+          }),
+          allowedMentions
+        );
 
         msg = await sendChannelMessage(
           configuredChannelId,
-          initialContent,
+          initialPayload,
           allowedMentions
         );
 
         const resolvedApplicationId = builtApplicationId || msg.id;
-        const finalContent = makeApplicationPostContent({
-          applicationId: resolvedApplicationId,
-          trackKey,
-          applicantMention,
-          applicantRawValue: applicantDiscord.rawValue,
-          headers,
-          row,
-        });
-        if (finalContent !== initialContent) {
+        const finalPayload = normalizeMessagePayload(
+          makeApplicationPostContent({
+            applicationId: resolvedApplicationId,
+            trackKey,
+            applicantMention,
+            applicantRawValue: applicantDiscord.rawValue,
+            headers,
+            row,
+          }),
+          allowedMentions
+        );
+
+        if (JSON.stringify(finalPayload) !== JSON.stringify(initialPayload)) {
           try {
             await withRateLimitRetry("Edit message", async () =>
               msg.edit({
-                content: finalContent,
-                allowedMentions,
+                ...finalPayload,
+                allowedMentions: finalPayload.allowedMentions || allowedMentions,
               })
             );
           } catch (err) {
@@ -361,7 +521,16 @@ function createPollingPipeline(options = {}) {
 
       const postedChannelId = msg.channelId || configuredChannelId;
       const applicationId =
-        extractApplicationIdFromContent(msg.content) || builtApplicationId || msg.id;
+        extractApplicationIdFromMessage(msg) || builtApplicationId || msg.id;
+      const duplicateSignals = findDuplicateApplications({
+        state,
+        trackKey,
+        responseKey,
+        submittedFieldsFingerprint,
+        applicantUserId: applicantDiscord.userId || null,
+        rowIndex: typeof rowIndex === "number" ? rowIndex : null,
+        jobId: job.jobId,
+      });
 
       try {
         await addReaction(postedChannelId, msg.id, acceptEmoji);
@@ -409,6 +578,8 @@ function createPollingPipeline(options = {}) {
         applicantUserId: applicantDiscord.userId || null,
         createdAt: new Date().toISOString(),
         submittedFields: submittedFieldsForRow,
+        submittedFieldsFingerprint,
+        duplicateSignals,
       };
 
       if (threadId) {
@@ -421,6 +592,56 @@ function createPollingPipeline(options = {}) {
         fallback: [],
       });
       writeState(state);
+
+      try {
+        onApplicationCreated({
+          application: state.applications[msg.id],
+          trackKey,
+          rowIndex: typeof rowIndex === "number" ? rowIndex : null,
+        });
+      } catch (err) {
+        console.error(
+          `[JOB ${job.jobId}] Failed running post-create hook for ${trackLabel}:`,
+          err.message
+        );
+      }
+
+      try {
+        await announceReviewerAssignment({
+          state,
+          application: state.applications[msg.id],
+          trackKey,
+          trackLabel,
+          channelId: postedChannelId,
+          threadId,
+          jobId: job.jobId,
+        });
+      } catch (err) {
+        console.error(
+          `[JOB ${job.jobId}] Failed reviewer assignment message for ${trackLabel}:`,
+          err.message
+        );
+      }
+
+      if (Array.isArray(duplicateSignals) && duplicateSignals.length > 0) {
+        try {
+          await postDuplicateWarning({
+            state,
+            application: state.applications[msg.id],
+            trackKey,
+            trackLabel,
+            channelId: postedChannelId,
+            threadId,
+            duplicateSignals,
+            jobId: job.jobId,
+          });
+        } catch (err) {
+          console.error(
+            `[JOB ${job.jobId}] Failed duplicate warning post for ${trackLabel}:`,
+            err.message
+          );
+        }
+      }
     }
   }
 

@@ -7,6 +7,8 @@ function createInteractionCommandHandler(options = {}) {
   const getApplicationTracks = options.getApplicationTracks;
   const getCustomTracksSnapshot = options.getCustomTracksSnapshot;
   const upsertCustomTrack = options.upsertCustomTrack;
+  const editCustomTrack = options.editCustomTrack;
+  const removeCustomTrack = options.removeCustomTrack;
   const postConfigurationLog = options.postConfigurationLog;
   const userDisplayName = options.userDisplayName;
   const debugModeReport = options.debugModeReport;
@@ -48,6 +50,16 @@ function createInteractionCommandHandler(options = {}) {
   const logControlCommand = options.logControlCommand;
   const resolveMessageIdForCommand = options.resolveMessageIdForCommand;
   const finalizeApplication = options.finalizeApplication;
+  const reopenApplication = options.reopenApplication;
+  const buildDashboardMessage = options.buildDashboardMessage;
+  const buildSettingsMessage = options.buildSettingsMessage;
+  const setTrackVoteRule = options.setTrackVoteRule;
+  const setReminderConfiguration = options.setReminderConfiguration;
+  const setDailyDigestConfiguration = options.setDailyDigestConfiguration;
+  const setTrackReviewerMentions = options.setTrackReviewerMentions;
+  const exportAdminConfig = options.exportAdminConfig;
+  const importAdminConfig = options.importAdminConfig;
+  const formatVoteRule = options.formatVoteRule;
   const getTrackKeyForChannelId = options.getTrackKeyForChannelId;
   const getActiveChannelId = options.getActiveChannelId;
 
@@ -59,7 +71,9 @@ function createInteractionCommandHandler(options = {}) {
           focused?.name === "track" &&
           (interaction.commandName === "setapprole" ||
             interaction.commandName === "setchannel" ||
-            interaction.commandName === "debug");
+            interaction.commandName === "debug" ||
+            interaction.commandName === "track" ||
+            interaction.commandName === "settings");
 
         if (!supportsTrackAutocomplete) {
           await interaction.respond([]);
@@ -142,9 +156,13 @@ function createInteractionCommandHandler(options = {}) {
 
       const isAccept = interaction.commandName === "accept";
       const isDeny = interaction.commandName === "deny";
+      const isReopen = interaction.commandName === "reopen";
       const isSetChannel = interaction.commandName === "setchannel";
       const isSetAppRole = interaction.commandName === "setapprole";
       const isTrackCommand = interaction.commandName === "track";
+      const isDashboard = interaction.commandName === "dashboard";
+      const isSettings = interaction.commandName === "settings";
+      const isConfig = interaction.commandName === "config";
       const isSetDenyMsg = interaction.commandName === "setdenymsg";
       const isSetAcceptMsg =
         interaction.commandName === "setacceptmsg" ||
@@ -160,9 +178,13 @@ function createInteractionCommandHandler(options = {}) {
       if (
         !isAccept &&
         !isDeny &&
+        !isReopen &&
         !isSetChannel &&
         !isSetAppRole &&
         !isTrackCommand &&
+        !isDashboard &&
+        !isSettings &&
+        !isConfig &&
         !isSetDenyMsg &&
         !isSetAcceptMsg &&
         !isStructuredMsg &&
@@ -216,6 +238,228 @@ function createInteractionCommandHandler(options = {}) {
         return;
       }
 
+      if (isDashboard) {
+        if (!canManageServer) {
+          await interaction.reply({
+            content: "You need Manage Server permission (or Administrator) to use /dashboard.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        await interaction.reply({
+          content: buildDashboardMessage(),
+          ephemeral: true,
+        });
+        return;
+      }
+
+      if (isSettings) {
+        if (!canManageServer) {
+          await interaction.reply({
+            content: "You need Manage Server permission (or Administrator) to use /settings.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        const subcommand = interaction.options.getSubcommand(true);
+        if (subcommand === "show") {
+          await interaction.reply({
+            content: buildSettingsMessage(),
+            ephemeral: true,
+          });
+          return;
+        }
+
+        if (subcommand === "vote") {
+          const track = interaction.options.getString("track", true);
+          const numerator = interaction.options.getInteger("numerator", true);
+          const denominator = interaction.options.getInteger("denominator", true);
+          const minimumVotes = interaction.options.getInteger("minimum_votes");
+
+          let update;
+          try {
+            update = setTrackVoteRule(track, {
+              numerator,
+              denominator,
+              minimumVotes,
+            });
+          } catch (err) {
+            await interaction.reply({
+              content: err.message || "Failed updating vote settings.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          await interaction.reply({
+            content: `${update.trackLabel} vote rule set to ${formatVoteRule(update.voteRule)}.`,
+            ephemeral: true,
+          });
+          await postConfigurationLog(interaction, "Vote Rule Updated", [
+            `**Track:** ${update.trackLabel}`,
+            `**Rule:** ${formatVoteRule(update.voteRule)}`,
+          ]);
+          return;
+        }
+
+        if (subcommand === "reminders") {
+          const enabled = interaction.options.getBoolean("enabled");
+          const thresholdHours = interaction.options.getNumber("threshold_hours");
+          const repeatHours = interaction.options.getNumber("repeat_hours");
+          if (
+            enabled === null &&
+            thresholdHours === null &&
+            repeatHours === null
+          ) {
+            await interaction.reply({
+              content: "Provide at least one option (`enabled`, `threshold_hours`, or `repeat_hours`).",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          const next = setReminderConfiguration({
+            enabled: enabled === null ? undefined : enabled,
+            thresholdHours: thresholdHours === null ? undefined : thresholdHours,
+            repeatHours: repeatHours === null ? undefined : repeatHours,
+          });
+          await interaction.reply({
+            content: `Reminders ${next.enabled ? "enabled" : "disabled"} (threshold=${next.thresholdHours}h, repeat=${next.repeatHours}h).`,
+            ephemeral: true,
+          });
+          await postConfigurationLog(interaction, "Reminder Settings Updated", [
+            `**Enabled:** ${next.enabled ? "yes" : "no"}`,
+            `**Threshold:** ${next.thresholdHours}h`,
+            `**Repeat:** ${next.repeatHours}h`,
+          ]);
+          return;
+        }
+
+        if (subcommand === "reviewers") {
+          const track = interaction.options.getString("track", true);
+          const mentions = interaction.options.getString("mentions", true);
+          let config;
+          let normalizedTrack = null;
+          try {
+            normalizedTrack = normalizeTrackKey(track);
+            config = setTrackReviewerMentions(track, mentions);
+          } catch (err) {
+            await interaction.reply({
+              content: err.message || "Failed updating reviewers.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          const trackLabel = getTrackLabel(normalizedTrack);
+          const userMentions = (config.userIds || []).map((id) => `<@${id}>`);
+          const roleMentions = (config.roleIds || []).map((id) => `<@&${id}>`);
+          const summary = [...userMentions, ...roleMentions];
+          await interaction.reply({
+            content: `${trackLabel} reviewers set to: ${summary.length > 0 ? summary.join(", ") : "none"}.`,
+            ephemeral: true,
+          });
+          await postConfigurationLog(interaction, "Reviewer Rotation Updated", [
+            `**Track:** ${trackLabel}`,
+            `**Reviewers:** ${summary.length > 0 ? summary.join(", ") : "none"}`,
+          ]);
+          return;
+        }
+
+        if (subcommand === "digest") {
+          const enabled = interaction.options.getBoolean("enabled");
+          const hourUtc = interaction.options.getInteger("hour_utc");
+          if (enabled === null && hourUtc === null) {
+            await interaction.reply({
+              content: "Provide `enabled`, `hour_utc`, or both.",
+              ephemeral: true,
+            });
+            return;
+          }
+          const next = setDailyDigestConfiguration({
+            enabled: enabled === null ? undefined : enabled,
+            hourUtc: hourUtc === null ? undefined : hourUtc,
+          });
+          await interaction.reply({
+            content: `Daily digest ${next.enabled ? "enabled" : "disabled"} at ${next.hourUtc}:00 UTC.`,
+            ephemeral: true,
+          });
+          await postConfigurationLog(interaction, "Daily Digest Updated", [
+            `**Enabled:** ${next.enabled ? "yes" : "no"}`,
+            `**Hour (UTC):** ${next.hourUtc}`,
+          ]);
+          return;
+        }
+
+        await interaction.reply({
+          content: `Unknown settings action: ${subcommand}`,
+          ephemeral: true,
+        });
+        return;
+      }
+
+      if (isConfig) {
+        if (!canManageServer) {
+          await interaction.reply({
+            content: "You need Manage Server permission (or Administrator) to use /config.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        const subcommand = interaction.options.getSubcommand(true);
+        if (subcommand === "export") {
+          const payload = exportAdminConfig();
+          try {
+            await sendDebugDm(interaction.user, payload);
+          } catch {
+            await interaction.reply({
+              content: "Could not DM you the config export. Enable DMs and try again.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          await interaction.reply({
+            content: "Config export sent to your DMs as JSON.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        if (subcommand === "import") {
+          const rawJson = interaction.options.getString("json", true);
+          let result;
+          try {
+            result = importAdminConfig(rawJson);
+          } catch (err) {
+            await interaction.reply({
+              content: err.message || "Failed importing config.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          await interaction.reply({
+            content: `Config imported. Tracks: ${result.trackCount}, custom tracks: ${result.customTrackCount}.`,
+            ephemeral: true,
+          });
+          await postConfigurationLog(interaction, "Config Imported", [
+            `**Tracks:** ${result.trackCount}`,
+            `**Custom Tracks:** ${result.customTrackCount}`,
+          ]);
+          return;
+        }
+
+        await interaction.reply({
+          content: `Unknown config action: ${subcommand}`,
+          ephemeral: true,
+        });
+        return;
+      }
+
       if (isTrackCommand) {
         if (!canManageServer) {
           await interaction.reply({
@@ -243,33 +487,103 @@ function createInteractionCommandHandler(options = {}) {
           return;
         }
 
-        const name = interaction.options.getString("name", true);
-        const key = interaction.options.getString("key");
-        const aliases = interaction.options.getString("aliases");
-        let result;
-        try {
-          result = upsertCustomTrack({ name, key, aliases });
-        } catch (err) {
+        if (action === "add") {
+          const name = interaction.options.getString("name", true);
+          const key = interaction.options.getString("key");
+          const aliases = interaction.options.getString("aliases");
+          let result;
+          try {
+            result = upsertCustomTrack({ name, key, aliases });
+          } catch (err) {
+            await interaction.reply({
+              content: err.message || "Failed creating track.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          const aliasText =
+            result.track.aliases.length > 0 ? result.track.aliases.join(", ") : "none";
+          const statusLabel = result.created ? "created" : "updated";
           await interaction.reply({
-            content: err.message || "Failed creating track.",
+            content: `Track ${statusLabel}: \`${result.track.key}\` (${result.track.label}). Aliases: ${aliasText}`,
             ephemeral: true,
           });
+
+          await postConfigurationLog(interaction, "Track Updated", [
+            `**Track:** ${result.track.label} (\`${result.track.key}\`)`,
+            `**Status:** ${statusLabel}`,
+            `**Aliases:** ${aliasText}`,
+          ]);
           return;
         }
 
-        const aliasText =
-          result.track.aliases.length > 0 ? result.track.aliases.join(", ") : "none";
-        const statusLabel = result.created ? "created" : "updated";
+        if (action === "edit") {
+          const track = interaction.options.getString("track", true);
+          const name = interaction.options.getString("name");
+          const aliases = interaction.options.getString("aliases");
+          if (!name && !aliases) {
+            await interaction.reply({
+              content: "Provide `name`, `aliases`, or both.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          let result;
+          try {
+            result = editCustomTrack({ track, name, aliases });
+          } catch (err) {
+            await interaction.reply({
+              content: err.message || "Failed editing track.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          const aliasText =
+            result.track.aliases.length > 0 ? result.track.aliases.join(", ") : "none";
+          await interaction.reply({
+            content: `Track updated: \`${result.track.key}\` (${result.track.label}). Aliases: ${aliasText}`,
+            ephemeral: true,
+          });
+
+          await postConfigurationLog(interaction, "Track Updated", [
+            `**Track:** ${result.track.label} (\`${result.track.key}\`)`,
+            "**Status:** edited",
+            `**Aliases:** ${aliasText}`,
+          ]);
+          return;
+        }
+
+        if (action === "remove") {
+          const track = interaction.options.getString("track", true);
+          let removed;
+          try {
+            removed = removeCustomTrack(track);
+          } catch (err) {
+            await interaction.reply({
+              content: err.message || "Failed removing track.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          await interaction.reply({
+            content: `Track removed: \`${removed.key}\` (${removed.label}).`,
+            ephemeral: true,
+          });
+
+          await postConfigurationLog(interaction, "Track Removed", [
+            `**Track:** ${removed.label} (\`${removed.key}\`)`,
+          ]);
+          return;
+        }
+
         await interaction.reply({
-          content: `Track ${statusLabel}: \`${result.track.key}\` (${result.track.label}). Aliases: ${aliasText}`,
+          content: `Unknown track action: ${action}`,
           ephemeral: true,
         });
-
-        await postConfigurationLog(interaction, "Track Updated", [
-          `**Track:** ${result.track.label} (\`${result.track.key}\`)`,
-          `**Status:** ${statusLabel}`,
-          `**Aliases:** ${aliasText}`,
-        ]);
         return;
       }
 
@@ -482,7 +796,7 @@ function createInteractionCommandHandler(options = {}) {
 
         if (trimmedMessage) {
           lines.push(
-            "Accepted announcement template updated. Placeholders: `{user}`, `{user_id}`, `{applicant_name}`, `{track}`, `{application_id}`, `{job_id}`, `{server}`, `{role_result}`, `{decided_at}`."
+            "Accepted announcement template updated. Placeholders: `{user}`, `{user_id}`, `{applicant_name}`, `{track}`, `{application_id}`, `{job_id}`, `{server}`, `{role_result}`, `{reason}`, `{decided_at}`."
           );
         }
 
@@ -933,6 +1247,61 @@ function createInteractionCommandHandler(options = {}) {
         return;
       }
 
+      if (isReopen) {
+        if (!canForceDecision) {
+          await interaction.reply({
+            content:
+              "You need both Manage Server and Manage Roles permissions (or Administrator) to use /reopen.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        const suppliedApplicationId = interaction.options.getString("application_id");
+        const suppliedJobId = interaction.options.getString("job_id");
+        const messageId = resolveMessageIdForCommand(interaction);
+        if (!messageId) {
+          await interaction.reply({
+            content:
+              suppliedApplicationId || suppliedJobId
+                ? "That `application_id` or `job_id` was not found, or it matches multiple track posts."
+                : "Message ID not found. Use this command inside an application thread or pass `message_id`, `application_id`, or `job_id`.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        const reason = String(interaction.options.getString("reason") || "").trim();
+        const result = await reopenApplication(messageId, interaction.user.id, reason);
+        if (!result.ok && result.reason === "unknown_application") {
+          await interaction.reply({
+            content: "This message ID is not a tracked application.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        if (!result.ok && result.reason === "already_pending") {
+          await interaction.reply({
+            content: "This application is already pending.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        await interaction.reply({
+          content: `Application reopened (previous status: ${String(result.previousStatus || "").toUpperCase()}).`,
+          ephemeral: true,
+        });
+
+        await postConfigurationLog(interaction, "Application Reopened", [
+          `**Application:** ${result.application?.applicationId || result.application?.messageId || messageId}`,
+          `**Previous Status:** ${String(result.previousStatus || "unknown").toUpperCase()}`,
+          `**Reason:** ${reason || "none"}`,
+        ]);
+        return;
+      }
+
       if (!canForceDecision) {
         await interaction.reply({
           content:
@@ -944,6 +1313,7 @@ function createInteractionCommandHandler(options = {}) {
 
       const suppliedApplicationId = interaction.options.getString("application_id");
       const suppliedJobId = interaction.options.getString("job_id");
+      const suppliedReason = String(interaction.options.getString("reason") || "").trim();
       const messageId = resolveMessageIdForCommand(interaction);
       if (!messageId) {
         await interaction.reply({
@@ -961,7 +1331,10 @@ function createInteractionCommandHandler(options = {}) {
         messageId,
         decision,
         "force_command",
-        interaction.user.id
+        interaction.user.id,
+        {
+          reason: suppliedReason,
+        }
       );
 
       if (!result.ok && result.reason === "unknown_application") {
@@ -983,7 +1356,9 @@ function createInteractionCommandHandler(options = {}) {
       }
 
       await interaction.reply({
-        content: `Application ${decision} by force command.`,
+        content: suppliedReason
+          ? `Application ${decision} by force command. Reason saved: ${suppliedReason}`
+          : `Application ${decision} by force command.`,
         ephemeral: true,
       });
     } catch (err) {

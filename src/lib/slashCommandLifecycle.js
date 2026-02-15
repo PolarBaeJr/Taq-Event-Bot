@@ -115,6 +115,12 @@ function createSlashCommandLifecycle(options = {}) {
             .setName("job_id")
             .setDescription("Application job ID (e.g. job-000123)")
             .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("reason")
+            .setDescription("Optional reason to store in logs/DM templates")
+            .setRequired(false)
         ),
       new SlashCommandBuilder()
         .setName("deny")
@@ -135,6 +141,12 @@ function createSlashCommandLifecycle(options = {}) {
           option
             .setName("job_id")
             .setDescription("Application job ID (e.g. job-000123)")
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("reason")
+            .setDescription("Optional reason to store in logs/DM templates")
             .setRequired(false)
         ),
       setChannelCommand,
@@ -206,6 +218,199 @@ function createSlashCommandLifecycle(options = {}) {
         )
         .addSubcommand((subcommand) =>
           subcommand.setName("list").setDescription("List all configured tracks")
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName("edit")
+            .setDescription("Edit an existing custom track")
+            .addStringOption((option) =>
+              option
+                .setName("track")
+                .setDescription("Existing custom track key/alias")
+                .setAutocomplete(true)
+                .setRequired(true)
+            )
+            .addStringOption((option) =>
+              option
+                .setName("name")
+                .setDescription("Updated display label")
+                .setRequired(false)
+            )
+            .addStringOption((option) =>
+              option
+                .setName("aliases")
+                .setDescription("Updated aliases, comma-separated")
+                .setRequired(false)
+            )
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName("remove")
+            .setDescription("Remove a custom track")
+            .addStringOption((option) =>
+              option
+                .setName("track")
+                .setDescription("Custom track key/alias")
+                .setAutocomplete(true)
+                .setRequired(true)
+            )
+        ),
+      new SlashCommandBuilder()
+        .setName("dashboard")
+        .setDescription("Show per-track application status counts and oldest pending age"),
+      new SlashCommandBuilder()
+        .setName("reopen")
+        .setDescription("Reopen a previously accepted/denied application")
+        .addStringOption((option) =>
+          option
+            .setName("message_id")
+            .setDescription("Application message ID")
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("application_id")
+            .setDescription("Application ID (e.g. TESTER-123)")
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("job_id")
+            .setDescription("Application job ID (e.g. job-000123)")
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("reason")
+            .setDescription("Optional reason for reopening")
+            .setRequired(false)
+        ),
+      new SlashCommandBuilder()
+        .setName("settings")
+        .setDescription("Configure voting, reminders, reviewers, and daily digest")
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName("show")
+            .setDescription("Show current bot settings")
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName("vote")
+            .setDescription("Set per-track vote threshold/quorum")
+            .addStringOption((option) =>
+              option
+                .setName("track")
+                .setDescription("Track key/alias")
+                .setAutocomplete(true)
+                .setRequired(true)
+            )
+            .addIntegerOption((option) =>
+              option
+                .setName("numerator")
+                .setDescription("Threshold ratio numerator (e.g. 2 for 2/3)")
+                .setMinValue(1)
+                .setMaxValue(20)
+                .setRequired(true)
+            )
+            .addIntegerOption((option) =>
+              option
+                .setName("denominator")
+                .setDescription("Threshold ratio denominator (e.g. 3 for 2/3)")
+                .setMinValue(1)
+                .setMaxValue(20)
+                .setRequired(true)
+            )
+            .addIntegerOption((option) =>
+              option
+                .setName("minimum_votes")
+                .setDescription("Minimum YES/NO votes required to decide")
+                .setMinValue(1)
+                .setMaxValue(200)
+                .setRequired(false)
+            )
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName("reminders")
+            .setDescription("Set stale pending reminder behavior")
+            .addBooleanOption((option) =>
+              option
+                .setName("enabled")
+                .setDescription("Enable/disable stale reminders")
+                .setRequired(false)
+            )
+            .addNumberOption((option) =>
+              option
+                .setName("threshold_hours")
+                .setDescription("Hours pending before first reminder")
+                .setMinValue(0.25)
+                .setMaxValue(720)
+                .setRequired(false)
+            )
+            .addNumberOption((option) =>
+              option
+                .setName("repeat_hours")
+                .setDescription("Hours between reminder repeats")
+                .setMinValue(0.25)
+                .setMaxValue(720)
+                .setRequired(false)
+            )
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName("reviewers")
+            .setDescription("Set per-track reviewer mentions (users/roles)")
+            .addStringOption((option) =>
+              option
+                .setName("track")
+                .setDescription("Track key/alias")
+                .setAutocomplete(true)
+                .setRequired(true)
+            )
+            .addStringOption((option) =>
+              option
+                .setName("mentions")
+                .setDescription("Comma/space list of @users, @roles, or IDs. Use `clear` to remove.")
+                .setRequired(true)
+            )
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName("digest")
+            .setDescription("Configure daily summary digest to logs channel")
+            .addBooleanOption((option) =>
+              option
+                .setName("enabled")
+                .setDescription("Enable/disable digest posting")
+                .setRequired(false)
+            )
+            .addIntegerOption((option) =>
+              option
+                .setName("hour_utc")
+                .setDescription("UTC hour for digest post (0-23)")
+                .setMinValue(0)
+                .setMaxValue(23)
+                .setRequired(false)
+            )
+        ),
+      new SlashCommandBuilder()
+        .setName("config")
+        .setDescription("Export/import bot settings as JSON")
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName("export")
+            .setDescription("DM your current admin settings JSON")
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName("import")
+            .setDescription("Import admin settings from JSON")
+            .addStringOption((option) =>
+              option
+                .setName("json")
+                .setDescription("JSON payload (code block accepted)")
+                .setRequired(true)
+            )
         ),
       new SlashCommandBuilder()
         .setName("setdenymsg")

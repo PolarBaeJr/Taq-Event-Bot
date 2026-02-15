@@ -330,16 +330,32 @@ function createDebugAndFeedbackUtils(options = {}) {
       return;
     }
 
-    const content = [
-      heading,
-      `**From:** <@${interaction.user.id}>`,
-      `**Source Channel:** <#${interaction.channelId}>`,
-      "",
-      message,
-    ].join("\n");
+    const isBug = String(commandLabel || "").toLowerCase().includes("bug");
+    const embed = {
+      title: isBug ? "🐞 Bug Report" : "💡 Suggestion",
+      color: isBug ? 0xdb4437 : 0x0f9d58,
+      description:
+        message.length <= 3800 ? message : `${message.slice(0, 3780)}\n...[truncated]`,
+      fields: [
+        {
+          name: "From",
+          value: `<@${interaction.user.id}>`,
+          inline: true,
+        },
+        {
+          name: "Source Channel",
+          value: `<#${interaction.channelId}>`,
+          inline: true,
+        },
+      ],
+      footer: {
+        text: `${commandLabel} via slash command`,
+      },
+      timestamp: new Date().toISOString(),
+    };
 
     const postedMessage = await targetChannel.send({
-      content,
+      embeds: [embed],
       allowedMentions: { parse: [] },
     });
 
