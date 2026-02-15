@@ -259,6 +259,9 @@ function createSlashCommandLifecycle(options = {}) {
         .setName("dashboard")
         .setDescription("Show per-track application status counts and oldest pending age"),
       new SlashCommandBuilder()
+        .setName("uptime")
+        .setDescription("Show how long the bot process has been running"),
+      new SlashCommandBuilder()
         .setName("reopen")
         .setDescription("Reopen a previously accepted/denied application")
         .addStringOption((option) =>

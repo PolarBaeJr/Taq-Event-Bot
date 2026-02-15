@@ -4,6 +4,18 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Operational alerting support via Discord webhook (`ALERT_WEBHOOK_URL`) for startup, retry, crash, and stop/restart actions.
+- Scheduled backup snapshots for bot state and exported config (`BACKUP_*` settings).
+- Maintenance manager for control-log rotation and crash-log retention cleanup.
+- Connectivity smoke test script (`npm run smoke`) for Discord + Google Sheets checks.
+- Runbook documentation (`RUNBOOK.md`) for incident response and restore flow.
+- Branch-protection setup script (`npm run protect:main`) to enforce CI/review rules on `main`.
+- New `/uptime` slash command to show current bot process uptime.
+
+### Changed
+- Startup config now includes env parsing for alerting, maintenance, and backup operations.
+
 ### Fixed
 - Startup config validation no longer fails hard when optional Discord ID env vars contain placeholder values; invalid optional IDs are now ignored with warnings.
 - Startup config path resolution no longer trims `cwd`, which fixes false missing-file errors for `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` in paths containing trailing spaces.

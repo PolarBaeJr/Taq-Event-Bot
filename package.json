@@ -10,6 +10,8 @@
     "lint": "node scripts/check-syntax.js",
     "test": "node --test",
     "ci": "npm run lint && npm run test",
+    "smoke": "node scripts/smoke-check.js",
+    "protect:main": "node scripts/enable-branch-protection.js main",
     "release": "node scripts/release.js",
     "functions:mirror": "node scripts/generate-function-mirrors.js",
     "start:background": "node scripts/botctl.js start --background",

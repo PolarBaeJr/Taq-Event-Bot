@@ -104,6 +104,22 @@ function parseNumberEnv(env, key, defaultValue, rules = {}, errors = []) {
   return value;
 }
 
+function parseBooleanEnv(env, key, defaultValue, warnings = []) {
+  const raw = normalizeString(env[key]);
+  if (!raw) {
+    return defaultValue;
+  }
+  const lowered = raw.toLowerCase();
+  if (lowered === "true" || lowered === "1" || lowered === "yes" || lowered === "on") {
+    return true;
+  }
+  if (lowered === "false" || lowered === "0" || lowered === "no" || lowered === "off") {
+    return false;
+  }
+  warnings.push(`${key} should be a boolean value; using default (${defaultValue}).`);
+  return defaultValue;
+}
+
 function loadStartupConfig(options = {}) {
   const env = options.env && typeof options.env === "object" ? options.env : process.env;
   const cwd =
@@ -188,6 +204,65 @@ function loadStartupConfig(options = {}) {
     stateFile: env.STATE_FILE || ".bot-state.json",
     crashLogDir: env.CRASH_LOG_DIR || "crashlog",
     controlLogFile: env.CONTROL_LOG_FILE || "logs/control-actions.log",
+    maintenanceIntervalMinutes: parseNumberEnv(
+      env,
+      "MAINTENANCE_INTERVAL_MINUTES",
+      60,
+      { min: 1 },
+      errors
+    ),
+    logRetentionDays: parseNumberEnv(env, "LOG_RETENTION_DAYS", 14, { min: 1 }, errors),
+    crashLogRetentionDays: parseNumberEnv(
+      env,
+      "CRASH_LOG_RETENTION_DAYS",
+      30,
+      { min: 1 },
+      errors
+    ),
+    controlLogMaxBytes: parseNumberEnv(
+      env,
+      "CONTROL_LOG_MAX_BYTES",
+      5 * 1024 * 1024,
+      { integer: true, min: 1024 },
+      errors
+    ),
+    controlLogMaxFiles: parseNumberEnv(
+      env,
+      "CONTROL_LOG_MAX_FILES",
+      5,
+      { integer: true, min: 1 },
+      errors
+    ),
+    alertWebhookUrl: normalizeString(env.ALERT_WEBHOOK_URL) || null,
+    alertMention: normalizeString(env.ALERT_MENTION) || null,
+    alertCooldownSeconds: parseNumberEnv(
+      env,
+      "ALERT_COOLDOWN_SECONDS",
+      300,
+      { min: 0 },
+      errors
+    ),
+    alertOnStartup: parseBooleanEnv(env, "ALERT_ON_STARTUP", true, warnings),
+    alertOnRetry: parseBooleanEnv(env, "ALERT_ON_RETRY", true, warnings),
+    alertOnCrash: parseBooleanEnv(env, "ALERT_ON_CRASH", true, warnings),
+    backupEnabled: parseBooleanEnv(env, "BACKUP_ENABLED", true, warnings),
+    backupStateEnabled: parseBooleanEnv(env, "BACKUP_STATE_ENABLED", true, warnings),
+    backupConfigEnabled: parseBooleanEnv(env, "BACKUP_CONFIG_ENABLED", true, warnings),
+    backupDir: normalizeString(env.BACKUP_DIR) || "backups",
+    backupIntervalMinutes: parseNumberEnv(
+      env,
+      "BACKUP_INTERVAL_MINUTES",
+      360,
+      { min: 5 },
+      errors
+    ),
+    backupMaxFiles: parseNumberEnv(
+      env,
+      "BACKUP_MAX_FILES",
+      60,
+      { integer: true, min: 1 },
+      errors
+    ),
     logsChannelName: env.DISCORD_LOGS_CHANNEL_NAME || "application-logs",
     logsChannelId: optionalSnowflakeValues.DISCORD_LOGS_CHANNEL_ID,
     bugChannelId: optionalSnowflakeValues.DISCORD_BUG_CHANNEL_ID,

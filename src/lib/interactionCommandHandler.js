@@ -52,6 +52,9 @@ function createInteractionCommandHandler(options = {}) {
   const finalizeApplication = options.finalizeApplication;
   const reopenApplication = options.reopenApplication;
   const buildDashboardMessage = options.buildDashboardMessage;
+  const buildUptimeMessage = typeof options.buildUptimeMessage === "function"
+    ? options.buildUptimeMessage
+    : () => "⏱️ Uptime is unavailable.";
   const buildSettingsMessage = options.buildSettingsMessage;
   const setTrackVoteRule = options.setTrackVoteRule;
   const setReminderConfiguration = options.setReminderConfiguration;
@@ -167,6 +170,7 @@ function createInteractionCommandHandler(options = {}) {
       const isSetAppRole = interaction.commandName === "setapprole";
       const isTrackCommand = interaction.commandName === "track";
       const isDashboard = interaction.commandName === "dashboard";
+      const isUptime = interaction.commandName === "uptime";
       const isSettings = interaction.commandName === "settings";
       const isConfig = interaction.commandName === "config";
       const isSetDenyMsg = interaction.commandName === "setdenymsg";
@@ -189,6 +193,7 @@ function createInteractionCommandHandler(options = {}) {
         !isSetAppRole &&
         !isTrackCommand &&
         !isDashboard &&
+        !isUptime &&
         !isSettings &&
         !isConfig &&
         !isSetDenyMsg &&
@@ -200,6 +205,14 @@ function createInteractionCommandHandler(options = {}) {
         !isStop &&
         !isRestart
       ) {
+        return;
+      }
+
+      if (isUptime) {
+        await interaction.reply({
+          content: buildUptimeMessage(),
+          ephemeral: true,
+        });
         return;
       }
 

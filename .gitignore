@@ -18,4 +18,5 @@ credentials*.json
 *.pid
 control-actions.log
 *.log
+backups/
 .DS_Store

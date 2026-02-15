@@ -26,6 +26,9 @@ const { createInteractionCommandHandler } = require("./lib/interactionCommandHan
 const { createDynamicMessageSystem } = require("./lib/dynamicMessageSystem");
 const { loadStartupConfig } = require("./lib/startupConfig");
 const { createStructuredLogger, serializeError } = require("./lib/structuredLogger");
+const { createAlertingClient } = require("./lib/opsAlerting");
+const { createMaintenanceManager } = require("./lib/maintenanceManager");
+const { createBackupManager } = require("./lib/backupManager");
 const {
   toCodeBlock,
   applyTemplatePlaceholders,
@@ -56,6 +59,39 @@ for (const message of startupConfig.warnings) {
   logger.warn("startup_config_warning", message);
 }
 const config = startupConfig.config;
+const botStartedAtMs = Date.now();
+const opsAlerting = createAlertingClient({
+  webhookUrl: config.alertWebhookUrl,
+  mention: config.alertMention,
+  cooldownMs:
+    Number.isFinite(config.alertCooldownSeconds) && config.alertCooldownSeconds >= 0
+      ? Math.floor(config.alertCooldownSeconds * 1000)
+      : 300000,
+  logger: logger.child({ component: "ops_alerting" }),
+});
+
+async function sendOperationalAlert({
+  event,
+  severity,
+  title,
+  message,
+  details,
+} = {}) {
+  if (!opsAlerting.isEnabled) {
+    return {
+      sent: false,
+      reason: "disabled",
+    };
+  }
+  return opsAlerting.sendAlert({
+    event,
+    severity,
+    title,
+    message,
+    details,
+  });
+}
+
 const STATE_FILE_FALLBACK_BASENAME = "taq-event-team-bot-state.json";
 const { isStateFilePermissionError, switchStateFileToWritableFallback } =
   createStateFileFallbackUtils({
@@ -1064,6 +1100,42 @@ function formatDurationHours(ms) {
     return `${hours}h`;
   }
   return `${hours}h ${minutes}m`;
+}
+
+function formatBotUptime(ms) {
+  if (!Number.isFinite(ms) || ms <= 0) {
+    return "0s";
+  }
+
+  const totalSeconds = Math.floor(ms / 1000);
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  const parts = [];
+  if (days > 0) {
+    parts.push(`${days}d`);
+  }
+  if (hours > 0 || days > 0) {
+    parts.push(`${hours}h`);
+  }
+  if (minutes > 0 || hours > 0 || days > 0) {
+    parts.push(`${minutes}m`);
+  }
+  parts.push(`${seconds}s`);
+  return parts.join(" ");
+}
+
+function buildUptimeMessage() {
+  const nowMs = Date.now();
+  const uptimeMs = Math.max(0, nowMs - botStartedAtMs);
+  return [
+    "⏱️ **Bot Uptime**",
+    `Uptime: ${formatBotUptime(uptimeMs)}`,
+    `Started: ${new Date(botStartedAtMs).toISOString()}`,
+    `Now: ${new Date(nowMs).toISOString()}`,
+  ].join("\n");
 }
 
 function summarizeReviewerMentions(configEntry) {
@@ -2149,17 +2221,38 @@ async function logControlCommand(action, interaction) {
   state.controlActions = existing;
   writeState(state);
 
-  console.log(
-    `[CONTROL] ${action} by ${entry.username} (${entry.userId}) in ${entry.guildName || "DM"} (${entry.guildId || "n/a"})`
-  );
+  logger.info("control_action", "Bot control action executed.", {
+    action,
+    userId: entry.userId,
+    username: entry.username,
+    guildId: entry.guildId,
+    guildName: entry.guildName,
+    channelId: entry.channelId,
+  });
 
   try {
     appendControlLogToFile(entry);
   } catch (err) {
-    console.error(`Failed writing ${action} control log file:`, err.message);
+    logger.error("control_log_file_write_failed", "Failed writing control log file.", {
+      action,
+      error: err.message,
+      controlLogFile: config.controlLogFile,
+    });
   }
 
   if (action === "stop" || action === "restart") {
+    await sendOperationalAlert({
+      event: `control_${action}`,
+      severity: "warning",
+      title: `Bot ${action.toUpperCase()} command`,
+      message: `A bot ${action} command was executed.`,
+      details: {
+        user: `${entry.username} (${entry.userId})`,
+        guild: entry.guildName || "DM",
+        guildId: entry.guildId || "n/a",
+        channelId: entry.channelId || "n/a",
+      },
+    });
     return;
   }
 
@@ -2184,7 +2277,10 @@ async function logControlCommand(action, interaction) {
 
     await logsChannel.send({ content: details, allowedMentions: { parse: [] } });
   } catch (err) {
-    console.error(`Failed writing ${action} control log:`, err.message);
+    logger.error("control_log_channel_write_failed", "Failed writing control log to Discord.", {
+      action,
+      error: err.message,
+    });
   }
 }
 
@@ -2971,6 +3067,7 @@ const onInteractionCreate = createInteractionCommandHandler({
   finalizeApplication,
   reopenApplication,
   buildDashboardMessage,
+  buildUptimeMessage,
   buildSettingsMessage,
   setTrackVoteRule,
   setReminderConfiguration,
@@ -2982,6 +3079,28 @@ const onInteractionCreate = createInteractionCommandHandler({
   getTrackKeyForChannelId,
   getActiveChannelId,
   logger: interactionLogger,
+});
+
+const maintenanceManager = createMaintenanceManager({
+  controlLogFile: config.controlLogFile,
+  crashLogDir: config.crashLogDir,
+  controlLogMaxBytes: config.controlLogMaxBytes,
+  controlLogMaxFiles: config.controlLogMaxFiles,
+  logRetentionDays: config.logRetentionDays,
+  crashLogRetentionDays: config.crashLogRetentionDays,
+  logger: logger.child({ component: "maintenance" }),
+});
+
+const backupManager = createBackupManager({
+  enabled: config.backupEnabled,
+  stateBackupEnabled: config.backupStateEnabled,
+  configBackupEnabled: config.backupConfigEnabled,
+  backupDir: config.backupDir,
+  getStateFilePath: () => config.stateFile,
+  maxFiles: config.backupMaxFiles,
+  readState,
+  exportAdminConfig,
+  logger: logger.child({ component: "backup" }),
 });
 
 client.on("messageReactionAdd", async (reaction, user) => {
@@ -3076,7 +3195,34 @@ async function main() {
     });
   }
 
+  await maintenanceManager.runMaintenance("startup").catch((err) => {
+    logger.error("startup_maintenance_failed", "Startup maintenance run failed.", {
+      error: err.message,
+    });
+  });
+  if (backupManager.enabled) {
+    await backupManager.runBackup("startup").catch((err) => {
+      logger.error("startup_backup_failed", "Startup backup run failed.", {
+        error: err.message,
+      });
+    });
+  }
+
   logger.info("startup_bot_ready", "Bot started. Polling for Google Form responses.");
+  if (config.alertOnStartup) {
+    await sendOperationalAlert({
+      event: "bot_started",
+      severity: "info",
+      title: "Bot started",
+      message: "Taq Event Team Bot is online.",
+      details: {
+        pid: process.pid,
+        node: process.version,
+        pollIntervalMs: config.pollIntervalMs,
+      },
+    });
+  }
+
   await pollOnce().catch((err) => {
     logger.error("startup_initial_poll_failed", "Initial poll failed.", {
       error: err.message,
@@ -3104,6 +3250,30 @@ async function main() {
       });
     }
   }, config.pollIntervalMs);
+
+  const maintenanceIntervalMs =
+    Number.isFinite(config.maintenanceIntervalMinutes) && config.maintenanceIntervalMinutes > 0
+      ? Math.floor(config.maintenanceIntervalMinutes * 60000)
+      : 3600000;
+  setInterval(async () => {
+    try {
+      await maintenanceManager.runMaintenance("scheduled");
+    } catch (err) {
+      logger.error("scheduled_maintenance_failed", "Scheduled maintenance failed.", {
+        error: err.message,
+      });
+    }
+  }, maintenanceIntervalMs);
+
+  if (backupManager.enabled) {
+    const backupIntervalMs =
+      Number.isFinite(config.backupIntervalMinutes) && config.backupIntervalMinutes > 0
+        ? Math.floor(config.backupIntervalMinutes * 60000)
+        : 6 * 60 * 60000;
+    setInterval(async () => {
+      await backupManager.runBackup("scheduled");
+    }, backupIntervalMs);
+  }
 }
 
 function isRetryableStartupError(err) {
@@ -3157,6 +3327,19 @@ async function bootWithRetry() {
           retryAfterMs: waitMs,
         }
       );
+      if (config.alertOnRetry) {
+        await sendOperationalAlert({
+          event: "startup_retryable_failure",
+          severity: "warning",
+          title: "Startup retry scheduled",
+          message: "Bot startup failed with a retryable error.",
+          details: {
+            code: err.code || err.name || "error",
+            error: err.message,
+            retryAfterSeconds: Math.ceil(waitMs / 1000),
+          },
+        });
+      }
       try {
         client.destroy();
       } catch {
@@ -3168,6 +3351,22 @@ async function bootWithRetry() {
 }
 
 let crashHandlersInstalled = false;
+
+function exitAfterBestEffortAlert(alertPayload) {
+  const forceExitTimer = setTimeout(() => {
+    process.exit(1);
+  }, 2500);
+  if (typeof forceExitTimer.unref === "function") {
+    forceExitTimer.unref();
+  }
+  void Promise.resolve()
+    .then(() => sendOperationalAlert(alertPayload))
+    .catch(() => {})
+    .finally(() => {
+      clearTimeout(forceExitTimer);
+      process.exit(1);
+    });
+}
 
 function installCrashHandlers() {
   if (crashHandlersInstalled) {
@@ -3193,6 +3392,19 @@ function installCrashHandlers() {
     logger.error("uncaught_exception", "Uncaught exception.", {
       error: serializeError(err),
     });
+    if (config.alertOnCrash) {
+      exitAfterBestEffortAlert({
+        event: "uncaught_exception",
+        severity: "critical",
+        title: "Bot crashed (uncaught exception)",
+        message: "Process is exiting due to uncaught exception.",
+        details: {
+          error: err?.message || String(err),
+          pid: process.pid,
+        },
+      });
+      return;
+    }
     process.exit(1);
   });
 
@@ -3214,6 +3426,22 @@ function installCrashHandlers() {
     logger.error("unhandled_rejection", "Unhandled rejection.", {
       reason: serializeError(reason),
     });
+    if (config.alertOnCrash) {
+      exitAfterBestEffortAlert({
+        event: "unhandled_rejection",
+        severity: "critical",
+        title: "Bot crashed (unhandled rejection)",
+        message: "Process is exiting due to unhandled promise rejection.",
+        details: {
+          reason:
+            reason && typeof reason === "object" && "message" in reason
+              ? reason.message
+              : String(reason),
+          pid: process.pid,
+        },
+      });
+      return;
+    }
     process.exit(1);
   });
 }
@@ -3234,5 +3462,18 @@ bootWithRetry().catch((err) => {
   logger.error("fatal_startup_error", "Fatal startup error.", {
     error: serializeError(err),
   });
+  if (config.alertOnCrash) {
+    exitAfterBestEffortAlert({
+      event: "fatal_startup_error",
+      severity: "critical",
+      title: "Bot failed to start",
+      message: "Startup failed with a non-retryable error.",
+      details: {
+        error: err?.message || String(err),
+        pid: process.pid,
+      },
+    });
+    return;
+  }
   process.exit(1);
 });

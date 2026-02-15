@@ -27,6 +27,11 @@ Simple Node.js bot that:
 - Added parser helper module + compatibility tests for embedded application messages.
 - Added test/lint/ci/release scripts and GitHub Actions CI workflow.
 - Added `CHANGELOG.md`.
+- Added scheduled maintenance for control-log rotation and crash-log retention.
+- Added operational alert webhooks for startup/retry/crash and stop/restart control actions.
+- Added scheduled backups for state/config snapshots.
+- Added smoke check script and runbook.
+- Added branch-protection automation script for required CI checks on `main`.
 
 ### v1.1.1 - 2026-02-15
 
@@ -91,7 +96,25 @@ Required keys:
 - `DISCORD_CMD_APPROVED_ROLE_ID` (optional cmd fallback if you do not use `/setapprole`)
 - `DISCORD_APPROVED_ROLE_ID` (legacy tester fallback)
 - `CRASH_LOG_DIR` (optional, default: `crashlog`)
-- `STATE_FILE`
+- `STATE_FILE` (optional, default `.bot-state.json`)
+- `CONTROL_LOG_FILE` (optional, default `logs/control-actions.log`)
+- `MAINTENANCE_INTERVAL_MINUTES` (optional, default `60`)
+- `LOG_RETENTION_DAYS` (optional, default `14`)
+- `CRASH_LOG_RETENTION_DAYS` (optional, default `30`)
+- `CONTROL_LOG_MAX_BYTES` (optional, default `5242880`)
+- `CONTROL_LOG_MAX_FILES` (optional, default `5`)
+- `ALERT_WEBHOOK_URL` (optional; Discord webhook URL for operational alerts)
+- `ALERT_MENTION` (optional text prefix for alert messages)
+- `ALERT_COOLDOWN_SECONDS` (optional per-alert-key throttle, default `300`)
+- `ALERT_ON_STARTUP` (optional boolean, default `true`)
+- `ALERT_ON_RETRY` (optional boolean, default `true`)
+- `ALERT_ON_CRASH` (optional boolean, default `true`)
+- `BACKUP_ENABLED` (optional boolean, default `true`)
+- `BACKUP_STATE_ENABLED` (optional boolean, default `true`)
+- `BACKUP_CONFIG_ENABLED` (optional boolean, default `true`)
+- `BACKUP_DIR` (optional, default `backups`)
+- `BACKUP_INTERVAL_MINUTES` (optional, default `360`)
+- `BACKUP_MAX_FILES` (optional, default `60`)
 
 3. Place your Google service account key file in the project root as `service-account.json` (or update `GOOGLE_SERVICE_ACCOUNT_KEY_FILE`).
 
@@ -135,13 +158,52 @@ Run checks locally:
 npm run lint
 npm run test
 npm run ci
+npm run smoke
 ```
+
+Smoke check options:
+
+```bash
+# Check Discord + Google Sheets
+npm run smoke
+
+# Check only Discord auth/connectivity
+npm run smoke -- --discord-only
+
+# Check only Google Sheets auth/read access
+npm run smoke -- --sheets-only
+```
+
+Smoke check behavior:
+- Returns exit code `0` when all requested checks pass.
+- Returns non-zero if config validation fails or any requested check fails.
 
 Release helper:
 
 ```bash
 npm run release -- patch
 npm run release -- 1.1.2 --push --all
+```
+
+Apply branch protection for `main` (requires admin token):
+
+```bash
+export GH_TOKEN=your_repo_admin_token
+npm run protect:main
+```
+
+Branch protection script options:
+- `GH_TOKEN` or `GITHUB_TOKEN`:
+  required GitHub token with repo admin permission.
+- `GITHUB_REPOSITORY` (optional):
+  explicit `owner/repo`; if omitted, script derives repo from `origin`.
+- Optional branch argument (direct script usage):
+  `node scripts/enable-branch-protection.js <branch>` (default `main`).
+
+Operational runbook:
+
+```bash
+cat RUNBOOK.md
 ```
 
 When running in `dev` mode, type `rs` then Enter in that terminal to restart the bot manually after changes.
@@ -210,6 +272,7 @@ Set accepted announcement channel/message:
 Dashboard and settings:
 ```text
 /dashboard
+/uptime
 /settings show
 /settings vote track:tester numerator:2 denominator:3 minimum_votes:2
 /settings reminders enabled:true threshold_hours:24 repeat_hours:12
@@ -388,6 +451,7 @@ pm2 restart taq-event-bot --update-env
 - Forced `/accept` and `/deny` also post the rendered accept/deny message template into that specific application thread.
 - `/reopen` reopens a decided application back to pending (it does not auto-revert prior side effects).
 - `/dashboard` shows per-track pending/accepted/denied counts, oldest pending age, and vote rule.
+- `/uptime` shows how long the current bot process has been running.
 - `/settings` controls vote rules, stale reminders, reviewer assignment, and daily digests.
 - `/config export` DMs JSON config backup; `/config import` restores settings from JSON.
 - `/setchannel` requires `Manage Server` (or `Administrator`).
@@ -423,5 +487,10 @@ pm2 restart taq-event-bot --update-env
 - `/debug` accept/deny test modes require both `Manage Server` and `Manage Roles`, or `Administrator`.
 - `/stop` and `/restart` write audit logs with user ID, username, and guild details to `logs/control-actions.log` (or `CONTROL_LOG_FILE`), not Discord.
 - On process crashes (`uncaughtException` / `unhandledRejection` / fatal startup), bot writes a timestamped crash file in `crashlog/` (or `CRASH_LOG_DIR`).
+- Maintenance rotates `CONTROL_LOG_FILE` by size and prunes old rotated control logs/crash logs using retention settings.
+- Scheduled backups store `state-*.json` and `config-*.json` in `BACKUP_DIR` and prune by `BACKUP_MAX_FILES`.
+- Optional operational alerts can post to `ALERT_WEBHOOK_URL` for startup, retry, crash, and stop/restart events.
+- `npm run smoke` checks Discord auth + Google Sheets connectivity without starting the bot loop.
+- `RUNBOOK.md` contains on-call response steps for downtime, rate limits, permissions, crash loops, and restore operations.
 - Bot message send/edit and thread creation retry automatically on Discord rate limits (`429`).
 - On accepted applications, bot attempts to grant the configured role to the resolved applicant Discord user.
