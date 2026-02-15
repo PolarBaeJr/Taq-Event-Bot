@@ -23,6 +23,7 @@ const { createApplicationFormUtils } = require("./lib/applicationFormUtils");
 const { createDebugAndFeedbackUtils } = require("./lib/debugAndFeedbackUtils");
 const { createPollingPipeline } = require("./lib/pollingPipeline");
 const { createInteractionCommandHandler } = require("./lib/interactionCommandHandler");
+const { createDynamicMessageSystem } = require("./lib/dynamicMessageSystem");
 const {
   toCodeBlock,
   applyTemplatePlaceholders,
@@ -2757,6 +2758,11 @@ const client = new Client({
   partials: [Partials.Channel, Partials.Message, Partials.Reaction],
 });
 
+const { buildApplicationMessagePayload, buildFeedbackMessagePayload } =
+  createDynamicMessageSystem({
+    toCodeBlock,
+  });
+
 const {
   sanitizeThreadName,
   makeApplicationContent,
@@ -2792,6 +2798,7 @@ const {
   formatJobId,
   jobTypePostApplication: JOB_TYPE_POST_APPLICATION,
   normalizeCell,
+  buildApplicationMessagePayload,
 });
 
 const {
@@ -2816,6 +2823,8 @@ const {
   defaultTrackKey: DEFAULT_TRACK_KEY,
   getActiveChannelId,
   sendChannelMessage,
+  makeApplicationPostContent,
+  buildFeedbackMessagePayload,
   addReaction,
   createThread,
   acceptEmoji: ACCEPT_EMOJI,

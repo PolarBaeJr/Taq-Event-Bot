@@ -37,6 +37,58 @@ function createDebugAndFeedbackUtils(options = {}) {
   const sendChannelMessage = typeof options.sendChannelMessage === "function"
     ? options.sendChannelMessage
     : async () => null;
+  const makeApplicationPostContent =
+    typeof options.makeApplicationPostContent === "function"
+      ? options.makeApplicationPostContent
+      : ({ trackKey }) =>
+        [
+          "📥 **New Application**",
+          `🧭 **Track:** ${String(trackKey || "")}`,
+          "",
+          "**Name:** Debug Applicant",
+          "**Reason:** Debug post test fallback payload",
+        ].join("\n");
+  const buildFeedbackMessagePayload =
+    typeof options.buildFeedbackMessagePayload === "function"
+      ? options.buildFeedbackMessagePayload
+      : ({
+        kind,
+        commandLabel,
+        reporterUserId,
+        sourceChannelId,
+        message,
+      }) => {
+        const isBug = String(kind || "").toLowerCase().includes("bug");
+        return {
+          embeds: [
+            {
+              title: isBug ? "🐞 Bug Report" : "💡 Suggestion",
+              color: isBug ? 0xdb4437 : 0x0f9d58,
+              description:
+                String(message || "").length <= 3800
+                  ? String(message || "")
+                  : `${String(message || "").slice(0, 3780)}\n...[truncated]`,
+              fields: [
+                {
+                  name: "From",
+                  value: `<@${reporterUserId}>`,
+                  inline: true,
+                },
+                {
+                  name: "Source Channel",
+                  value: `<#${sourceChannelId}>`,
+                  inline: true,
+                },
+              ],
+              footer: {
+                text: `${commandLabel || "Feedback"} via slash command`,
+              },
+              timestamp: new Date().toISOString(),
+            },
+          ],
+          allowedMentions: { parse: [] },
+        };
+      };
   const addReaction = typeof options.addReaction === "function"
     ? options.addReaction
     : async () => {};
@@ -212,22 +264,36 @@ function createDebugAndFeedbackUtils(options = {}) {
     const trackLabel = getTrackLabel(selectedTrack);
 
     const triggeredAt = new Date().toISOString();
-    const content = [
-      "🧪 **Debug Application Post Test**",
-      "This is a live test post from `/debug mode:post_test`.",
-      `**Triggered By:** <@${interaction.user.id}>`,
-      `**Triggered At:** ${triggeredAt}`,
-      `**Target Channel:** <#${targetChannelId}>`,
-      `**Channel Source:** ${channelSourceLabel === "current_chat" ? "Current Chat" : "Configured Track Channel"}`,
-      "",
-      `**Track:** ${trackLabel}`,
-      "**Example Fields:**",
-      "**Name:** Debug Applicant",
-      "**Discord Name:** debug-user",
-      "**Reason:** Validate direct bot post flow end-to-end",
-    ].join("\n");
+    const debugHeaders = [
+      "Name",
+      "Discord Name",
+      "Reason",
+      "Debug Triggered By",
+      "Debug Triggered At",
+      "Debug Channel Source",
+    ];
+    const debugRow = [
+      "Debug Applicant",
+      "debug-user",
+      "Validate direct bot post flow end-to-end",
+      `<@${interaction.user.id}>`,
+      triggeredAt,
+      channelSourceLabel === "current_chat" ? "Current Chat" : "Configured Track Channel",
+    ];
+    const debugApplicationId = `${trackLabel.replace(/[^A-Za-z0-9]+/g, "").toUpperCase() || "TRACK"}-DEBUG`;
+    const payload = makeApplicationPostContent({
+      applicationId: debugApplicationId,
+      trackKey: selectedTrack,
+      applicantMention: `<@${interaction.user.id}>`,
+      applicantRawValue: null,
+      headers: debugHeaders,
+      row: debugRow,
+    });
 
-    const msg = await sendChannelMessage(targetChannelId, content);
+    const msg = await sendChannelMessage(targetChannelId, payload, {
+      parse: [],
+      users: [interaction.user.id],
+    });
     const postedChannelId = msg.channelId || targetChannelId;
 
     const warnings = [];
@@ -330,33 +396,17 @@ function createDebugAndFeedbackUtils(options = {}) {
       return;
     }
 
-    const isBug = String(commandLabel || "").toLowerCase().includes("bug");
-    const embed = {
-      title: isBug ? "🐞 Bug Report" : "💡 Suggestion",
-      color: isBug ? 0xdb4437 : 0x0f9d58,
-      description:
-        message.length <= 3800 ? message : `${message.slice(0, 3780)}\n...[truncated]`,
-      fields: [
-        {
-          name: "From",
-          value: `<@${interaction.user.id}>`,
-          inline: true,
-        },
-        {
-          name: "Source Channel",
-          value: `<#${interaction.channelId}>`,
-          inline: true,
-        },
-      ],
-      footer: {
-        text: `${commandLabel} via slash command`,
-      },
-      timestamp: new Date().toISOString(),
-    };
+    const payload = buildFeedbackMessagePayload({
+      kind: commandLabel,
+      commandLabel,
+      reporterUserId: interaction.user.id,
+      sourceChannelId: interaction.channelId,
+      message,
+    });
 
     const postedMessage = await targetChannel.send({
-      embeds: [embed],
-      allowedMentions: { parse: [] },
+      ...payload,
+      allowedMentions: payload.allowedMentions || { parse: [] },
     });
 
     let threadId = null;

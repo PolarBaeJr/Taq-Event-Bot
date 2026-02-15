@@ -25,6 +25,51 @@ function createApplicationFormUtils(options = {}) {
   const normalizeCell = typeof options.normalizeCell === "function"
     ? options.normalizeCell
     : (value) => String(value ?? "");
+  const buildApplicationMessagePayload =
+    typeof options.buildApplicationMessagePayload === "function"
+      ? options.buildApplicationMessagePayload
+      : ({
+        applicationId,
+        trackKey,
+        trackLabel,
+        applicantMention,
+        applicantRawValue,
+        detailsText,
+      }) => {
+        const fields = [
+          {
+            name: "Track",
+            value: String(trackLabel || trackKey || "Unknown Track"),
+            inline: true,
+          },
+        ];
+        if (applicationId) {
+          fields.push({
+            name: "Application ID",
+            value: `\`${applicationId}\``,
+            inline: true,
+          });
+        }
+        if (applicantMention || applicantRawValue) {
+          fields.push({
+            name: "Discord User",
+            value: applicantMention || truncateForEmbed(applicantRawValue, 256),
+            inline: true,
+          });
+        }
+
+        return {
+          content: applicantMention || "",
+          embeds: [
+            {
+              title: "📥 New Application",
+              color: resolveTrackEmbedColor(trackKey),
+              fields,
+              description: toCodeBlock(truncateForEmbed(detailsText, 3800)),
+            },
+          ],
+        };
+      };
 
   function sanitizeThreadName(name) {
     return (
@@ -186,40 +231,15 @@ function createApplicationFormUtils(options = {}) {
     row,
   }) {
     const trackLabel = getTrackLabel(trackKey);
-    const detailsText = truncateForEmbed(makeApplicationContent(headers, row), 3800);
-    const fields = [
-      {
-        name: "Track",
-        value: trackLabel,
-        inline: true,
-      },
-    ];
-    if (applicationId) {
-      fields.push({
-        name: "Application ID",
-        value: `\`${applicationId}\``,
-        inline: true,
-      });
-    }
-    if (applicantMention || applicantRawValue) {
-      fields.push({
-        name: "Discord User",
-        value: applicantMention || truncateForEmbed(applicantRawValue, 256),
-        inline: true,
-      });
-    }
-
-    return {
-      content: applicantMention || "",
-      embeds: [
-        {
-          title: "📥 New Application",
-          color: resolveTrackEmbedColor(trackKey),
-          fields,
-          description: toCodeBlock(detailsText),
-        },
-      ],
-    };
+    const detailsText = makeApplicationContent(headers, row);
+    return buildApplicationMessagePayload({
+      applicationId,
+      trackKey,
+      trackLabel,
+      applicantMention,
+      applicantRawValue,
+      detailsText,
+    });
   }
 
   async function sendDebugDm(user, text) {

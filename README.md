@@ -15,6 +15,19 @@ Simple Node.js bot that:
 11. Queues each application post as a persistent job (`job-000001`, etc.) and replays failed jobs in row order.
 12. Can auto-grant configured roles, send stale-pending reminders, post daily digests, and detect duplicate applications.
 
+## Release Notes
+
+### v1.1.1 - 2026-02-15
+
+- Added a shared dynamic message system used by all core message types.
+- Unified embed-style layout for:
+  - Application posts
+  - Bug reports
+  - Suggestions
+  - `/debug mode:post_test` posts
+- Centralized message payload generation so layout updates can be done in one place.
+- Kept downstream parsing compatible (track, application ID, and submitted field extraction).
+
 ## Requirements
 
 - Node.js 18+
