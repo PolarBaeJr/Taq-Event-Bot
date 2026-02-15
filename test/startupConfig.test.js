@@ -30,6 +30,6 @@ test("startup config validation reports malformed ids", () => {
   });
 
   assert.ok(result.errors.some((message) => message.includes("DISCORD_CLIENT_ID")));
-  assert.ok(result.errors.some((message) => message.includes("DISCORD_TESTER_CHANNEL_ID")));
-  assert.ok(result.errors.some((message) => message.includes("DISCORD_TESTER_APPROVED_ROLE_IDS")));
+  assert.ok(result.warnings.some((message) => message.includes("DISCORD_TESTER_CHANNEL_ID")));
+  assert.ok(result.warnings.some((message) => message.includes("DISCORD_TESTER_APPROVED_ROLE_IDS")));
 });

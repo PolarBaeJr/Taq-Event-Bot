@@ -106,7 +106,10 @@ function parseNumberEnv(env, key, defaultValue, rules = {}, errors = []) {
 
 function loadStartupConfig(options = {}) {
   const env = options.env && typeof options.env === "object" ? options.env : process.env;
-  const cwd = normalizeString(options.cwd) || process.cwd();
+  const cwd =
+    typeof options.cwd === "string" && options.cwd.length > 0
+      ? options.cwd
+      : process.cwd();
   const errors = [];
   const warnings = [];
 
@@ -127,25 +130,33 @@ function loadStartupConfig(options = {}) {
     errors.push("DISCORD_CLIENT_ID must be a valid Discord snowflake.");
   }
 
+  const optionalSnowflakeValues = {};
   for (const key of OPTIONAL_SNOWFLAKE_ENV_KEYS) {
     const value = normalizeString(env[key]);
     if (!value) {
+      optionalSnowflakeValues[key] = null;
       continue;
     }
     if (!isSnowflake(value)) {
-      errors.push(`${key} must be a valid Discord snowflake when set.`);
+      warnings.push(`${key} is not a valid Discord snowflake; ignoring configured value.`);
+      optionalSnowflakeValues[key] = null;
+      continue;
     }
+    optionalSnowflakeValues[key] = value;
   }
 
+  const optionalSnowflakeListValues = {};
   for (const key of OPTIONAL_SNOWFLAKE_LIST_ENV_KEYS) {
     const value = normalizeString(env[key]);
     if (!value) {
+      optionalSnowflakeListValues[key] = [];
       continue;
     }
     const parsed = parseSnowflakeList(value);
     if (parsed.invalid.length > 0) {
-      errors.push(`${key} contains invalid IDs: ${parsed.invalid.join(", ")}`);
+      warnings.push(`${key} contains invalid IDs and they were ignored: ${parsed.invalid.join(", ")}`);
     }
+    optionalSnowflakeListValues[key] = parsed.valid;
   }
 
   const serviceAccountKeyFile = normalizeString(env.GOOGLE_SERVICE_ACCOUNT_KEY_FILE);
@@ -161,15 +172,15 @@ function loadStartupConfig(options = {}) {
   const config = {
     spreadsheetId: env.GOOGLE_SPREADSHEET_ID,
     sheetName: env.GOOGLE_SHEET_NAME,
-    serviceAccountKeyFile: env.GOOGLE_SERVICE_ACCOUNT_KEY_FILE,
+    serviceAccountKeyFile,
     serviceAccountJson: env.GOOGLE_SERVICE_ACCOUNT_JSON,
     botToken: env.DISCORD_BOT_TOKEN,
     clientId: env.DISCORD_CLIENT_ID,
-    guildId: env.DISCORD_GUILD_ID,
-    testerChannelId: env.DISCORD_TESTER_CHANNEL_ID,
-    builderChannelId: env.DISCORD_BUILDER_CHANNEL_ID,
-    cmdChannelId: env.DISCORD_CMD_CHANNEL_ID,
-    channelId: env.DISCORD_CHANNEL_ID,
+    guildId: optionalSnowflakeValues.DISCORD_GUILD_ID,
+    testerChannelId: optionalSnowflakeValues.DISCORD_TESTER_CHANNEL_ID,
+    builderChannelId: optionalSnowflakeValues.DISCORD_BUILDER_CHANNEL_ID,
+    cmdChannelId: optionalSnowflakeValues.DISCORD_CMD_CHANNEL_ID,
+    channelId: optionalSnowflakeValues.DISCORD_CHANNEL_ID,
     pollIntervalMs: parseNumberEnv(env, "POLL_INTERVAL_MS", 30000, {
       integer: true,
       min: 1000,
@@ -178,20 +189,20 @@ function loadStartupConfig(options = {}) {
     crashLogDir: env.CRASH_LOG_DIR || "crashlog",
     controlLogFile: env.CONTROL_LOG_FILE || "logs/control-actions.log",
     logsChannelName: env.DISCORD_LOGS_CHANNEL_NAME || "application-logs",
-    logsChannelId: env.DISCORD_LOGS_CHANNEL_ID,
-    bugChannelId: env.DISCORD_BUG_CHANNEL_ID,
-    suggestionsChannelId: env.DISCORD_SUGGESTIONS_CHANNEL_ID,
-    acceptAnnounceChannelId: env.ACCEPT_ANNOUNCE_CHANNEL_ID,
+    logsChannelId: optionalSnowflakeValues.DISCORD_LOGS_CHANNEL_ID,
+    bugChannelId: optionalSnowflakeValues.DISCORD_BUG_CHANNEL_ID,
+    suggestionsChannelId: optionalSnowflakeValues.DISCORD_SUGGESTIONS_CHANNEL_ID,
+    acceptAnnounceChannelId: optionalSnowflakeValues.ACCEPT_ANNOUNCE_CHANNEL_ID,
     acceptAnnounceTemplate: env.ACCEPT_ANNOUNCE_TEMPLATE,
     denyDmTemplate: env.DENY_DM_TEMPLATE,
-    testerApprovedRoleIds: env.DISCORD_TESTER_APPROVED_ROLE_IDS,
-    builderApprovedRoleIds: env.DISCORD_BUILDER_APPROVED_ROLE_IDS,
-    cmdApprovedRoleIds: env.DISCORD_CMD_APPROVED_ROLE_IDS,
-    approvedRoleIds: env.DISCORD_APPROVED_ROLE_IDS,
-    testerApprovedRoleId: env.DISCORD_TESTER_APPROVED_ROLE_ID,
-    builderApprovedRoleId: env.DISCORD_BUILDER_APPROVED_ROLE_ID,
-    cmdApprovedRoleId: env.DISCORD_CMD_APPROVED_ROLE_ID,
-    approvedRoleId: env.DISCORD_APPROVED_ROLE_ID,
+    testerApprovedRoleIds: optionalSnowflakeListValues.DISCORD_TESTER_APPROVED_ROLE_IDS,
+    builderApprovedRoleIds: optionalSnowflakeListValues.DISCORD_BUILDER_APPROVED_ROLE_IDS,
+    cmdApprovedRoleIds: optionalSnowflakeListValues.DISCORD_CMD_APPROVED_ROLE_IDS,
+    approvedRoleIds: optionalSnowflakeListValues.DISCORD_APPROVED_ROLE_IDS,
+    testerApprovedRoleId: optionalSnowflakeValues.DISCORD_TESTER_APPROVED_ROLE_ID,
+    builderApprovedRoleId: optionalSnowflakeValues.DISCORD_BUILDER_APPROVED_ROLE_ID,
+    cmdApprovedRoleId: optionalSnowflakeValues.DISCORD_CMD_APPROVED_ROLE_ID,
+    approvedRoleId: optionalSnowflakeValues.DISCORD_APPROVED_ROLE_ID,
     startupRetryMs: parseNumberEnv(env, "STARTUP_RETRY_MS", 15000, {
       integer: true,
       min: 1000,
