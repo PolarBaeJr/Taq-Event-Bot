@@ -107,19 +107,49 @@ async function withRateLimitRetry(label, run, options = {}) {
     Number.isInteger(options.minimumWaitMs) && options.minimumWaitMs >= 0
       ? options.minimumWaitMs
       : 300;
+  const logger =
+    options.logger &&
+    typeof options.logger.warn === "function" &&
+    typeof options.logger.error === "function"
+      ? options.logger
+      : null;
+  const logContext =
+    options.logContext && typeof options.logContext === "object"
+      ? options.logContext
+      : {};
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
       return await run();
     } catch (err) {
       if (!isRateLimitError(err) || attempt >= maxAttempts) {
+        if (logger) {
+          logger.error("discord_rate_limit_final_failure", `${label} failed after retry handling.`, {
+            label,
+            attempt,
+            maxAttempts,
+            error: err?.message || String(err),
+            ...logContext,
+          });
+        }
         throw err;
       }
       const retryAfterMs = getRetryAfterMsFromError(err);
       const waitMs = Math.max(minimumWaitMs, retryAfterMs ?? 1000) + 100;
-      console.warn(
-        `${label} rate limited. Retrying in ${waitMs}ms (attempt ${attempt + 1}/${maxAttempts}).`
-      );
+      if (logger) {
+        logger.warn("discord_rate_limit_retry", `${label} rate limited.`, {
+          label,
+          waitMs,
+          attempt,
+          nextAttempt: attempt + 1,
+          maxAttempts,
+          ...logContext,
+        });
+      } else {
+        console.warn(
+          `${label} rate limited. Retrying in ${waitMs}ms (attempt ${attempt + 1}/${maxAttempts}).`
+        );
+      }
       await sleep(waitMs);
     }
   }

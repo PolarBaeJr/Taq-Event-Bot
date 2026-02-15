@@ -14,8 +14,19 @@ Simple Node.js bot that:
 10. Creates an `application-logs` channel and posts full close-history when an application is decided.
 11. Queues each application post as a persistent job (`job-000001`, etc.) and replays failed jobs in row order.
 12. Can auto-grant configured roles, send stale-pending reminders, post daily digests, and detect duplicate applications.
+13. Validates startup config/env strictly (required values, numeric ranges, Discord snowflake IDs).
+14. Emits structured JSON logs for interaction failures, Discord API send/reaction/thread failures, and queue retries.
+15. Includes automated test + CI pipeline (`npm run ci`, GitHub Actions).
 
 ## Release Notes
+
+### Unreleased
+
+- Added strict startup config validation (`src/lib/startupConfig.js`).
+- Added structured logger and runtime wiring for key error/retry events (`src/lib/structuredLogger.js`).
+- Added parser helper module + compatibility tests for embedded application messages.
+- Added test/lint/ci/release scripts and GitHub Actions CI workflow.
+- Added `CHANGELOG.md`.
 
 ### v1.1.1 - 2026-02-15
 
@@ -117,6 +128,21 @@ npm run functions:mirror
 ```
 
 This generates `src/functions/` with one file per top-level function from `src/index.js`.
+
+Run checks locally:
+
+```bash
+npm run lint
+npm run test
+npm run ci
+```
+
+Release helper:
+
+```bash
+npm run release -- patch
+npm run release -- 1.1.2 --push --all
+```
 
 When running in `dev` mode, type `rs` then Enter in that terminal to restart the bot manually after changes.
 

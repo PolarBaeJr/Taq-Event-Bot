@@ -1,3 +1,11 @@
+const {
+  normalizeComparableText,
+  extractTrackLabelFromMessage,
+  extractApplicationIdFromMessage,
+  parseSubmittedFieldsFromMessage,
+  isApplicationPostMessage,
+} = require("./applicationMessageParser");
+
 function createPollingPipeline(options = {}) {
   const readState = typeof options.readState === "function"
     ? options.readState
@@ -100,188 +108,30 @@ function createPollingPipeline(options = {}) {
     typeof options.onApplicationCreated === "function"
       ? options.onApplicationCreated
       : () => {};
+  const logger =
+    options.logger &&
+    typeof options.logger.info === "function" &&
+    typeof options.logger.error === "function"
+      ? options.logger
+      : null;
 
   let isProcessingPostJobs = false;
   let loggedNoChannelWarning = false;
 
-  function normalizeComparableText(value) {
-    return String(value || "")
-      .toLowerCase()
-      .replace(/\s+/g, " ")
-      .trim();
+  function logInfo(event, message, context = {}) {
+    if (logger) {
+      logger.info(event, message, context);
+      return;
+    }
+    console.log(message);
   }
 
-  function extractTrackLabelFromContent(content) {
-    const match = /(?:^|\n)[^\n]*\*\*Track:\*\*\s*([^\n]+)/i.exec(String(content || ""));
-    if (!match) {
-      return "";
+  function logError(event, message, context = {}) {
+    if (logger) {
+      logger.error(event, message, context);
+      return;
     }
-    return normalizeComparableText(match[1].replace(/[`*_~]/g, ""));
-  }
-
-  function extractApplicationIdFromContent(content) {
-    const match = /application id:\s*`?([A-Za-z0-9]+-\d+)`?/i.exec(
-      String(content || "")
-    );
-    return match ? String(match[1]).trim() : null;
-  }
-
-  function stripDecorators(value) {
-    return String(value || "")
-      .replace(/[`*_~]/g, "")
-      .replace(/^<@!?\d+>$/g, "")
-      .trim();
-  }
-
-  function getPrimaryEmbed(message) {
-    if (!message || !Array.isArray(message.embeds) || message.embeds.length === 0) {
-      return null;
-    }
-    return message.embeds[0];
-  }
-
-  function extractTrackLabelFromEmbed(embed) {
-    if (!embed || !Array.isArray(embed.fields)) {
-      return "";
-    }
-    const field = embed.fields.find((entry) =>
-      normalizeComparableText(entry?.name) === "track"
-    );
-    if (!field) {
-      return "";
-    }
-    return normalizeComparableText(stripDecorators(field.value));
-  }
-
-  function extractApplicationIdFromEmbed(embed) {
-    if (!embed || !Array.isArray(embed.fields)) {
-      return null;
-    }
-    const field = embed.fields.find((entry) =>
-      normalizeComparableText(entry?.name) === "application id"
-    );
-    if (!field) {
-      return null;
-    }
-    const raw = stripDecorators(field.value);
-    return raw || null;
-  }
-
-  function extractTrackLabelFromMessage(message) {
-    const fromContent = extractTrackLabelFromContent(message?.content);
-    if (fromContent) {
-      return fromContent;
-    }
-    return extractTrackLabelFromEmbed(getPrimaryEmbed(message));
-  }
-
-  function extractApplicationIdFromMessage(message) {
-    const fromContent = extractApplicationIdFromContent(message?.content);
-    if (fromContent) {
-      return fromContent;
-    }
-
-    const embed = getPrimaryEmbed(message);
-    const fromEmbedField = extractApplicationIdFromEmbed(embed);
-    if (fromEmbedField) {
-      return fromEmbedField;
-    }
-
-    const fromEmbedDescription = extractApplicationIdFromContent(embed?.description || "");
-    if (fromEmbedDescription) {
-      return fromEmbedDescription;
-    }
-
-    return null;
-  }
-
-  function parseSubmittedFieldsFromPostContent(content) {
-    const blockMatch = /```(?:\w+)?\n?([\s\S]*?)```/.exec(String(content || ""));
-    if (!blockMatch) {
-      return [];
-    }
-
-    const body = String(blockMatch[1] || "").replace(/\r\n/g, "\n").trim();
-    if (!body) {
-      return [];
-    }
-
-    const chunks = body.split(/\n\s*\n/);
-    const submittedFields = [];
-    for (const chunk of chunks) {
-      const line = String(chunk || "").trim();
-      if (!line) {
-        continue;
-      }
-
-      const separatorIndex = line.indexOf(":");
-      if (separatorIndex <= 0) {
-        continue;
-      }
-
-      const key = line.slice(0, separatorIndex).trim();
-      const value = line.slice(separatorIndex + 1).trim();
-      if (!key || !value) {
-        continue;
-      }
-
-      submittedFields.push(`**${key}:** ${value}`);
-    }
-
-    return submittedFields;
-  }
-
-  function parseSubmittedFieldsFromEmbed(embed) {
-    if (!embed || typeof embed !== "object") {
-      return [];
-    }
-
-    const fromDescription = parseSubmittedFieldsFromPostContent(embed.description || "");
-    if (fromDescription.length > 0) {
-      return fromDescription;
-    }
-
-    if (!Array.isArray(embed.fields)) {
-      return [];
-    }
-
-    const metadataNames = new Set(["track", "application id", "discord user"]);
-    const submittedFields = [];
-    for (const field of embed.fields) {
-      const name = stripDecorators(field?.name);
-      const value = stripDecorators(field?.value);
-      if (!name || !value) {
-        continue;
-      }
-      if (metadataNames.has(normalizeComparableText(name))) {
-        continue;
-      }
-      submittedFields.push(`**${name}:** ${value}`);
-    }
-    return submittedFields;
-  }
-
-  function parseSubmittedFieldsFromMessage(message) {
-    const fromContent = parseSubmittedFieldsFromPostContent(message?.content || "");
-    if (fromContent.length > 0) {
-      return fromContent;
-    }
-    return parseSubmittedFieldsFromEmbed(getPrimaryEmbed(message));
-  }
-
-  function isApplicationPostMessage(message) {
-    const content = normalizeComparableText(message?.content || "");
-    if (content.includes("new application")) {
-      return true;
-    }
-
-    const embed = getPrimaryEmbed(message);
-    const title = normalizeComparableText(embed?.title || "");
-    if (title.includes("new application")) {
-      return true;
-    }
-
-    return false;
+    console.error(message);
   }
 
   function normalizeMessagePayload(payload, allowedMentions) {
@@ -507,15 +357,29 @@ function createPollingPipeline(options = {}) {
               })
             );
           } catch (err) {
-            console.error(
-              `[JOB ${job.jobId}] Failed updating application ID text for ${trackLabel}:`,
-              err.message
+            logError(
+              "queue_application_update_failed",
+              `[JOB ${job.jobId}] Failed updating application ID text for ${trackLabel}: ${err.message}`,
+              {
+                jobId: job.jobId,
+                trackKey,
+                trackLabel,
+                error: err.message,
+              }
             );
           }
         }
       } else {
-        console.log(
-          `[JOB ${job.jobId}] Reused existing ${trackLabel} application post (${msg.id}) in channel ${configuredChannelId}.`
+        logInfo(
+          "queue_application_reused",
+          `[JOB ${job.jobId}] Reused existing ${trackLabel} application post (${msg.id}) in channel ${configuredChannelId}.`,
+          {
+            jobId: job.jobId,
+            trackKey,
+            trackLabel,
+            messageId: msg.id,
+            channelId: configuredChannelId,
+          }
         );
       }
 
@@ -536,9 +400,17 @@ function createPollingPipeline(options = {}) {
         await addReaction(postedChannelId, msg.id, acceptEmoji);
         await addReaction(postedChannelId, msg.id, denyEmoji);
       } catch (err) {
-        console.error(
-          `[JOB ${job.jobId}] Failed adding reactions for ${trackLabel}:`,
-          err.message
+        logError(
+          "queue_reactions_failed",
+          `[JOB ${job.jobId}] Failed adding reactions for ${trackLabel}: ${err.message}`,
+          {
+            jobId: job.jobId,
+            trackKey,
+            trackLabel,
+            channelId: postedChannelId,
+            messageId: msg.id,
+            error: err.message,
+          }
         );
       }
 
@@ -556,9 +428,17 @@ function createPollingPipeline(options = {}) {
           if (errorMessage.toLowerCase().includes("already has a thread")) {
             threadId = msg.id;
           } else {
-            console.error(
-              `[JOB ${job.jobId}] Failed creating thread for ${trackLabel}:`,
-              err.message
+            logError(
+              "queue_thread_create_failed",
+              `[JOB ${job.jobId}] Failed creating thread for ${trackLabel}: ${err.message}`,
+              {
+                jobId: job.jobId,
+                trackKey,
+                trackLabel,
+                channelId: postedChannelId,
+                messageId: msg.id,
+                error: err.message,
+              }
             );
           }
         }
@@ -600,9 +480,15 @@ function createPollingPipeline(options = {}) {
           rowIndex: typeof rowIndex === "number" ? rowIndex : null,
         });
       } catch (err) {
-        console.error(
-          `[JOB ${job.jobId}] Failed running post-create hook for ${trackLabel}:`,
-          err.message
+        logError(
+          "queue_post_create_hook_failed",
+          `[JOB ${job.jobId}] Failed running post-create hook for ${trackLabel}: ${err.message}`,
+          {
+            jobId: job.jobId,
+            trackKey,
+            trackLabel,
+            error: err.message,
+          }
         );
       }
 
@@ -617,9 +503,15 @@ function createPollingPipeline(options = {}) {
           jobId: job.jobId,
         });
       } catch (err) {
-        console.error(
-          `[JOB ${job.jobId}] Failed reviewer assignment message for ${trackLabel}:`,
-          err.message
+        logError(
+          "queue_reviewer_assignment_failed",
+          `[JOB ${job.jobId}] Failed reviewer assignment message for ${trackLabel}: ${err.message}`,
+          {
+            jobId: job.jobId,
+            trackKey,
+            trackLabel,
+            error: err.message,
+          }
         );
       }
 
@@ -636,9 +528,15 @@ function createPollingPipeline(options = {}) {
             jobId: job.jobId,
           });
         } catch (err) {
-          console.error(
-            `[JOB ${job.jobId}] Failed duplicate warning post for ${trackLabel}:`,
-            err.message
+          logError(
+            "queue_duplicate_warning_failed",
+            `[JOB ${job.jobId}] Failed duplicate warning post for ${trackLabel}: ${err.message}`,
+            {
+              jobId: job.jobId,
+              trackKey,
+              trackLabel,
+              error: err.message,
+            }
           );
         }
       }
@@ -717,8 +615,14 @@ function createPollingPipeline(options = {}) {
           state.postJobs.shift();
           posted += 1;
           writeState(state);
-          console.log(
-            `[JOB ${job.jobId}] Posted ${trackLabels} application(s) for row ${job.rowIndex}.`
+          logInfo(
+            "queue_job_posted",
+            `[JOB ${job.jobId}] Posted ${trackLabels} application(s) for row ${job.rowIndex}.`,
+            {
+              jobId: job.jobId,
+              rowIndex: job.rowIndex,
+              trackKeys: job.trackKeys,
+            }
           );
         } catch (err) {
           job.lastError = err.message;
@@ -726,9 +630,16 @@ function createPollingPipeline(options = {}) {
           failedJobId = job.jobId;
           failedError = err.message;
           writeState(state);
-          console.error(
-            `[JOB ${job.jobId}] Failed posting ${trackLabels} row ${job.rowIndex}:`,
-            err.message
+          logError(
+            "queue_job_failed",
+            `[JOB ${job.jobId}] Failed posting ${trackLabels} row ${job.rowIndex}: ${err.message}`,
+            {
+              jobId: job.jobId,
+              rowIndex: job.rowIndex,
+              trackKeys: job.trackKeys,
+              error: err.message,
+              attempts: job.attempts,
+            }
           );
           break;
         }
@@ -778,10 +689,15 @@ function createPollingPipeline(options = {}) {
         const autoCreatedTrackKeys = autoRegisterTracksFromFormRow(state, headers, row);
         if (autoCreatedTrackKeys.length > 0) {
           stateChanged = true;
-          console.log(
+          logInfo(
+            "track_auto_registered",
             `[TRACK] Auto-registered from row ${sheetRowNumber}: ${autoCreatedTrackKeys
               .map((trackKey) => `${getTrackLabel(trackKey)} (${trackKey})`)
-              .join(", ")}`
+              .join(", ")}`,
+            {
+              rowIndex: sheetRowNumber,
+              trackKeys: autoCreatedTrackKeys,
+            }
           );
         }
 
@@ -797,8 +713,14 @@ function createPollingPipeline(options = {}) {
           trackedRows.add(sheetRowNumber);
         }
         stateChanged = true;
-        console.log(
-          `[JOB ${job.jobId}] Queued ${formatTrackLabels(job.trackKeys)} application post for row ${sheetRowNumber}.`
+        logInfo(
+          "queue_job_created",
+          `[JOB ${job.jobId}] Queued ${formatTrackLabels(job.trackKeys)} application post for row ${sheetRowNumber}.`,
+          {
+            jobId: job.jobId,
+            rowIndex: sheetRowNumber,
+            trackKeys: job.trackKeys,
+          }
         );
       }
 
@@ -815,7 +737,8 @@ function createPollingPipeline(options = {}) {
 
     if (!hasAnyActivePostChannelConfigured()) {
       if (!loggedNoChannelWarning) {
-        console.log(
+        logInfo(
+          "queue_paused_no_channels",
           "Posting paused: no application post channels configured. Use /setchannel."
         );
         loggedNoChannelWarning = true;
@@ -834,7 +757,7 @@ function createPollingPipeline(options = {}) {
       if (queueResult.failed > 0 && queueResult.failedJobId) {
         details.push(`blocked=${queueResult.failedJobId}`);
       }
-      console.log(`Job run summary: ${details.join(", ")}`);
+      logInfo("queue_run_summary", `Job run summary: ${details.join(", ")}`, queueResult);
     }
   }
 

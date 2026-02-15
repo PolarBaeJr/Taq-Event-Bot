@@ -24,6 +24,8 @@ const { createDebugAndFeedbackUtils } = require("./lib/debugAndFeedbackUtils");
 const { createPollingPipeline } = require("./lib/pollingPipeline");
 const { createInteractionCommandHandler } = require("./lib/interactionCommandHandler");
 const { createDynamicMessageSystem } = require("./lib/dynamicMessageSystem");
+const { loadStartupConfig } = require("./lib/startupConfig");
+const { createStructuredLogger, serializeError } = require("./lib/structuredLogger");
 const {
   toCodeBlock,
   applyTemplatePlaceholders,
@@ -34,74 +36,26 @@ const {
 } = require("./lib/messageAndRetryUtils");
 
 dotenv.config();
-
-const REQUIRED_ENV = [
-  "GOOGLE_SPREADSHEET_ID",
-  "GOOGLE_SHEET_NAME",
-  "DISCORD_BOT_TOKEN",
-  "DISCORD_CLIENT_ID",
-];
-
-for (const key of REQUIRED_ENV) {
-  if (!process.env[key]) {
-    console.error(`Missing required env var: ${key}`);
-    process.exit(1);
+const logger = createStructuredLogger({
+  baseContext: {
+    service: "taq-event-team-bot",
+    pid: process.pid,
+  },
+});
+const startupConfig = loadStartupConfig({
+  env: process.env,
+  cwd: process.cwd(),
+});
+if (startupConfig.errors.length > 0) {
+  for (const message of startupConfig.errors) {
+    logger.error("startup_config_invalid", message);
   }
-}
-
-if (
-  !process.env.GOOGLE_SERVICE_ACCOUNT_KEY_FILE &&
-  !process.env.GOOGLE_SERVICE_ACCOUNT_JSON
-) {
-  console.error(
-    "Missing Google credentials: set GOOGLE_SERVICE_ACCOUNT_KEY_FILE or GOOGLE_SERVICE_ACCOUNT_JSON"
-  );
   process.exit(1);
 }
-
-const config = {
-  spreadsheetId: process.env.GOOGLE_SPREADSHEET_ID,
-  sheetName: process.env.GOOGLE_SHEET_NAME,
-  serviceAccountKeyFile: process.env.GOOGLE_SERVICE_ACCOUNT_KEY_FILE,
-  serviceAccountJson: process.env.GOOGLE_SERVICE_ACCOUNT_JSON,
-  botToken: process.env.DISCORD_BOT_TOKEN,
-  clientId: process.env.DISCORD_CLIENT_ID,
-  guildId: process.env.DISCORD_GUILD_ID,
-  testerChannelId: process.env.DISCORD_TESTER_CHANNEL_ID,
-  builderChannelId: process.env.DISCORD_BUILDER_CHANNEL_ID,
-  cmdChannelId: process.env.DISCORD_CMD_CHANNEL_ID,
-  channelId: process.env.DISCORD_CHANNEL_ID,
-  pollIntervalMs: Number(process.env.POLL_INTERVAL_MS || 30000),
-  stateFile: process.env.STATE_FILE || ".bot-state.json",
-  crashLogDir: process.env.CRASH_LOG_DIR || "crashlog",
-  controlLogFile: process.env.CONTROL_LOG_FILE || "logs/control-actions.log",
-  logsChannelName: process.env.DISCORD_LOGS_CHANNEL_NAME || "application-logs",
-  logsChannelId: process.env.DISCORD_LOGS_CHANNEL_ID,
-  bugChannelId: process.env.DISCORD_BUG_CHANNEL_ID,
-  suggestionsChannelId: process.env.DISCORD_SUGGESTIONS_CHANNEL_ID,
-  acceptAnnounceChannelId: process.env.ACCEPT_ANNOUNCE_CHANNEL_ID,
-  acceptAnnounceTemplate: process.env.ACCEPT_ANNOUNCE_TEMPLATE,
-  denyDmTemplate: process.env.DENY_DM_TEMPLATE,
-  testerApprovedRoleIds: process.env.DISCORD_TESTER_APPROVED_ROLE_IDS,
-  builderApprovedRoleIds: process.env.DISCORD_BUILDER_APPROVED_ROLE_IDS,
-  cmdApprovedRoleIds: process.env.DISCORD_CMD_APPROVED_ROLE_IDS,
-  approvedRoleIds: process.env.DISCORD_APPROVED_ROLE_IDS,
-  testerApprovedRoleId: process.env.DISCORD_TESTER_APPROVED_ROLE_ID,
-  builderApprovedRoleId: process.env.DISCORD_BUILDER_APPROVED_ROLE_ID,
-  cmdApprovedRoleId: process.env.DISCORD_CMD_APPROVED_ROLE_ID,
-  approvedRoleId: process.env.DISCORD_APPROVED_ROLE_ID,
-  startupRetryMs: Number(process.env.STARTUP_RETRY_MS || 15000),
-  threadArchiveMinutes: Number(
-    process.env.DISCORD_THREAD_AUTO_ARCHIVE_MINUTES || 10080
-  ),
-  reminderThresholdHours: Number(process.env.REMINDER_THRESHOLD_HOURS || 24),
-  reminderRepeatHours: Number(process.env.REMINDER_REPEAT_HOURS || 12),
-  dailyDigestEnabled: String(process.env.DAILY_DIGEST_ENABLED || "true")
-    .toLowerCase()
-    .trim() !== "false",
-  dailyDigestHourUtc: Number(process.env.DAILY_DIGEST_HOUR_UTC || 15),
-  duplicateLookbackDays: Number(process.env.DUPLICATE_LOOKBACK_DAYS || 60),
-};
+for (const message of startupConfig.warnings) {
+  logger.warn("startup_config_warning", message);
+}
+const config = startupConfig.config;
 const STATE_FILE_FALLBACK_BASENAME = "taq-event-team-bot-state.json";
 const { isStateFilePermissionError, switchStateFileToWritableFallback } =
   createStateFileFallbackUtils({
@@ -1797,6 +1751,13 @@ async function sendChannelMessage(channelId, content, allowedMentions = { parse:
   return withRateLimitRetry("Send message", async () => {
     const channel = await client.channels.fetch(channelId);
     if (!channel || !channel.isTextBased()) {
+      logger.error(
+        "discord_channel_not_text_based",
+        "Configured channel is not text-based.",
+        {
+          channelId,
+        }
+      );
       throw new Error("Configured channel is not text-based.");
     }
 
@@ -1820,6 +1781,12 @@ async function sendChannelMessage(channelId, content, allowedMentions = { parse:
       content: String(content || ""),
       allowedMentions,
     });
+  }, {
+    logger,
+    logContext: {
+      channelId,
+      operation: "send_message",
+    },
   });
 }
 
@@ -1844,10 +1811,28 @@ async function addReaction(channelId, messageId, emoji) {
     if (res.status === 429 && attempt < maxAttempts) {
       const retryAfterMs = getRetryAfterMsFromBody(body);
       const waitMs = Math.max(300, retryAfterMs ?? 1000) + 100;
+      logger.warn("discord_reaction_rate_limited", "Reaction add rate limited.", {
+        channelId,
+        messageId,
+        emoji,
+        waitMs,
+        attempt,
+        nextAttempt: attempt + 1,
+        maxAttempts,
+      });
       await sleep(waitMs);
       continue;
     }
 
+    logger.error("discord_reaction_failed", "Failed adding reaction.", {
+      channelId,
+      messageId,
+      emoji,
+      status: res.status,
+      attempt,
+      maxAttempts,
+      body,
+    });
     throw new Error(`Failed adding reaction ${emoji} (${res.status}): ${body}`);
   }
 }
@@ -1876,13 +1861,26 @@ async function createThread(channelId, messageId, name) {
     if (res.status === 429 && attempt < maxAttempts) {
       const retryAfterMs = getRetryAfterMsFromBody(body);
       const waitMs = Math.max(300, retryAfterMs ?? 1000) + 100;
-      console.warn(
-        `Thread creation rate limited. Retrying in ${waitMs}ms (attempt ${attempt + 1}/${maxAttempts}).`
-      );
+      logger.warn("discord_thread_rate_limited", "Thread creation rate limited.", {
+        channelId,
+        messageId,
+        waitMs,
+        attempt,
+        nextAttempt: attempt + 1,
+        maxAttempts,
+      });
       await sleep(waitMs);
       continue;
     }
 
+    logger.error("discord_thread_create_failed", "Thread creation failed.", {
+      channelId,
+      messageId,
+      status: res.status,
+      attempt,
+      maxAttempts,
+      body,
+    });
     throw new Error(`Thread creation failed (${res.status}): ${body}`);
   }
 }
@@ -2757,6 +2755,8 @@ const client = new Client({
   ],
   partials: [Partials.Channel, Partials.Message, Partials.Reaction],
 });
+const interactionLogger = logger.child({ component: "interaction_handler" });
+const pipelineLogger = logger.child({ component: "polling_pipeline" });
 
 const { buildApplicationMessagePayload, buildFeedbackMessagePayload } =
   createDynamicMessageSystem({
@@ -2857,7 +2857,18 @@ const { processQueuedPostJobs, pollOnce } = createPollingPipeline({
   buildApplicationId,
   makeApplicationPostContent,
   sendChannelMessage,
-  withRateLimitRetry,
+  withRateLimitRetry: (label, run, retryOptions = {}) =>
+    withRateLimitRetry(label, run, {
+      ...retryOptions,
+      logger: pipelineLogger,
+      logContext: {
+        ...(retryOptions.logContext && typeof retryOptions.logContext === "object"
+          ? retryOptions.logContext
+          : {}),
+        component: "polling_pipeline",
+        operation: label,
+      },
+    }),
   addReaction,
   createThread,
   extractAnsweredFields,
@@ -2877,6 +2888,7 @@ const { processQueuedPostJobs, pollOnce } = createPollingPipeline({
   findDuplicateApplications,
   postDuplicateWarning,
   announceReviewerAssignment,
+  logger: pipelineLogger,
 });
 
 const {
@@ -2969,6 +2981,7 @@ const onInteractionCreate = createInteractionCommandHandler({
   formatVoteRule,
   getTrackKeyForChannelId,
   getActiveChannelId,
+  logger: interactionLogger,
 });
 
 client.on("messageReactionAdd", async (reaction, user) => {
@@ -2993,7 +3006,9 @@ client.on("messageReactionAdd", async (reaction, user) => {
 
     await evaluateAndApplyVoteDecision(reaction.message.id);
   } catch (err) {
-    console.error("Reaction add handler failed:", err.message);
+    logger.error("reaction_add_handler_failed", "Reaction add handler failed.", {
+      error: err.message,
+    });
   }
 });
 
@@ -3015,7 +3030,9 @@ client.on("messageReactionRemove", async (reaction) => {
 
     await evaluateAndApplyVoteDecision(reaction.message.id);
   } catch (err) {
-    console.error("Reaction remove handler failed:", err.message);
+    logger.error("reaction_remove_handler_failed", "Reaction remove handler failed.", {
+      error: err.message,
+    });
   }
 });
 
@@ -3028,7 +3045,10 @@ client.on("guildCreate", async (guild) => {
     const commands = buildSlashCommands();
     await registerSlashCommandsForGuild(rest, guild.id, commands);
   } catch (err) {
-    console.error(`Failed creating logs channel in guild ${guild.id}:`, err.message);
+    logger.error("guild_create_setup_failed", "Failed creating logs channel in guild.", {
+      guildId: guild.id,
+      error: err.message,
+    });
   }
 });
 
@@ -3040,7 +3060,10 @@ async function main() {
   try {
     const activeChannelId = getAnyActiveChannelId();
     if (!activeChannelId) {
-      console.log("No active application channels configured yet. Use /setchannel.");
+      logger.info(
+        "startup_no_active_channels",
+        "No active application channels configured yet. Use /setchannel."
+      );
     } else {
       const channel = await client.channels.fetch(activeChannelId);
       if (channel && "guild" in channel && channel.guild) {
@@ -3048,18 +3071,26 @@ async function main() {
       }
     }
   } catch (err) {
-    console.error("Failed ensuring logs channel on startup:", err.message);
+    logger.error("startup_ensure_logs_channel_failed", "Failed ensuring logs channel on startup.", {
+      error: err.message,
+    });
   }
 
-  console.log("Bot started. Polling for Google Form responses...");
+  logger.info("startup_bot_ready", "Bot started. Polling for Google Form responses.");
   await pollOnce().catch((err) => {
-    console.error("Initial poll failed:", err.message);
+    logger.error("startup_initial_poll_failed", "Initial poll failed.", {
+      error: err.message,
+    });
   });
   await maybeSendPendingReminders().catch((err) => {
-    console.error("Initial reminder pass failed:", err.message);
+    logger.error("startup_initial_reminder_failed", "Initial reminder pass failed.", {
+      error: err.message,
+    });
   });
   await maybeSendDailyDigest().catch((err) => {
-    console.error("Initial digest pass failed:", err.message);
+    logger.error("startup_initial_digest_failed", "Initial digest pass failed.", {
+      error: err.message,
+    });
   });
 
   setInterval(async () => {
@@ -3068,7 +3099,9 @@ async function main() {
       await maybeSendPendingReminders();
       await maybeSendDailyDigest();
     } catch (err) {
-      console.error("Poll failed:", err.message);
+      logger.error("poll_cycle_failed", "Poll cycle failed.", {
+        error: err.message,
+      });
     }
   }, config.pollIntervalMs);
 }
@@ -3112,10 +3145,17 @@ async function bootWithRetry() {
         throw err;
       }
 
-      console.error(
+      logger.error(
+        "startup_retryable_failure",
         `Startup failed (${err.code || err.name || "error"}: ${err.message}). Retrying in ${Math.ceil(
           waitMs / 1000
-        )}s...`
+        )}s...`,
+        {
+          code: err.code || null,
+          name: err.name || null,
+          error: err.message,
+          retryAfterMs: waitMs,
+        }
       );
       try {
         client.destroy();
@@ -3138,22 +3178,42 @@ function installCrashHandlers() {
   process.on("uncaughtException", (err) => {
     try {
       const crashPath = writeCrashLog("uncaughtException", err);
-      console.error(`Uncaught exception. Crash log written to ${crashPath}`);
+      logger.error("uncaught_exception_crashlog_written", "Uncaught exception crash log written.", {
+        crashPath,
+      });
     } catch (logErr) {
-      console.error("Failed writing uncaught exception crash log:", logErr.message);
+      logger.error(
+        "uncaught_exception_crashlog_failed",
+        "Failed writing uncaught exception crash log.",
+        {
+          error: logErr.message,
+        }
+      );
     }
-    console.error("Uncaught exception:", err);
+    logger.error("uncaught_exception", "Uncaught exception.", {
+      error: serializeError(err),
+    });
     process.exit(1);
   });
 
   process.on("unhandledRejection", (reason) => {
     try {
       const crashPath = writeCrashLog("unhandledRejection", reason);
-      console.error(`Unhandled rejection. Crash log written to ${crashPath}`);
+      logger.error("unhandled_rejection_crashlog_written", "Unhandled rejection crash log written.", {
+        crashPath,
+      });
     } catch (logErr) {
-      console.error("Failed writing unhandled rejection crash log:", logErr.message);
+      logger.error(
+        "unhandled_rejection_crashlog_failed",
+        "Failed writing unhandled rejection crash log.",
+        {
+          error: logErr.message,
+        }
+      );
     }
-    console.error("Unhandled rejection:", reason);
+    logger.error("unhandled_rejection", "Unhandled rejection.", {
+      reason: serializeError(reason),
+    });
     process.exit(1);
   });
 }
@@ -3163,10 +3223,16 @@ installCrashHandlers();
 bootWithRetry().catch((err) => {
   try {
     const crashPath = writeCrashLog("fatalStartup", err);
-    console.error(`Fatal startup error. Crash log written to ${crashPath}`);
+    logger.error("fatal_startup_crashlog_written", "Fatal startup crash log written.", {
+      crashPath,
+    });
   } catch (logErr) {
-    console.error("Failed writing fatal startup crash log:", logErr.message);
+    logger.error("fatal_startup_crashlog_failed", "Failed writing fatal startup crash log.", {
+      error: logErr.message,
+    });
   }
-  console.error("Fatal error:", err);
+  logger.error("fatal_startup_error", "Fatal startup error.", {
+    error: serializeError(err),
+  });
   process.exit(1);
 });

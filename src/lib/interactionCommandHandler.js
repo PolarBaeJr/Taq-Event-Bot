@@ -62,6 +62,12 @@ function createInteractionCommandHandler(options = {}) {
   const formatVoteRule = options.formatVoteRule;
   const getTrackKeyForChannelId = options.getTrackKeyForChannelId;
   const getActiveChannelId = options.getActiveChannelId;
+  const logger =
+    options.logger &&
+    typeof options.logger.error === "function" &&
+    typeof options.logger.info === "function"
+      ? options.logger
+      : null;
 
   return async function onInteractionCreate(interaction) {
     try {
@@ -1362,7 +1368,24 @@ function createInteractionCommandHandler(options = {}) {
         ephemeral: true,
       });
     } catch (err) {
-      console.error("Interaction handler failed:", err.message);
+      const interactionContext = {
+        commandName: interaction?.commandName || null,
+        userId: interaction?.user?.id || null,
+        channelId: interaction?.channelId || null,
+        guildId: interaction?.guildId || null,
+        deferred: Boolean(interaction?.deferred),
+        replied: Boolean(interaction?.replied),
+        error: err?.message || String(err),
+      };
+      if (logger) {
+        logger.error(
+          "interaction_command_failed",
+          "Interaction handler failed.",
+          interactionContext
+        );
+      } else {
+        console.error("Interaction handler failed:", err.message);
+      }
       if (!interaction.isRepliable()) {
         return;
       }
