@@ -19,6 +19,7 @@ test("buildApplicationMessagePayload builds consistent embed payload", () => {
   assert.equal(payload.content, "<@123456789012345678>");
   assert.equal(payload.embeds.length, 1);
   assert.equal(payload.embeds[0].title, "📥 New Application");
+  assert.equal(payload.embeds[0].color, 0xfee75c);
   assert.equal(payload.embeds[0].fields[0].name, "Track");
   assert.equal(payload.embeds[0].fields[0].value, "Tester");
   assert.equal(payload.embeds[0].fields[1].name, "Application ID");
@@ -29,6 +30,27 @@ test("buildApplicationMessagePayload builds consistent embed payload", () => {
     users: ["123456789012345678"],
     roles: [],
   });
+});
+
+test("buildApplicationMessagePayload uses status-based colors", () => {
+  const { buildApplicationMessagePayload } = createDynamicMessageSystem();
+
+  const accepted = buildApplicationMessagePayload({
+    status: "accepted",
+    detailsText: "Accepted",
+  });
+  const denied = buildApplicationMessagePayload({
+    status: "denied",
+    detailsText: "Denied",
+  });
+  const processing = buildApplicationMessagePayload({
+    status: "processing",
+    detailsText: "Processing",
+  });
+
+  assert.equal(accepted.embeds[0].color, 0x57f287);
+  assert.equal(denied.embeds[0].color, 0xed4245);
+  assert.equal(processing.embeds[0].color, 0xfee75c);
 });
 
 test("buildFeedbackMessagePayload builds suggestion and bug payloads", () => {

@@ -1,3 +1,23 @@
+const {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ModalBuilder,
+  RoleSelectMenuBuilder,
+  StringSelectMenuBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+} = require("discord.js");
+
+const REACTION_ROLE_GUI_PREFIX = "rrgui";
+const REACTION_ROLE_GUI_ACTION_ADD = "add";
+const REACTION_ROLE_GUI_ACTION_REMOVE = "remove";
+const REACTION_ROLE_GUI_ACTION_MODAL_ADD = "modal_add";
+const REACTION_ROLE_GUI_ACTION_MODAL_REMOVE = "modal_remove";
+const APPROLE_GUI_PREFIX = "approlegui";
+const APPROLE_GUI_ACTION_TRACK = "track";
+const APPROLE_GUI_ACTION_ROLES = "roles";
+
 function createInteractionCommandHandler(options = {}) {
   const PermissionsBitField = options.PermissionsBitField;
   const ChannelType = options.ChannelType;
@@ -29,6 +49,10 @@ function createInteractionCommandHandler(options = {}) {
   const sendChannelMessage = options.sendChannelMessage;
   const parseRoleIdList = options.parseRoleIdList;
   const setActiveApprovedRoles = options.setActiveApprovedRoles;
+  const getActiveApprovedRoleIds =
+    typeof options.getActiveApprovedRoleIds === "function"
+      ? options.getActiveApprovedRoleIds
+      : () => [];
   const normalizeTrackKey = options.normalizeTrackKey;
   const getTrackLabel = options.getTrackLabel;
   const baseSetChannelTrackOptions = options.baseSetChannelTrackOptions;
@@ -60,9 +84,16 @@ function createInteractionCommandHandler(options = {}) {
   const setReminderConfiguration = options.setReminderConfiguration;
   const setDailyDigestConfiguration = options.setDailyDigestConfiguration;
   const setTrackReviewerMentions = options.setTrackReviewerMentions;
+  const upsertReactionRoleBinding = options.upsertReactionRoleBinding;
+  const removeReactionRoleBinding = options.removeReactionRoleBinding;
+  const listReactionRoleBindings = options.listReactionRoleBindings;
   const exportAdminConfig = options.exportAdminConfig;
   const importAdminConfig = options.importAdminConfig;
   const formatVoteRule = options.formatVoteRule;
+  const addReaction = options.addReaction;
+  const reactionRoleListMaxLines = Number.isInteger(options.reactionRoleListMaxLines)
+    ? options.reactionRoleListMaxLines
+    : 40;
   const getTrackKeyForChannelId = options.getTrackKeyForChannelId;
   const getActiveChannelId = options.getActiveChannelId;
   const logger =
@@ -71,9 +102,691 @@ function createInteractionCommandHandler(options = {}) {
     typeof options.logger.info === "function"
       ? options.logger
       : null;
+  const refreshSlashCommandsForGuild =
+    typeof options.refreshSlashCommandsForGuild === "function"
+      ? options.refreshSlashCommandsForGuild
+      : null;
+
+  function hasManageRolesConfigPermission(memberPerms) {
+    if (!memberPerms) {
+      return false;
+    }
+    return (
+      memberPerms.has(PermissionsBitField.Flags.Administrator) ||
+      (memberPerms.has(PermissionsBitField.Flags.ManageGuild) &&
+        memberPerms.has(PermissionsBitField.Flags.ManageRoles))
+    );
+  }
+
+  function buildReactionRoleGuiCustomId(action, userId) {
+    return `${REACTION_ROLE_GUI_PREFIX}:${action}:${String(userId || "")}`;
+  }
+
+  function parseReactionRoleGuiCustomId(customId) {
+    const raw = String(customId || "").trim();
+    if (!raw.startsWith(`${REACTION_ROLE_GUI_PREFIX}:`)) {
+      return null;
+    }
+    const parts = raw.split(":");
+    if (parts.length < 3) {
+      return null;
+    }
+    return {
+      action: parts[1],
+      userId: parts[2],
+    };
+  }
+
+  function buildReactionRoleGuiComponents(userId) {
+    return [
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(buildReactionRoleGuiCustomId(REACTION_ROLE_GUI_ACTION_ADD, userId))
+          .setLabel("Add/Update Mapping")
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId(buildReactionRoleGuiCustomId(REACTION_ROLE_GUI_ACTION_REMOVE, userId))
+          .setLabel("Remove Mapping")
+          .setStyle(ButtonStyle.Danger)
+      ),
+    ];
+  }
+
+  function buildAppRoleGuiCustomId(action, userId, trackKey = "") {
+    const keyPart = String(trackKey || "").trim();
+    return `${APPROLE_GUI_PREFIX}:${action}:${String(userId || "")}${keyPart ? `:${keyPart}` : ""}`;
+  }
+
+  function parseAppRoleGuiCustomId(customId) {
+    const raw = String(customId || "").trim();
+    if (!raw.startsWith(`${APPROLE_GUI_PREFIX}:`)) {
+      return null;
+    }
+    const parts = raw.split(":");
+    if (parts.length < 3) {
+      return null;
+    }
+    return {
+      action: parts[1],
+      userId: parts[2],
+      trackKey: parts.slice(3).join(":") || null,
+    };
+  }
+
+  function buildAppRoleTrackSelectOptions(selectedTrackKey = null) {
+    const selected = String(selectedTrackKey || "").trim();
+    return getApplicationTracks()
+      .map((track) => {
+        const key = String(track?.key || "").trim();
+        const label = String(track?.label || key).trim() || key;
+        if (!key) {
+          return null;
+        }
+        return {
+          label: `${label} (${key})`.slice(0, 100),
+          value: key.slice(0, 100),
+          default: selected && key === selected,
+        };
+      })
+      .filter(Boolean)
+      .slice(0, 25);
+  }
+
+  function buildAppRoleGuiComponents(userId, selectedTrackKey = null) {
+    const trackOptions = buildAppRoleTrackSelectOptions(selectedTrackKey);
+    if (trackOptions.length === 0) {
+      return [];
+    }
+
+    const rows = [
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(buildAppRoleGuiCustomId(APPROLE_GUI_ACTION_TRACK, userId))
+          .setPlaceholder("Select a track")
+          .addOptions(trackOptions)
+      ),
+    ];
+
+    if (selectedTrackKey) {
+      rows.push(
+        new ActionRowBuilder().addComponents(
+          new RoleSelectMenuBuilder()
+            .setCustomId(
+              buildAppRoleGuiCustomId(APPROLE_GUI_ACTION_ROLES, userId, selectedTrackKey)
+            )
+            .setPlaceholder("Select up to 5 accepted roles")
+            .setMinValues(0)
+            .setMaxValues(5)
+        )
+      );
+    }
+
+    return rows;
+  }
+
+  function buildReactionRoleAddModal(userId) {
+    const modal = new ModalBuilder()
+      .setCustomId(buildReactionRoleGuiCustomId(REACTION_ROLE_GUI_ACTION_MODAL_ADD, userId))
+      .setTitle("Add/Update Reaction Role");
+
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("message_id")
+          .setLabel("Message ID")
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("emoji")
+          .setLabel("Emoji")
+          .setStyle(TextInputStyle.Short)
+          .setPlaceholder("✅ or <:name:id>")
+          .setRequired(true)
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("role_id")
+          .setLabel("Role ID")
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("channel_id")
+          .setLabel("Channel ID (optional)")
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false)
+      )
+    );
+
+    return modal;
+  }
+
+  function buildReactionRoleRemoveModal(userId) {
+    const modal = new ModalBuilder()
+      .setCustomId(buildReactionRoleGuiCustomId(REACTION_ROLE_GUI_ACTION_MODAL_REMOVE, userId))
+      .setTitle("Remove Reaction Role");
+
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("message_id")
+          .setLabel("Message ID")
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("emoji")
+          .setLabel("Emoji")
+          .setStyle(TextInputStyle.Short)
+          .setPlaceholder("✅ or <:name:id>")
+          .setRequired(true)
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("channel_id")
+          .setLabel("Channel ID (optional)")
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false)
+      )
+    );
+
+    return modal;
+  }
+
+  async function resolveReactionRoleTargetChannel(interaction, rawChannelId) {
+    const requestedChannelId = String(rawChannelId || "").trim();
+    if (!requestedChannelId) {
+      return interaction.channel;
+    }
+    if (!isSnowflake(requestedChannelId) || !interaction.guild) {
+      return null;
+    }
+    return interaction.guild.channels.fetch(requestedChannelId).catch(() => null);
+  }
+
+  function isValidReactionRoleTargetChannel(channel, guildId) {
+    return Boolean(
+      channel &&
+        channel.isTextBased() &&
+        typeof channel.messages?.fetch === "function" &&
+        channel.guildId === guildId
+    );
+  }
+
+  function toSetChannelTrackOptionName(trackKey) {
+    const raw = String(trackKey || "").trim().toLowerCase();
+    if (!raw) {
+      return null;
+    }
+    const cleaned = raw.replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "");
+    if (!cleaned) {
+      return null;
+    }
+    const suffix = "_post";
+    const maxBaseLength = Math.max(1, 32 - suffix.length);
+    return `${cleaned.slice(0, maxBaseLength)}${suffix}`;
+  }
+
+  function buildDynamicSetChannelTrackOptions() {
+    const staticTrackKeys = new Set(
+      (Array.isArray(baseSetChannelTrackOptions) ? baseSetChannelTrackOptions : [])
+        .map((optionDef) => String(optionDef?.trackKey || "").trim())
+        .filter(Boolean)
+    );
+    const usedOptionNames = new Set(
+      (Array.isArray(baseSetChannelTrackOptions) ? baseSetChannelTrackOptions : [])
+        .flatMap((optionDef) => [optionDef?.optionName, optionDef?.legacyOptionName])
+        .map((name) => String(name || "").trim())
+        .filter(Boolean)
+    );
+    usedOptionNames.add("track");
+    usedOptionNames.add("post_channel");
+    usedOptionNames.add("log");
+    usedOptionNames.add("accept_message");
+    usedOptionNames.add("bug");
+    usedOptionNames.add("suggestions");
+
+    const candidates = [];
+    for (const trackKey of getApplicationTrackKeys()) {
+      const normalizedTrackKey = String(trackKey || "").trim();
+      if (!normalizedTrackKey || staticTrackKeys.has(normalizedTrackKey)) {
+        continue;
+      }
+      const optionName = toSetChannelTrackOptionName(normalizedTrackKey);
+      if (!optionName || usedOptionNames.has(optionName)) {
+        continue;
+      }
+      usedOptionNames.add(optionName);
+      candidates.push({
+        trackKey: normalizedTrackKey,
+        optionName,
+      });
+    }
+
+    return candidates.sort((a, b) =>
+      getTrackLabel(a.trackKey).localeCompare(getTrackLabel(b.trackKey))
+    );
+  }
+
+  function parseEmbedColor(rawValue) {
+    const raw = String(rawValue || "").trim().toLowerCase();
+    if (!raw) {
+      return null;
+    }
+    let normalized = raw;
+    if (normalized.startsWith("0x")) {
+      normalized = normalized.slice(2);
+    }
+    if (normalized.startsWith("#")) {
+      normalized = normalized.slice(1);
+    }
+    if (!/^[0-9a-f]{6}$/.test(normalized)) {
+      return null;
+    }
+    const value = Number.parseInt(normalized, 16);
+    return Number.isInteger(value) ? value : null;
+  }
 
   return async function onInteractionCreate(interaction) {
     try {
+      const refreshCommandsIfNeeded = () => {
+        if (!refreshSlashCommandsForGuild || !interaction.guildId) {
+          return;
+        }
+        refreshSlashCommandsForGuild(interaction.guildId).catch((err) => {
+          if (logger) {
+            logger.error(
+              "slash_command_refresh_failed",
+              "Failed refreshing slash commands after track/config update.",
+              {
+                guildId: interaction.guildId,
+                error: err.message,
+              }
+            );
+            return;
+          }
+          console.error("Failed refreshing slash commands:", err.message);
+        });
+      };
+
+      if (interaction.isStringSelectMenu()) {
+        const guiContext = parseAppRoleGuiCustomId(interaction.customId);
+        if (!guiContext || guiContext.action !== APPROLE_GUI_ACTION_TRACK) {
+          return;
+        }
+
+        if (!interaction.inGuild()) {
+          await interaction.reply({
+            content: "Accepted-roles GUI can only be used in a server.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        if (guiContext.userId && guiContext.userId !== interaction.user.id) {
+          await interaction.reply({
+            content: "This accepted-roles panel was opened by another user.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        if (!hasManageRolesConfigPermission(interaction.memberPermissions)) {
+          await interaction.reply({
+            content:
+              "You need both Manage Server and Manage Roles (or Administrator) to manage accepted roles.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        const selectedTrack = normalizeTrackKey(interaction.values?.[0]);
+        if (!selectedTrack) {
+          await interaction.update({
+            content:
+              "Unknown track selected. Use `/track list` to view tracks or `/track add` to create one.",
+            components: buildAppRoleGuiComponents(interaction.user.id),
+          });
+          return;
+        }
+
+        const currentRoleIds = getActiveApprovedRoleIds(selectedTrack);
+        const currentRoleMentions =
+          currentRoleIds.length > 0
+            ? currentRoleIds.map((id) => `<@&${id}>`).join(", ")
+            : "none";
+        await interaction.update({
+          content: [
+            "🎛️ **Accepted Roles GUI**",
+            `Track: **${getTrackLabel(selectedTrack)}**`,
+            `Current accepted roles: ${currentRoleMentions}`,
+            "Use the role selector below to replace this track's accepted roles (up to 5).",
+          ].join("\n"),
+          components: buildAppRoleGuiComponents(interaction.user.id, selectedTrack),
+        });
+        return;
+      }
+
+      if (interaction.isRoleSelectMenu()) {
+        const guiContext = parseAppRoleGuiCustomId(interaction.customId);
+        if (!guiContext || guiContext.action !== APPROLE_GUI_ACTION_ROLES) {
+          return;
+        }
+
+        if (!interaction.inGuild()) {
+          await interaction.reply({
+            content: "Accepted-roles GUI can only be used in a server.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        if (guiContext.userId && guiContext.userId !== interaction.user.id) {
+          await interaction.reply({
+            content: "This accepted-roles panel was opened by another user.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        if (!hasManageRolesConfigPermission(interaction.memberPermissions)) {
+          await interaction.reply({
+            content:
+              "You need both Manage Server and Manage Roles (or Administrator) to manage accepted roles.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        const selectedTrack = normalizeTrackKey(guiContext.trackKey);
+        if (!selectedTrack) {
+          await interaction.update({
+            content: "Track context expired or invalid. Re-open `/setapprolegui`.",
+            components: buildAppRoleGuiComponents(interaction.user.id),
+          });
+          return;
+        }
+
+        const selectedRoleIds = parseRoleIdList(interaction.values || []);
+        const roleUpdate = setActiveApprovedRoles(selectedTrack, selectedRoleIds);
+        const currentRoleMentions =
+          roleUpdate.roleIds.length > 0
+            ? roleUpdate.roleIds.map((id) => `<@&${id}>`).join(", ")
+            : "none";
+
+        await interaction.update({
+          content: [
+            "✅ **Accepted Roles Updated**",
+            `Track: **${getTrackLabel(selectedTrack)}**`,
+            `Roles (${roleUpdate.roleIds.length}): ${currentRoleMentions}`,
+            "Change track or role selection any time using the menus below.",
+          ].join("\n"),
+          components: buildAppRoleGuiComponents(interaction.user.id, selectedTrack),
+        });
+
+        await postConfigurationLog(interaction, "Accepted Roles Updated", [
+          `**Track:** ${getTrackLabel(selectedTrack)}`,
+          `**Roles (${roleUpdate.roleIds.length}):** ${currentRoleMentions}`,
+          "**Source:** GUI panel",
+        ]);
+        return;
+      }
+
+      if (interaction.isButton()) {
+        const guiContext = parseReactionRoleGuiCustomId(interaction.customId);
+        if (!guiContext) {
+          return;
+        }
+
+        if (!interaction.inGuild()) {
+          await interaction.reply({
+            content: "Reaction role GUI can only be used in a server.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        if (guiContext.userId && guiContext.userId !== interaction.user.id) {
+          await interaction.reply({
+            content: "This reaction role panel was opened by another user.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        if (!hasManageRolesConfigPermission(interaction.memberPermissions)) {
+          await interaction.reply({
+            content:
+              "You need both Manage Server and Manage Roles (or Administrator) to manage reaction roles.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        if (guiContext.action === REACTION_ROLE_GUI_ACTION_ADD) {
+          await interaction.showModal(buildReactionRoleAddModal(interaction.user.id));
+          return;
+        }
+
+        if (guiContext.action === REACTION_ROLE_GUI_ACTION_REMOVE) {
+          await interaction.showModal(buildReactionRoleRemoveModal(interaction.user.id));
+          return;
+        }
+
+        return;
+      }
+
+      if (interaction.isModalSubmit()) {
+        const guiContext = parseReactionRoleGuiCustomId(interaction.customId);
+        if (!guiContext) {
+          return;
+        }
+
+        if (!interaction.inGuild()) {
+          await interaction.reply({
+            content: "Reaction role GUI can only be used in a server.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        if (guiContext.userId && guiContext.userId !== interaction.user.id) {
+          await interaction.reply({
+            content: "This reaction role modal was opened by another user.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        if (!hasManageRolesConfigPermission(interaction.memberPermissions)) {
+          await interaction.reply({
+            content:
+              "You need both Manage Server and Manage Roles (or Administrator) to manage reaction roles.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        if (
+          guiContext.action !== REACTION_ROLE_GUI_ACTION_MODAL_ADD &&
+          guiContext.action !== REACTION_ROLE_GUI_ACTION_MODAL_REMOVE
+        ) {
+          return;
+        }
+
+        const messageId = String(interaction.fields.getTextInputValue("message_id") || "").trim();
+        const emoji = String(interaction.fields.getTextInputValue("emoji") || "").trim();
+        const channelIdInput = String(interaction.fields.getTextInputValue("channel_id") || "").trim();
+        const targetChannel = await resolveReactionRoleTargetChannel(interaction, channelIdInput);
+
+        if (!isSnowflake(messageId)) {
+          await interaction.reply({
+            content: "Please provide a valid message ID.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        if (!isValidReactionRoleTargetChannel(targetChannel, interaction.guildId)) {
+          await interaction.reply({
+            content: "Please provide a valid text channel in this server.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        if (guiContext.action === REACTION_ROLE_GUI_ACTION_MODAL_ADD) {
+          const roleId = String(interaction.fields.getTextInputValue("role_id") || "").trim();
+          if (!isSnowflake(roleId)) {
+            await interaction.reply({
+              content: "Please provide a valid role ID.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          const role = await interaction.guild.roles.fetch(roleId).catch(() => null);
+          if (!role) {
+            await interaction.reply({
+              content: "Role not found in this server.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          const targetMessage = await targetChannel.messages.fetch(messageId).catch(() => null);
+          if (!targetMessage) {
+            await interaction.reply({
+              content: "Message not found in that channel.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          let result;
+          try {
+            result = upsertReactionRoleBinding({
+              guildId: interaction.guildId,
+              channelId: targetChannel.id,
+              messageId,
+              roleId: role.id,
+              emojiInput: emoji,
+              actorId: interaction.user.id,
+            });
+          } catch (err) {
+            await interaction.reply({
+              content: err.message || "Failed saving reaction role mapping.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          const warningLines = [];
+          try {
+            const me = await interaction.guild.members.fetchMe();
+            if (!me.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
+              warningLines.push("I do not currently have Manage Roles permission.");
+            } else {
+              const fullRole = await interaction.guild.roles.fetch(role.id);
+              if (fullRole && me.roles.highest.comparePositionTo(fullRole) <= 0) {
+                warningLines.push(`My top role must be above <@&${role.id}> to assign it.`);
+              }
+              if (fullRole?.managed) {
+                warningLines.push(`<@&${role.id}> is managed/integration and may not be assignable.`);
+              }
+            }
+          } catch (err) {
+            warningLines.push(`Could not fully validate role assignability (${err.message}).`);
+          }
+
+          if (typeof addReaction === "function") {
+            try {
+              await addReaction(
+                targetChannel.id,
+                messageId,
+                result.emoji.reactionIdentifier
+              );
+            } catch (err) {
+              warningLines.push(
+                `Could not add reaction to message automatically (${err.message}).`
+              );
+            }
+          }
+
+          const statusLabel = result.created ? "created" : "updated";
+          const lines = [
+            `Reaction role ${statusLabel}: ${result.binding.emojiDisplay} -> <@&${role.id}>`,
+            `Channel: <#${targetChannel.id}>`,
+            `Message ID: \`${messageId}\``,
+          ];
+          if (warningLines.length > 0) {
+            lines.push(`Warnings: ${warningLines.join(" ")}`);
+          }
+
+          await interaction.reply({
+            content: lines.join("\n"),
+            ephemeral: true,
+            components: buildReactionRoleGuiComponents(interaction.user.id),
+          });
+
+          await postConfigurationLog(interaction, "Reaction Role Updated", [
+            `**Action:** ${statusLabel}`,
+            `**Emoji:** ${result.binding.emojiDisplay}`,
+            `**Role:** <@&${role.id}>`,
+            `**Channel:** <#${targetChannel.id}>`,
+            `**Message ID:** \`${messageId}\``,
+          ]);
+          return;
+        }
+
+        let removal;
+        try {
+          removal = removeReactionRoleBinding({
+            guildId: interaction.guildId,
+            channelId: targetChannel.id,
+            messageId,
+            emojiInput: emoji,
+          });
+        } catch (err) {
+          await interaction.reply({
+            content: err.message || "Failed removing reaction role mapping.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        if (!removal.removed) {
+          await interaction.reply({
+            content: "No matching reaction role mapping was found for that message and emoji.",
+            ephemeral: true,
+            components: buildReactionRoleGuiComponents(interaction.user.id),
+          });
+          return;
+        }
+
+        await interaction.reply({
+          content: [
+            `Reaction role removed: ${removal.binding.emojiDisplay} -> <@&${removal.binding.roleId}>`,
+            `Channel: <#${targetChannel.id}>`,
+            `Message ID: \`${messageId}\``,
+          ].join("\n"),
+          ephemeral: true,
+          components: buildReactionRoleGuiComponents(interaction.user.id),
+        });
+
+        await postConfigurationLog(interaction, "Reaction Role Removed", [
+          `**Emoji:** ${removal.binding.emojiDisplay}`,
+          `**Role:** <@&${removal.binding.roleId}>`,
+          `**Channel:** <#${targetChannel.id}>`,
+          `**Message ID:** \`${messageId}\``,
+        ]);
+        return;
+      }
+
       if (interaction.isAutocomplete()) {
         const focused = interaction.options.getFocused(true);
         const supportsTrackAutocomplete =
@@ -168,6 +881,8 @@ function createInteractionCommandHandler(options = {}) {
       const isReopen = interaction.commandName === "reopen";
       const isSetChannel = interaction.commandName === "setchannel";
       const isSetAppRole = interaction.commandName === "setapprole";
+      const isSetAppRoleGui = interaction.commandName === "setapprolegui";
+      const isReactionRole = interaction.commandName === "reactionrole";
       const isTrackCommand = interaction.commandName === "track";
       const isDashboard = interaction.commandName === "dashboard";
       const isUptime = interaction.commandName === "uptime";
@@ -178,6 +893,7 @@ function createInteractionCommandHandler(options = {}) {
         interaction.commandName === "setacceptmsg" ||
         interaction.commandName === "setaccept";
       const isStructuredMsg = interaction.commandName === "structuredmsg";
+      const isEmbedMsg = interaction.commandName === "embedmsg";
       const isBug = interaction.commandName === "bug";
       const isSuggestions =
         interaction.commandName === "suggestions" ||
@@ -191,6 +907,8 @@ function createInteractionCommandHandler(options = {}) {
         !isReopen &&
         !isSetChannel &&
         !isSetAppRole &&
+        !isSetAppRoleGui &&
+        !isReactionRole &&
         !isTrackCommand &&
         !isDashboard &&
         !isUptime &&
@@ -199,6 +917,7 @@ function createInteractionCommandHandler(options = {}) {
         !isSetDenyMsg &&
         !isSetAcceptMsg &&
         !isStructuredMsg &&
+        !isEmbedMsg &&
         !isBug &&
         !isSuggestions &&
         !isDebug &&
@@ -232,6 +951,7 @@ function createInteractionCommandHandler(options = {}) {
         memberPerms.has(PermissionsBitField.Flags.Administrator) ||
         (memberPerms.has(PermissionsBitField.Flags.ManageGuild) &&
           memberPerms.has(PermissionsBitField.Flags.ManageRoles));
+      const canManageRolesConfig = hasManageRolesConfigPermission(memberPerms);
 
       if (isBug) {
         await relayFeedbackCommand({
@@ -469,6 +1189,7 @@ function createInteractionCommandHandler(options = {}) {
             `**Tracks:** ${result.trackCount}`,
             `**Custom Tracks:** ${result.customTrackCount}`,
           ]);
+          refreshCommandsIfNeeded();
           return;
         }
 
@@ -534,6 +1255,7 @@ function createInteractionCommandHandler(options = {}) {
             `**Status:** ${statusLabel}`,
             `**Aliases:** ${aliasText}`,
           ]);
+          refreshCommandsIfNeeded();
           return;
         }
 
@@ -572,6 +1294,7 @@ function createInteractionCommandHandler(options = {}) {
             "**Status:** edited",
             `**Aliases:** ${aliasText}`,
           ]);
+          refreshCommandsIfNeeded();
           return;
         }
 
@@ -596,6 +1319,7 @@ function createInteractionCommandHandler(options = {}) {
           await postConfigurationLog(interaction, "Track Removed", [
             `**Track:** ${removed.label} (\`${removed.key}\`)`,
           ]);
+          refreshCommandsIfNeeded();
           return;
         }
 
@@ -886,6 +1610,131 @@ function createInteractionCommandHandler(options = {}) {
         return;
       }
 
+      if (isEmbedMsg) {
+        if (!canManageServer) {
+          await interaction.reply({
+            content:
+              "You need Manage Server permission (or Administrator) to run this command.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        const channelInput = interaction.options.getChannel("channel");
+        const targetChannel = channelInput || interaction.channel;
+        if (
+          !targetChannel ||
+          !targetChannel.isTextBased() ||
+          typeof targetChannel.send !== "function"
+        ) {
+          await interaction.reply({
+            content: "Please choose a valid text channel.",
+            ephemeral: true,
+          });
+          return;
+        }
+        if (interaction.guildId && targetChannel.guildId !== interaction.guildId) {
+          await interaction.reply({
+            content: "The selected channel must be in this server.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        const title = String(interaction.options.getString("title", true) || "").trim();
+        const description = String(
+          interaction.options.getString("description", true) || ""
+        ).trim();
+        if (!title || !description) {
+          await interaction.reply({
+            content: "Please provide both title and description.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        const colorInput = interaction.options.getString("color");
+        const color = colorInput ? parseEmbedColor(colorInput) : null;
+        if (colorInput && color === null) {
+          await interaction.reply({
+            content: "Invalid `color`. Use 6-digit hex like `#57F287`.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        const footerText = String(interaction.options.getString("footer") || "").trim();
+        const includeTimestamp = Boolean(interaction.options.getBoolean("timestamp"));
+
+        const embed = {
+          title: title.slice(0, 256),
+          description: description.slice(0, 4096),
+        };
+        if (color !== null) {
+          embed.color = color;
+        }
+        if (footerText) {
+          embed.footer = {
+            text: footerText.slice(0, 2048),
+          };
+        }
+        if (includeTimestamp) {
+          embed.timestamp = new Date().toISOString();
+        }
+
+        await sendChannelMessage(targetChannel.id, {
+          embeds: [embed],
+          allowedMentions: { parse: [] },
+        });
+
+        await interaction.reply({
+          content: `Embedded message posted in <#${targetChannel.id}>.`,
+          ephemeral: true,
+        });
+        return;
+      }
+
+      if (isSetAppRoleGui) {
+        if (!canManageRolesConfig) {
+          await interaction.reply({
+            content:
+              "You need both Manage Server and Manage Roles (or Administrator) to run this command.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        if (!interaction.inGuild()) {
+          await interaction.reply({
+            content: "Run this command inside a server channel.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        const components = buildAppRoleGuiComponents(interaction.user.id);
+        if (components.length === 0) {
+          await interaction.reply({
+            content: "No tracks available yet. Create one with `/track add`.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        await interaction.reply({
+          content: [
+            "🎛️ **Accepted Roles GUI**",
+            "1) Pick a track",
+            "2) Pick up to 5 accepted roles for that track",
+            "",
+            "This replaces the existing accepted-role list for the selected track.",
+          ].join("\n"),
+          ephemeral: true,
+          components,
+        });
+        return;
+      }
+
       if (isSetAppRole) {
         const canSetRole =
           memberPerms.has(PermissionsBitField.Flags.Administrator) ||
@@ -985,6 +1834,290 @@ function createInteractionCommandHandler(options = {}) {
         return;
       }
 
+      if (isReactionRole) {
+        if (!canManageRolesConfig) {
+          await interaction.reply({
+            content:
+              "You need both Manage Server and Manage Roles (or Administrator) to manage reaction roles.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        if (!interaction.inGuild()) {
+          await interaction.reply({
+            content: "Run this command inside a server channel.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        const action = interaction.options.getSubcommand(true);
+        if (action === "gui") {
+          await interaction.reply({
+            content: [
+              "🎛️ **Reaction Role GUI**",
+              "Use the buttons below to add/update or remove mappings with modals.",
+              "Fields accepted:",
+              "- `emoji`: unicode (`✅`) or custom (`<:name:id>`)",
+              "- `role_id`: target role ID",
+              "- `channel_id`: optional (defaults to current channel)",
+            ].join("\n"),
+            ephemeral: true,
+            components: buildReactionRoleGuiComponents(interaction.user.id),
+          });
+          return;
+        }
+
+        if (action === "create") {
+          const messageId = String(interaction.options.getString("message_id", true) || "").trim();
+          const emoji = String(interaction.options.getString("emoji", true) || "").trim();
+          const role = interaction.options.getRole("role", true);
+          const channelInput = interaction.options.getChannel("channel");
+          const targetChannel = channelInput || interaction.channel;
+
+          if (!isSnowflake(messageId)) {
+            await interaction.reply({
+              content: "Please provide a valid message ID.",
+              ephemeral: true,
+            });
+            return;
+          }
+          if (!targetChannel || !targetChannel.isTextBased() || typeof targetChannel.messages?.fetch !== "function") {
+            await interaction.reply({
+              content: "Please select a valid text channel containing the target message.",
+              ephemeral: true,
+            });
+            return;
+          }
+          if (targetChannel.guildId !== interaction.guildId) {
+            await interaction.reply({
+              content: "The selected channel must be in this server.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          let targetMessage = null;
+          try {
+            targetMessage = await targetChannel.messages.fetch(messageId);
+          } catch {
+            targetMessage = null;
+          }
+          if (!targetMessage) {
+            await interaction.reply({
+              content: "Message not found in that channel.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          let result;
+          try {
+            result = upsertReactionRoleBinding({
+              guildId: interaction.guildId,
+              channelId: targetChannel.id,
+              messageId,
+              roleId: role.id,
+              emojiInput: emoji,
+              actorId: interaction.user.id,
+            });
+          } catch (err) {
+            await interaction.reply({
+              content: err.message || "Failed saving reaction role mapping.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          const warningLines = [];
+          try {
+            const me = await interaction.guild.members.fetchMe();
+            if (!me.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
+              warningLines.push("I do not currently have Manage Roles permission.");
+            } else {
+              const fullRole = await interaction.guild.roles.fetch(role.id);
+              if (fullRole && me.roles.highest.comparePositionTo(fullRole) <= 0) {
+                warningLines.push(`My top role must be above <@&${role.id}> to assign it.`);
+              }
+              if (fullRole?.managed) {
+                warningLines.push(`<@&${role.id}> is managed/integration and may not be assignable.`);
+              }
+            }
+          } catch (err) {
+            warningLines.push(`Could not fully validate role assignability (${err.message}).`);
+          }
+
+          if (typeof addReaction === "function") {
+            try {
+              await addReaction(
+                targetChannel.id,
+                messageId,
+                result.emoji.reactionIdentifier
+              );
+            } catch (err) {
+              warningLines.push(`Could not add reaction to message automatically (${err.message}).`);
+            }
+          }
+
+          const statusLabel = result.created ? "created" : "updated";
+          const replyLines = [
+            `Reaction role ${statusLabel}: ${result.binding.emojiDisplay} -> <@&${role.id}>`,
+            `Channel: <#${targetChannel.id}>`,
+            `Message ID: \`${messageId}\``,
+          ];
+          if (warningLines.length > 0) {
+            replyLines.push(`Warnings: ${warningLines.join(" ")}`);
+          }
+          await interaction.reply({
+            content: replyLines.join("\n"),
+            ephemeral: true,
+            components: buildReactionRoleGuiComponents(interaction.user.id),
+          });
+
+          await postConfigurationLog(interaction, "Reaction Role Updated", [
+            `**Action:** ${statusLabel}`,
+            `**Emoji:** ${result.binding.emojiDisplay}`,
+            `**Role:** <@&${role.id}>`,
+            `**Channel:** <#${targetChannel.id}>`,
+            `**Message ID:** \`${messageId}\``,
+          ]);
+          return;
+        }
+
+        if (action === "remove") {
+          const messageId = String(interaction.options.getString("message_id", true) || "").trim();
+          const emoji = String(interaction.options.getString("emoji", true) || "").trim();
+          const channelInput = interaction.options.getChannel("channel");
+          const targetChannel = channelInput || interaction.channel;
+
+          if (!isSnowflake(messageId)) {
+            await interaction.reply({
+              content: "Please provide a valid message ID.",
+              ephemeral: true,
+            });
+            return;
+          }
+          if (!targetChannel || !targetChannel.isTextBased()) {
+            await interaction.reply({
+              content: "Please select a valid text channel containing the target message.",
+              ephemeral: true,
+            });
+            return;
+          }
+          if (targetChannel.guildId !== interaction.guildId) {
+            await interaction.reply({
+              content: "The selected channel must be in this server.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          let removal;
+          try {
+            removal = removeReactionRoleBinding({
+              guildId: interaction.guildId,
+              channelId: targetChannel.id,
+              messageId,
+              emojiInput: emoji,
+            });
+          } catch (err) {
+            await interaction.reply({
+              content: err.message || "Failed removing reaction role mapping.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          if (!removal.removed) {
+            await interaction.reply({
+              content: "No matching reaction role mapping was found for that message and emoji.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          await interaction.reply({
+            content: [
+              `Reaction role removed: ${removal.binding.emojiDisplay} -> <@&${removal.binding.roleId}>`,
+              `Channel: <#${targetChannel.id}>`,
+              `Message ID: \`${messageId}\``,
+            ].join("\n"),
+            ephemeral: true,
+            components: buildReactionRoleGuiComponents(interaction.user.id),
+          });
+
+          await postConfigurationLog(interaction, "Reaction Role Removed", [
+            `**Emoji:** ${removal.binding.emojiDisplay}`,
+            `**Role:** <@&${removal.binding.roleId}>`,
+            `**Channel:** <#${targetChannel.id}>`,
+            `**Message ID:** \`${messageId}\``,
+          ]);
+          return;
+        }
+
+        if (action === "list") {
+          const messageIdRaw = interaction.options.getString("message_id");
+          const messageId = messageIdRaw ? String(messageIdRaw).trim() : "";
+          const channelInput = interaction.options.getChannel("channel");
+          if (messageId && !isSnowflake(messageId)) {
+            await interaction.reply({
+              content: "Please provide a valid message ID.",
+              ephemeral: true,
+            });
+            return;
+          }
+          if (channelInput && channelInput.guildId !== interaction.guildId) {
+            await interaction.reply({
+              content: "The selected channel must be in this server.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          const bindings = listReactionRoleBindings({
+            guildId: interaction.guildId,
+            channelId: channelInput?.id || null,
+            messageId: messageId || null,
+          });
+          if (bindings.length === 0) {
+            await interaction.reply({
+              content:
+                "No reaction role mappings found for the selected filters.\nUse the buttons below to create one.",
+              ephemeral: true,
+              components: buildReactionRoleGuiComponents(interaction.user.id),
+            });
+            return;
+          }
+
+          const maxLines = Math.max(1, reactionRoleListMaxLines);
+          const visible = bindings.slice(0, maxLines);
+          const lines = [
+            "🎭 **Reaction Role Mappings**",
+            ...visible.map(
+              (binding) =>
+                `- ${binding.emojiDisplay} -> <@&${binding.roleId}> | <#${binding.channelId}> | \`${binding.messageId}\``
+            ),
+          ];
+          if (bindings.length > visible.length) {
+            lines.push(`...and ${bindings.length - visible.length} more.`);
+          }
+
+          await interaction.reply({
+            content: lines.join("\n"),
+            ephemeral: true,
+            components: buildReactionRoleGuiComponents(interaction.user.id),
+          });
+          return;
+        }
+
+        await interaction.reply({
+          content: `Unknown reactionrole action: ${action}`,
+          ephemeral: true,
+        });
+        return;
+      }
+
       if (isStop || isRestart) {
         if (!canManageServer) {
           await interaction.reply({
@@ -1056,8 +2189,14 @@ function createInteractionCommandHandler(options = {}) {
           }
         }
 
+        const setChannelTrackOptions = [
+          ...(Array.isArray(baseSetChannelTrackOptions)
+            ? baseSetChannelTrackOptions
+            : []),
+          ...buildDynamicSetChannelTrackOptions(),
+        ];
         const providedTrackChannelEntries = [];
-        for (const optionDef of baseSetChannelTrackOptions) {
+        for (const optionDef of setChannelTrackOptions) {
           const primary = interaction.options.getChannel(optionDef.optionName);
           const legacy = optionDef.legacyOptionName
             ? interaction.options.getChannel(optionDef.legacyOptionName)

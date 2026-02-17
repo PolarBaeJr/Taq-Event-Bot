@@ -48,6 +48,20 @@ function createDynamicMessageSystem(options = {}) {
     return hash === 0 ? fallback : hash;
   }
 
+  function resolveApplicationStatusColor(status) {
+    const normalizedStatus = String(status || "").trim().toLowerCase();
+    if (normalizedStatus === "accepted") {
+      return 0x57f287;
+    }
+    if (normalizedStatus === "denied") {
+      return 0xed4245;
+    }
+    if (normalizedStatus === "pending" || normalizedStatus === "processing") {
+      return 0xfee75c;
+    }
+    return 0x2b2d31;
+  }
+
   function normalizeFields(fields) {
     if (!Array.isArray(fields)) {
       return [];
@@ -146,7 +160,7 @@ function createDynamicMessageSystem(options = {}) {
 
     return buildMessagePayload({
       title: "📥 New Application",
-      colorKey: `track:${String(options.trackKey || "unknown")}`,
+      color: resolveApplicationStatusColor(options.status || "pending"),
       fields,
       description: options.detailsText,
       descriptionStyle: "code",
@@ -184,6 +198,7 @@ function createDynamicMessageSystem(options = {}) {
   return {
     truncate,
     stableColorFromKey,
+    resolveApplicationStatusColor,
     buildMessagePayload,
     buildApplicationMessagePayload,
     buildFeedbackMessagePayload,

@@ -24,11 +24,18 @@ const { createDebugAndFeedbackUtils } = require("./lib/debugAndFeedbackUtils");
 const { createPollingPipeline } = require("./lib/pollingPipeline");
 const { createInteractionCommandHandler } = require("./lib/interactionCommandHandler");
 const { createDynamicMessageSystem } = require("./lib/dynamicMessageSystem");
+const { createApplicationDecisionUtils } = require("./lib/applicationDecisionUtils");
+const { createApplicationDecisionWorkflow } = require("./lib/applicationDecisionWorkflow");
 const { loadStartupConfig } = require("./lib/startupConfig");
 const { createStructuredLogger, serializeError } = require("./lib/structuredLogger");
 const { createAlertingClient } = require("./lib/opsAlerting");
 const { createMaintenanceManager } = require("./lib/maintenanceManager");
 const { createBackupManager } = require("./lib/backupManager");
+const {
+  DEFAULT_REACTION_ROLE_LIST_MAX_LINES,
+  normalizeReactionRoleBindings: normalizeReactionRoleBindingsFromLib,
+  createReactionRoleManager,
+} = require("./lib/reactionRoleManager");
 const {
   toCodeBlock,
   applyTemplatePlaceholders,
@@ -450,12 +457,19 @@ function normalizeDailyDigestSettings(rawDigest) {
   };
 }
 
+let reactionRoleManager = null;
+
+function normalizeReactionRoleBindings(rawBindings) {
+  return normalizeReactionRoleBindingsFromLib(rawBindings, { isSnowflake });
+}
+
 function ensureExtendedSettingsContainers(state) {
   const settings = ensureTrackSettingsContainers(state);
   settings.voteRules = normalizeTrackVoteRuleMap(settings.voteRules);
   settings.reviewerMentions = normalizeTrackReviewerMap(settings.reviewerMentions);
   settings.reminders = normalizeReminderSettings(settings.reminders);
   settings.dailyDigest = normalizeDailyDigestSettings(settings.dailyDigest);
+  settings.reactionRoles = normalizeReactionRoleBindings(settings.reactionRoles);
   return settings;
 }
 
@@ -678,6 +692,33 @@ function setTrackReviewerMentions(trackKey, mentionInput) {
   return settings.reviewerMentions[normalizedTrack];
 }
 
+function requireReactionRoleManager() {
+  if (!reactionRoleManager) {
+    throw new Error("Reaction role manager is not initialized.");
+  }
+  return reactionRoleManager;
+}
+
+function upsertReactionRoleBinding(payload) {
+  return requireReactionRoleManager().upsertReactionRoleBinding(payload);
+}
+
+function removeReactionRoleBinding(payload) {
+  return requireReactionRoleManager().removeReactionRoleBinding(payload);
+}
+
+function listReactionRoleBindings(filters) {
+  return requireReactionRoleManager().listReactionRoleBindings(filters);
+}
+
+async function applyReactionRoleFromEvent(reaction, user, action = "add") {
+  return requireReactionRoleManager().applyReactionRoleFromEvent(
+    reaction,
+    user,
+    action
+  );
+}
+
 function defaultState() {
   return {
     lastRow: 1,
@@ -700,6 +741,7 @@ function defaultState() {
       reviewerMentions: createEmptyTrackReviewerMap(),
       reminders: normalizeReminderSettings(null),
       dailyDigest: normalizeDailyDigestSettings(null),
+      reactionRoles: [],
     },
   };
 }
@@ -880,6 +922,7 @@ function readState() {
         reviewerMentions: normalizeTrackReviewerMap(legacySettings.reviewerMentions),
         reminders: normalizeReminderSettings(legacySettings.reminders),
         dailyDigest: normalizeDailyDigestSettings(legacySettings.dailyDigest),
+        reactionRoles: normalizeReactionRoleBindings(legacySettings.reactionRoles),
       },
     };
     ensureExtendedSettingsContainers(normalizedState);
@@ -1246,6 +1289,7 @@ function buildSettingsMessage() {
         ? `enabled at ${settings.dailyDigest.hourUtc}:00 UTC (last=${settings.dailyDigest.lastDigestDate || "never"})`
         : "disabled"
     }`,
+    `Reaction Roles: ${Array.isArray(settings.reactionRoles) ? settings.reactionRoles.length : 0}`,
   ];
 
   for (const trackKey of getApplicationTrackKeys()) {
@@ -1293,6 +1337,7 @@ function exportAdminConfig() {
       reviewerMentions: settings.reviewerMentions,
       reminders: settings.reminders,
       dailyDigest: settings.dailyDigest,
+      reactionRoles: settings.reactionRoles,
     },
   };
   return JSON.stringify(payload, null, 2);
@@ -1351,6 +1396,12 @@ function importAdminConfig(rawJson) {
 
   if (Object.prototype.hasOwnProperty.call(settingsPayload, "dailyDigest")) {
     settings.dailyDigest = normalizeDailyDigestSettings(settingsPayload.dailyDigest);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(settingsPayload, "reactionRoles")) {
+    settings.reactionRoles = normalizeReactionRoleBindings(settingsPayload.reactionRoles);
+  } else {
+    settings.reactionRoles = normalizeReactionRoleBindings(settings.reactionRoles);
   }
 
   if (Object.prototype.hasOwnProperty.call(settingsPayload, "logChannelId")) {
@@ -1702,90 +1753,6 @@ async function maybeSendDailyDigest() {
   writeState(state);
 }
 
-async function postReopenUpdate(application, previousStatus, actorId, reopenReason) {
-  const summaryLines = [
-    "♻️ **Application Reopened**",
-    `Previous Decision: ${String(previousStatus || "").toUpperCase()}`,
-    `By: <@${actorId}>`,
-  ];
-  if (reopenReason) {
-    summaryLines.push(`Reason: ${reopenReason}`);
-  }
-  summaryLines.push(
-    "Note: prior side effects (roles, DMs, announcements) are not automatically reverted."
-  );
-  const summary = summaryLines.join("\n");
-
-  try {
-    const parentChannel = await client.channels.fetch(application.channelId);
-    if (parentChannel && parentChannel.isTextBased()) {
-      const message = await parentChannel.messages.fetch(application.messageId);
-      await message.reply({ content: summary, allowedMentions: { parse: [] } });
-    }
-  } catch (err) {
-    console.error(`Failed posting reopen notice to parent message ${application.messageId}:`, err.message);
-  }
-
-  if (application.threadId) {
-    try {
-      const thread = await client.channels.fetch(application.threadId);
-      if (thread && thread.isTextBased()) {
-        await thread.send({ content: summary, allowedMentions: { parse: [] } });
-      }
-    } catch (err) {
-      console.error(`Failed posting reopen notice to thread ${application.threadId}:`, err.message);
-    }
-  }
-}
-
-async function reopenApplication(messageId, actorId, reopenReason = "") {
-  const state = readState();
-  const application = state.applications[messageId];
-  if (!application) {
-    return { ok: false, reason: "unknown_application" };
-  }
-  if (application.status === STATUS_PENDING) {
-    return { ok: false, reason: "already_pending" };
-  }
-
-  const previousStatus = application.status;
-  application.lastDecision = {
-    status: application.status,
-    decidedAt: application.decidedAt || null,
-    decidedBy: application.decidedBy || null,
-    decisionSource: application.decisionSource || null,
-    decisionReason: application.decisionReason || null,
-  };
-  application.status = STATUS_PENDING;
-  application.decidedAt = null;
-  application.decidedBy = null;
-  application.decisionSource = null;
-  application.decisionReason = null;
-  application.approvedRoleResult = null;
-  application.acceptAnnounceResult = null;
-  application.denyDmResult = null;
-  application.voteContext = null;
-  application.reopenedAt = new Date().toISOString();
-  application.reopenedBy = actorId;
-  application.reopenReason = String(reopenReason || "").trim() || null;
-  application.lastReminderAt = null;
-  application.reminderCount = 0;
-  writeState(state);
-
-  await postReopenUpdate(
-    application,
-    previousStatus,
-    actorId,
-    application.reopenReason
-  );
-
-  return {
-    ok: true,
-    previousStatus,
-    application,
-  };
-}
-
 async function getSheetsClient() {
   let authOptions;
   if (config.serviceAccountJson) {
@@ -1957,168 +1924,6 @@ async function createThread(channelId, messageId, name) {
   }
 }
 
-async function getReviewersWithChannelAccess(channel) {
-  const members = await channel.guild.members.fetch();
-  const reviewers = new Set();
-
-  for (const member of members.values()) {
-    if (member.user.bot) {
-      continue;
-    }
-
-    const perms = channel.permissionsFor(member);
-    if (perms && perms.has(PermissionsBitField.Flags.ViewChannel)) {
-      reviewers.add(member.id);
-    }
-  }
-
-  return reviewers;
-}
-
-async function getVoteSnapshot(message, eligibleReviewerIds) {
-  const yesReaction = message.reactions.cache.find(
-    (r) => r.emoji.name === ACCEPT_EMOJI
-  );
-  const noReaction = message.reactions.cache.find((r) => r.emoji.name === DENY_EMOJI);
-
-  const yesUsers = new Set();
-  const noUsers = new Set();
-
-  if (yesReaction) {
-    const users = await yesReaction.users.fetch();
-    for (const user of users.values()) {
-      if (!user.bot && eligibleReviewerIds.has(user.id)) {
-        yesUsers.add(user.id);
-      }
-    }
-  }
-
-  if (noReaction) {
-    const users = await noReaction.users.fetch();
-    for (const user of users.values()) {
-      if (!user.bot && eligibleReviewerIds.has(user.id)) {
-        noUsers.add(user.id);
-      }
-    }
-  }
-
-  for (const userId of yesUsers) {
-    if (noUsers.has(userId)) {
-      yesUsers.delete(userId);
-      noUsers.delete(userId);
-    }
-  }
-
-  return {
-    yesCount: yesUsers.size,
-    noCount: noUsers.size,
-  };
-}
-
-async function postDecisionUpdate(application, decision, reason) {
-  const decisionLabel = decision === STATUS_ACCEPTED ? "ACCEPTED" : "DENIED";
-  const summary = `🧾 **Application ${decisionLabel}**\n${reason}`;
-
-  try {
-    const parentChannel = await client.channels.fetch(application.channelId);
-    if (parentChannel && parentChannel.isTextBased()) {
-      const message = await parentChannel.messages.fetch(application.messageId);
-      await message.reply({ content: summary, allowedMentions: { parse: [] } });
-    }
-  } catch (err) {
-    console.error(`Failed posting decision to parent message ${application.messageId}:`, err.message);
-  }
-
-  if (application.threadId) {
-    try {
-      const thread = await client.channels.fetch(application.threadId);
-      if (thread && thread.isTextBased()) {
-        await thread.send({ content: summary, allowedMentions: { parse: [] } });
-      }
-    } catch (err) {
-      console.error(`Failed posting decision to thread ${application.threadId}:`, err.message);
-    }
-  }
-}
-
-async function postForcedDecisionTemplateToThread(application, decision, decisionReason) {
-  if (application?.decisionSource !== "force_command") {
-    return;
-  }
-  if (!application?.threadId) {
-    return;
-  }
-
-  try {
-    const thread = await client.channels.fetch(application.threadId);
-    if (!thread || !thread.isTextBased()) {
-      return;
-    }
-
-    // If the thread auto-archived, try to reopen so the forced decision note is visible there.
-    if (
-      "archived" in thread &&
-      thread.archived &&
-      typeof thread.setArchived === "function"
-    ) {
-      try {
-        await thread.setArchived(false, "Posting forced decision template message");
-      } catch {
-        // ignore; send will fail naturally if thread stays archived/locked
-      }
-    }
-
-    const trackLabel = getTrackLabel(application.trackKey);
-    let serverName = "Unknown Server";
-    try {
-      const sourceChannel = await client.channels.fetch(application.channelId);
-      if (sourceChannel && "guild" in sourceChannel && sourceChannel.guild?.name) {
-        serverName = sourceChannel.guild.name;
-      }
-    } catch {
-      // keep fallback server name
-    }
-
-    const replacements = {
-      user: application.applicantUserId ? `<@${application.applicantUserId}>` : "",
-      user_id: application.applicantUserId || "",
-      applicant_name: application.applicantName || "Applicant",
-      track: trackLabel,
-      application_id: getApplicationDisplayId(application),
-      job_id: application.jobId || "Unknown",
-      server: serverName,
-      decision_source: application.decisionSource || "Unknown",
-      role_result: application.approvedRoleResult?.message || "",
-      reason: decisionReason || "",
-      decided_at: application.decidedAt || new Date().toISOString(),
-    };
-
-    const isAccepted = decision === STATUS_ACCEPTED;
-    const template = isAccepted
-      ? getActiveAcceptAnnounceTemplate()
-      : getActiveDenyDmTemplate();
-    const fallback = isAccepted
-      ? DEFAULT_ACCEPT_ANNOUNCE_TEMPLATE
-      : DEFAULT_DENY_DM_TEMPLATE;
-    const rendered = applyTemplatePlaceholders(template, replacements).trim() || fallback;
-    const label = isAccepted ? "ACCEPTED" : "DENIED";
-
-    const lines = [
-      `📨 **Forced ${label} Message**`,
-      `**By:** ${application.decidedBy ? `<@${application.decidedBy}>` : "Unknown"}`,
-      `**Application ID:** \`${getApplicationDisplayId(application)}\``,
-      "",
-      toCodeBlock(rendered),
-    ];
-    await thread.send({ content: lines.join("\n"), allowedMentions: { parse: [] } });
-  } catch (err) {
-    console.error(
-      `Failed posting forced ${decision} template to thread ${application.threadId}:`,
-      err.message
-    );
-  }
-}
-
 function makeMessageUrl(guildId, channelId, messageId) {
   return `https://discord.com/channels/${guildId}/${channelId}/${messageId}`;
 }
@@ -2284,474 +2089,6 @@ async function logControlCommand(action, interaction) {
   }
 }
 
-async function postClosureLog(application) {
-  try {
-    const channel = await client.channels.fetch(application.channelId);
-    if (!channel || !("guild" in channel) || !channel.guild) {
-      return;
-    }
-
-    const logsChannel = await ensureLogsChannel(channel.guild);
-    if (!logsChannel || !logsChannel.isTextBased()) {
-      return;
-    }
-
-    const decisionLabel =
-      application.status === STATUS_ACCEPTED ? "ACCEPTED" : "DENIED";
-    const trackKey = normalizeTrackKey(application.trackKey) || DEFAULT_TRACK_KEY;
-    const trackLabel = getTrackLabel(trackKey);
-    const submittedLines =
-      Array.isArray(application.submittedFields) &&
-      application.submittedFields.length > 0
-        ? application.submittedFields.join("\n")
-        : "_No answered fields stored_";
-    const messageLink = makeMessageUrl(
-      channel.guild.id,
-      application.channelId,
-      application.messageId
-    );
-    const threadLink = application.threadId
-      ? makeMessageUrl(channel.guild.id, application.threadId, application.threadId)
-      : "_No thread_";
-    const approvedRoleNote =
-      application.approvedRoleResult && application.status === STATUS_ACCEPTED
-        ? application.approvedRoleResult.message
-        : "No role action recorded.";
-    const acceptAnnounceNote =
-      application.acceptAnnounceResult && application.status === STATUS_ACCEPTED
-        ? application.acceptAnnounceResult.message
-        : "No acceptance announcement action recorded.";
-    const deniedDmNote =
-      application.denyDmResult && application.status === STATUS_DENIED
-        ? application.denyDmResult.message
-        : "No denied-DM action recorded.";
-
-    const logLines = [
-      "📚 **Application Closed (History Log)**",
-      `**Decision:** ${decisionLabel}`,
-      `**Track:** ${trackLabel}`,
-      `**Applicant:** ${application.applicantName || "Unknown"}`,
-      `**Row:** ${application.rowIndex || "Unknown"}`,
-      `**Application ID:** ${getApplicationDisplayId(application)}`,
-      `**Created At:** ${application.createdAt || "Unknown"}`,
-      `**Decided At:** ${application.decidedAt || "Unknown"}`,
-      `**Decision Source:** ${application.decisionSource || "Unknown"}`,
-      `**Decision Reason:** ${application.decisionReason || "None provided"}`,
-      `**Decided By:** ${application.decidedBy ? `<@${application.decidedBy}>` : "Unknown"}`,
-      `**Approved Role Action:** ${approvedRoleNote}`,
-      `**Acceptance Announcement Action:** ${acceptAnnounceNote}`,
-      `**Denied DM Action:** ${deniedDmNote}`,
-      `**Application Message:** ${messageLink}`,
-      `**Discussion Thread:** ${threadLink}`,
-      "",
-      "**Submitted Fields:**",
-      submittedLines,
-    ];
-    const log = logLines.join("\n");
-
-    await logsChannel.send({ content: log, allowedMentions: { parse: [] } });
-  } catch (err) {
-    console.error("Failed posting closure log:", err.message);
-  }
-}
-
-async function grantApprovedRoleOnAcceptance(application) {
-  const trackKey = normalizeTrackKey(application.trackKey) || DEFAULT_TRACK_KEY;
-  const trackLabel = getTrackLabel(trackKey);
-  const approvedRoleIds = getActiveApprovedRoleIds(trackKey);
-  if (approvedRoleIds.length === 0) {
-    return {
-      status: "skipped_no_role_configured",
-      message: `No approved roles configured for ${trackLabel}.`,
-      roleIds: [],
-      userId: application.applicantUserId || null,
-    };
-  }
-
-  if (!application.applicantUserId) {
-    return {
-      status: "skipped_no_user",
-      message: "No applicant Discord user could be resolved from the form data.",
-      roleIds: approvedRoleIds,
-      userId: null,
-    };
-  }
-
-  try {
-    const channel = await client.channels.fetch(application.channelId);
-    if (!channel || !("guild" in channel) || !channel.guild) {
-      return {
-        status: "failed_no_guild",
-        message: "Could not resolve guild for role assignment.",
-        roleIds: approvedRoleIds,
-        userId: application.applicantUserId,
-      };
-    }
-
-    const guild = channel.guild;
-    const me = await guild.members.fetchMe();
-    if (!me.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
-      return {
-        status: "failed_missing_permission",
-        message: "Bot is missing Manage Roles permission.",
-        roleIds: approvedRoleIds,
-        userId: application.applicantUserId,
-      };
-    }
-
-    let member = null;
-    try {
-      member = await guild.members.fetch(application.applicantUserId);
-    } catch {
-      member = null;
-    }
-
-    if (!member) {
-      return {
-        status: "failed_member_not_found",
-        message: `Applicant user <@${application.applicantUserId}> is not in this server.`,
-        roleIds: approvedRoleIds,
-        userId: application.applicantUserId,
-      };
-    }
-
-    const grantedRoleIds = [];
-    const alreadyHasRoleIds = [];
-    const failedRoleEntries = [];
-
-    for (const roleId of approvedRoleIds) {
-      let role = null;
-      try {
-        role = await guild.roles.fetch(roleId);
-      } catch (err) {
-        failedRoleEntries.push({
-          roleId,
-          reason: `fetch failed (${err.message})`,
-        });
-        continue;
-      }
-
-      if (!role) {
-        failedRoleEntries.push({
-          roleId,
-          reason: "role not found in guild",
-        });
-        continue;
-      }
-
-      if (role.managed) {
-        failedRoleEntries.push({
-          roleId,
-          reason: "managed/integration role",
-        });
-        continue;
-      }
-
-      if (me.roles.highest.comparePositionTo(role) <= 0) {
-        failedRoleEntries.push({
-          roleId,
-          reason: "bot role hierarchy is too low",
-        });
-        continue;
-      }
-
-      if (member.roles.cache.has(roleId)) {
-        alreadyHasRoleIds.push(roleId);
-        continue;
-      }
-
-      try {
-        await member.roles.add(
-          roleId,
-          `Application accepted (${getApplicationDisplayId(application)})`
-        );
-        grantedRoleIds.push(roleId);
-      } catch (err) {
-        failedRoleEntries.push({
-          roleId,
-          reason: `add failed (${err.message})`,
-        });
-      }
-    }
-
-    const summaryParts = [];
-    if (grantedRoleIds.length > 0) {
-      summaryParts.push(
-        `granted: ${grantedRoleIds.map((id) => `<@&${id}>`).join(", ")}`
-      );
-    }
-    if (alreadyHasRoleIds.length > 0) {
-      summaryParts.push(
-        `already had: ${alreadyHasRoleIds.map((id) => `<@&${id}>`).join(", ")}`
-      );
-    }
-    if (failedRoleEntries.length > 0) {
-      summaryParts.push(
-        `failed: ${failedRoleEntries
-          .map((entry) => `<@&${entry.roleId}> (${entry.reason})`)
-          .join(", ")}`
-      );
-    }
-
-    let status = "failed_all";
-    if (grantedRoleIds.length > 0 && failedRoleEntries.length === 0) {
-      status = "granted";
-    } else if (grantedRoleIds.length > 0 && failedRoleEntries.length > 0) {
-      status = "granted_partial";
-    } else if (alreadyHasRoleIds.length > 0 && failedRoleEntries.length === 0) {
-      status = "already_has_role";
-    }
-
-    return {
-      status,
-      message:
-        summaryParts.length > 0
-          ? `Role assignment for <@${member.id}>: ${summaryParts.join(" | ")}`
-          : `No role changes were made for <@${member.id}>.`,
-      roleIds: approvedRoleIds,
-      grantedRoleIds,
-      alreadyHasRoleIds,
-      failedRoleEntries,
-      userId: member.id,
-    };
-  } catch (err) {
-    return {
-      status: "failed_error",
-      message: `Role assignment failed: ${err.message}`,
-      roleIds: approvedRoleIds,
-      userId: application.applicantUserId,
-    };
-  }
-}
-
-async function sendDeniedApplicationDm(application, decisionReason) {
-  if (!application.applicantUserId) {
-    return {
-      status: "skipped_no_user",
-      message: "No applicant Discord user could be resolved from discord_ID.",
-      userId: null,
-    };
-  }
-
-  const trackLabel = getTrackLabel(application.trackKey);
-  let serverName = "Unknown Server";
-  try {
-    const channel = await client.channels.fetch(application.channelId);
-    if (channel && "guild" in channel && channel.guild?.name) {
-      serverName = channel.guild.name;
-    }
-  } catch {
-    // ignore and keep fallback server name
-  }
-
-  const replacements = {
-    user: `<@${application.applicantUserId}>`,
-    user_id: application.applicantUserId,
-    applicant_name: application.applicantName || "Applicant",
-    track: trackLabel,
-    application_id: getApplicationDisplayId(application),
-    job_id: application.jobId || "Unknown",
-    server: serverName,
-    decision_source: application.decisionSource || "Unknown",
-    reason: decisionReason || "",
-    decided_at: application.decidedAt || new Date().toISOString(),
-  };
-  const template = getActiveDenyDmTemplate();
-  const rendered = applyTemplatePlaceholders(template, replacements).trim();
-  const content = rendered || DEFAULT_DENY_DM_TEMPLATE;
-
-  try {
-    const user = await client.users.fetch(application.applicantUserId);
-    await sendDebugDm(user, content);
-    return {
-      status: "sent",
-      message: `Denied DM sent to <@${application.applicantUserId}>.`,
-      userId: application.applicantUserId,
-    };
-  } catch (err) {
-    return {
-      status: "failed_error",
-      message: `Failed sending denied DM to <@${application.applicantUserId}>: ${err.message}`,
-      userId: application.applicantUserId,
-    };
-  }
-}
-
-async function sendAcceptedApplicationAnnouncement(application, roleResult) {
-  const channelId = getActiveAcceptAnnounceChannelId();
-  if (!channelId) {
-    return {
-      status: "skipped_no_channel",
-      message: "No accept announcement channel configured.",
-      channelId: null,
-    };
-  }
-
-  const trackLabel = getTrackLabel(application.trackKey);
-  let serverName = "Unknown Server";
-  try {
-    const sourceChannel = await client.channels.fetch(application.channelId);
-    if (sourceChannel && "guild" in sourceChannel && sourceChannel.guild?.name) {
-      serverName = sourceChannel.guild.name;
-    }
-  } catch {
-    // ignore and keep fallback
-  }
-
-  const replacements = {
-    user: application.applicantUserId ? `<@${application.applicantUserId}>` : "",
-    user_id: application.applicantUserId || "",
-    applicant_name: application.applicantName || "Applicant",
-    track: trackLabel,
-    application_id: getApplicationDisplayId(application),
-    job_id: application.jobId || "Unknown",
-    server: serverName,
-    role_result: roleResult?.message || "",
-    reason: application.decisionReason || "",
-    decided_at: application.decidedAt || new Date().toISOString(),
-  };
-  const template = getActiveAcceptAnnounceTemplate();
-  const rendered = applyTemplatePlaceholders(template, replacements).trim();
-  const content = rendered || DEFAULT_ACCEPT_ANNOUNCE_TEMPLATE;
-
-  try {
-    await sendChannelMessage(channelId, content, {
-      parse: [],
-      users: application.applicantUserId ? [application.applicantUserId] : [],
-    });
-    return {
-      status: "sent",
-      message: `Acceptance announcement posted in <#${channelId}>.`,
-      channelId,
-    };
-  } catch (err) {
-    return {
-      status: "failed_error",
-      message: `Failed posting acceptance announcement in <#${channelId}>: ${err.message}`,
-      channelId,
-    };
-  }
-}
-
-async function finalizeApplication(messageId, decision, sourceLabel, actorId, context = {}) {
-  const state = readState();
-  const application = state.applications[messageId];
-
-  if (!application) {
-    return { ok: false, reason: "unknown_application" };
-  }
-
-  if (application.status !== STATUS_PENDING) {
-    return { ok: false, reason: "already_decided", status: application.status };
-  }
-
-  application.applicationId = getApplicationDisplayId(application, messageId);
-  application.status = decision;
-  application.decidedAt = new Date().toISOString();
-  application.decidedBy = actorId;
-  application.decisionSource = sourceLabel;
-  application.decisionReason = String(context?.reason || "").trim() || null;
-
-  const voteContext = context?.voteContext && typeof context.voteContext === "object"
-    ? context.voteContext
-    : null;
-  let decisionReason =
-    sourceLabel === "vote"
-      ? `Decision reached by vote. YES ${voteContext?.yesCount ?? "?"}/${voteContext?.eligibleCount ?? "?"}, NO ${voteContext?.noCount ?? "?"}/${voteContext?.eligibleCount ?? "?"}, threshold ${voteContext?.threshold ?? "?"} using ${voteContext ? formatVoteRule(voteContext.rule) : "configured vote rule"}.`
-      : `Forced by <@${actorId}> using slash command.`;
-  if (application.decisionReason) {
-    decisionReason = `${decisionReason}\nReviewer reason: ${application.decisionReason}`;
-  }
-  if (voteContext) {
-    application.voteContext = voteContext;
-  }
-
-  if (decision === STATUS_ACCEPTED) {
-    const roleResult = await grantApprovedRoleOnAcceptance(application);
-    application.approvedRoleResult = roleResult;
-    decisionReason = `${decisionReason}\n${roleResult.message}`;
-    const acceptAnnounceResult = await sendAcceptedApplicationAnnouncement(
-      application,
-      roleResult
-    );
-    application.acceptAnnounceResult = acceptAnnounceResult;
-    decisionReason = `${decisionReason}\n${acceptAnnounceResult.message}`;
-  } else if (decision === STATUS_DENIED) {
-    const denyDmReason = application.decisionReason || decisionReason;
-    const denyDmResult = await sendDeniedApplicationDm(application, denyDmReason);
-    application.denyDmResult = denyDmResult;
-    decisionReason = `${decisionReason}\n${denyDmResult.message}`;
-  }
-
-  writeState(state);
-
-  await postDecisionUpdate(
-    application,
-    decision,
-    decisionReason
-  );
-  await postForcedDecisionTemplateToThread(application, decision, decisionReason);
-  await postClosureLog(application);
-
-  return { ok: true };
-}
-
-async function evaluateAndApplyVoteDecision(messageId) {
-  const state = readState();
-  const application = state.applications[messageId];
-
-  if (!application || application.status !== STATUS_PENDING) {
-    return;
-  }
-
-  const channel = await client.channels.fetch(application.channelId);
-  if (!channel || !channel.isTextBased()) {
-    return;
-  }
-
-  const message = await channel.messages.fetch(messageId);
-  const eligibleReviewerIds = await getReviewersWithChannelAccess(channel);
-
-  if (eligibleReviewerIds.size === 0) {
-    return;
-  }
-
-  const voteThreshold = computeVoteThreshold(
-    eligibleReviewerIds.size,
-    application.trackKey
-  );
-  const { yesCount, noCount } = await getVoteSnapshot(message, eligibleReviewerIds);
-
-  if (yesCount >= voteThreshold.threshold && noCount >= voteThreshold.threshold) {
-    return;
-  }
-
-  if (yesCount >= voteThreshold.threshold) {
-    await finalizeApplication(messageId, STATUS_ACCEPTED, "vote", client.user.id, {
-      voteContext: {
-        eligibleCount: eligibleReviewerIds.size,
-        yesCount,
-        noCount,
-        threshold: voteThreshold.threshold,
-        rule: voteThreshold.rule,
-      },
-    });
-    return;
-  }
-
-  if (noCount >= voteThreshold.threshold) {
-    await finalizeApplication(messageId, STATUS_DENIED, "vote", client.user.id, {
-      voteContext: {
-        eligibleCount: eligibleReviewerIds.size,
-        yesCount,
-        noCount,
-        threshold: voteThreshold.threshold,
-        rule: voteThreshold.rule,
-      },
-    });
-  }
-}
-
 function resolveMessageIdForCommand(interaction) {
   function resolveUniqueMatch(matches) {
     if (matches.length === 1) {
@@ -2854,7 +2191,11 @@ const client = new Client({
 const interactionLogger = logger.child({ component: "interaction_handler" });
 const pipelineLogger = logger.child({ component: "polling_pipeline" });
 
-const { buildApplicationMessagePayload, buildFeedbackMessagePayload } =
+const {
+  buildApplicationMessagePayload,
+  buildFeedbackMessagePayload,
+  resolveApplicationStatusColor,
+} =
   createDynamicMessageSystem({
     toCodeBlock,
   });
@@ -2895,6 +2236,63 @@ const {
   jobTypePostApplication: JOB_TYPE_POST_APPLICATION,
   normalizeCell,
   buildApplicationMessagePayload,
+});
+
+const {
+  postClosureLog,
+  grantApprovedRoleOnAcceptance,
+  sendDeniedApplicationDm,
+  sendAcceptedApplicationAnnouncement,
+} = createApplicationDecisionUtils({
+  client,
+  ensureLogsChannel,
+  statusAccepted: STATUS_ACCEPTED,
+  normalizeTrackKey,
+  defaultTrackKey: DEFAULT_TRACK_KEY,
+  getTrackLabel,
+  makeMessageUrl,
+  getApplicationDisplayId,
+  getActiveApprovedRoleIds,
+  PermissionsBitField,
+  getActiveDenyDmTemplate,
+  applyTemplatePlaceholders,
+  defaultDenyDmTemplate: DEFAULT_DENY_DM_TEMPLATE,
+  sendDebugDm,
+  getActiveAcceptAnnounceChannelId,
+  getActiveAcceptAnnounceTemplate,
+  defaultAcceptAnnounceTemplate: DEFAULT_ACCEPT_ANNOUNCE_TEMPLATE,
+  sendChannelMessage,
+});
+
+const {
+  finalizeApplication,
+  evaluateAndApplyVoteDecision,
+  reopenApplication,
+} = createApplicationDecisionWorkflow({
+  client,
+  PermissionsBitField,
+  acceptEmoji: ACCEPT_EMOJI,
+  denyEmoji: DENY_EMOJI,
+  statusAccepted: STATUS_ACCEPTED,
+  statusDenied: STATUS_DENIED,
+  statusPending: STATUS_PENDING,
+  resolveApplicationStatusColor,
+  readState,
+  writeState,
+  getApplicationDisplayId,
+  formatVoteRule,
+  computeVoteThreshold,
+  grantApprovedRoleOnAcceptance,
+  sendAcceptedApplicationAnnouncement,
+  sendDeniedApplicationDm,
+  postClosureLog,
+  getTrackLabel,
+  getActiveAcceptAnnounceTemplate,
+  getActiveDenyDmTemplate,
+  defaultAcceptAnnounceTemplate: DEFAULT_ACCEPT_ANNOUNCE_TEMPLATE,
+  defaultDenyDmTemplate: DEFAULT_DENY_DM_TEMPLATE,
+  applyTemplatePlaceholders,
+  toCodeBlock,
 });
 
 const {
@@ -3014,6 +2412,25 @@ const {
   requiredGuildPermissions: REQUIRED_GUILD_PERMISSIONS,
 });
 
+async function refreshSlashCommandsForGuild(guildId) {
+  if (!isSnowflake(guildId)) {
+    return;
+  }
+
+  const commands = buildSlashCommands();
+  const rest = new REST({ version: "10" }).setToken(config.botToken);
+  await registerSlashCommandsForGuild(rest, guildId, commands);
+}
+
+reactionRoleManager = createReactionRoleManager({
+  readState,
+  writeState,
+  isSnowflake,
+  client,
+  logger,
+  PermissionsBitField,
+});
+
 const onInteractionCreate = createInteractionCommandHandler({
   PermissionsBitField,
   ChannelType,
@@ -3045,6 +2462,7 @@ const onInteractionCreate = createInteractionCommandHandler({
   sendChannelMessage,
   parseRoleIdList,
   setActiveApprovedRoles,
+  getActiveApprovedRoleIds,
   normalizeTrackKey,
   getTrackLabel,
   baseSetChannelTrackOptions: BASE_SETCHANNEL_TRACK_OPTIONS,
@@ -3073,11 +2491,17 @@ const onInteractionCreate = createInteractionCommandHandler({
   setReminderConfiguration,
   setDailyDigestConfiguration,
   setTrackReviewerMentions,
+  upsertReactionRoleBinding,
+  removeReactionRoleBinding,
+  listReactionRoleBindings,
   exportAdminConfig,
   importAdminConfig,
   formatVoteRule,
+  addReaction,
+  reactionRoleListMaxLines: DEFAULT_REACTION_ROLE_LIST_MAX_LINES,
   getTrackKeyForChannelId,
   getActiveChannelId,
+  refreshSlashCommandsForGuild,
   logger: interactionLogger,
 });
 
@@ -3113,6 +2537,14 @@ client.on("messageReactionAdd", async (reaction, user) => {
       await reaction.fetch();
     }
 
+    try {
+      await applyReactionRoleFromEvent(reaction, user, "add");
+    } catch (err) {
+      logger.error("reaction_role_add_handler_failed", "Reaction role add handler failed.", {
+        error: err.message,
+      });
+    }
+
     const emojiName = reaction.emoji.name;
     if (emojiName !== ACCEPT_EMOJI && emojiName !== DENY_EMOJI) {
       return;
@@ -3131,10 +2563,22 @@ client.on("messageReactionAdd", async (reaction, user) => {
   }
 });
 
-client.on("messageReactionRemove", async (reaction) => {
+client.on("messageReactionRemove", async (reaction, user) => {
   try {
+    if (user?.bot) {
+      return;
+    }
+
     if (reaction.partial) {
       await reaction.fetch();
+    }
+
+    try {
+      await applyReactionRoleFromEvent(reaction, user, "remove");
+    } catch (err) {
+      logger.error("reaction_role_remove_handler_failed", "Reaction role remove handler failed.", {
+        error: err.message,
+      });
     }
 
     const emojiName = reaction.emoji.name;

@@ -30,6 +30,7 @@ function createApplicationFormUtils(options = {}) {
       ? options.buildApplicationMessagePayload
       : ({
         applicationId,
+        status,
         trackKey,
         trackLabel,
         applicantMention,
@@ -63,7 +64,7 @@ function createApplicationFormUtils(options = {}) {
           embeds: [
             {
               title: "📥 New Application",
-              color: resolveTrackEmbedColor(trackKey),
+              color: resolveApplicationStatusColor(status || "pending"),
               fields,
               description: toCodeBlock(truncateForEmbed(detailsText, 3800)),
             },
@@ -121,16 +122,18 @@ function createApplicationFormUtils(options = {}) {
     return `${text.slice(0, Math.max(0, maxLength - 16))}\n...[truncated]`;
   }
 
-  function resolveTrackEmbedColor(trackKey) {
-    const source = String(trackKey || "track").toLowerCase();
-    let hash = 0;
-    for (let i = 0; i < source.length; i += 1) {
-      hash = (hash * 31 + source.charCodeAt(i)) & 0xffffff;
+  function resolveApplicationStatusColor(status) {
+    const normalizedStatus = String(status || "").trim().toLowerCase();
+    if (normalizedStatus === "accepted") {
+      return 0x57f287;
     }
-    if (hash === 0) {
-      return 0x2b2d31;
+    if (normalizedStatus === "denied") {
+      return 0xed4245;
     }
-    return hash;
+    if (normalizedStatus === "pending" || normalizedStatus === "processing") {
+      return 0xfee75c;
+    }
+    return 0x2b2d31;
   }
 
   function inferApplicantDiscordValue(headers, row) {
@@ -224,6 +227,7 @@ function createApplicationFormUtils(options = {}) {
 
   function makeApplicationPostContent({
     applicationId,
+    status,
     trackKey,
     applicantMention,
     applicantRawValue,
@@ -234,6 +238,7 @@ function createApplicationFormUtils(options = {}) {
     const detailsText = makeApplicationContent(headers, row);
     return buildApplicationMessagePayload({
       applicationId,
+      status,
       trackKey,
       trackLabel,
       applicantMention,

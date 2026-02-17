@@ -31,13 +31,91 @@ function createSlashCommandLifecycle(options = {}) {
   const requiredGuildPermissions = Array.isArray(options.requiredGuildPermissions)
     ? options.requiredGuildPermissions
     : [];
+  const setChannelOptionLimit = 25;
+  const setChannelReservedOptionCount = 6;
+
+  function toSetChannelTrackOptionName(trackKey) {
+    const raw = String(trackKey || "").trim().toLowerCase();
+    if (!raw) {
+      return null;
+    }
+    const cleaned = raw.replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "");
+    if (!cleaned) {
+      return null;
+    }
+    const suffix = "_post";
+    const maxBaseLength = Math.max(1, 32 - suffix.length);
+    return `${cleaned.slice(0, maxBaseLength)}${suffix}`;
+  }
+
+  function buildDynamicSetChannelTrackOptions() {
+    const staticTrackKeys = new Set(
+      baseSetChannelTrackOptions
+        .map((optionDef) => String(optionDef?.trackKey || "").trim())
+        .filter(Boolean)
+    );
+    const usedOptionNames = new Set(
+      baseSetChannelTrackOptions
+        .flatMap((optionDef) => [optionDef?.optionName, optionDef?.legacyOptionName])
+        .map((name) => String(name || "").trim())
+        .filter(Boolean)
+    );
+    usedOptionNames.add("track");
+    usedOptionNames.add("post_channel");
+    usedOptionNames.add("log");
+    usedOptionNames.add("accept_message");
+    usedOptionNames.add("bug");
+    usedOptionNames.add("suggestions");
+
+    const baseTrackOptionCount = baseSetChannelTrackOptions.reduce(
+      (count, optionDef) => count + (optionDef?.legacyOptionName ? 2 : 1),
+      0
+    );
+    const maxDynamicCount = Math.max(
+      0,
+      setChannelOptionLimit - baseTrackOptionCount - setChannelReservedOptionCount
+    );
+    if (maxDynamicCount === 0) {
+      return [];
+    }
+
+    const candidates = [];
+    for (const trackKey of getApplicationTrackKeys()) {
+      const normalizedTrackKey = String(trackKey || "").trim();
+      if (!normalizedTrackKey || staticTrackKeys.has(normalizedTrackKey)) {
+        continue;
+      }
+
+      const optionName = toSetChannelTrackOptionName(normalizedTrackKey);
+      if (!optionName || usedOptionNames.has(optionName)) {
+        continue;
+      }
+      usedOptionNames.add(optionName);
+
+      candidates.push({
+        trackKey: normalizedTrackKey,
+        optionName,
+        description: `${getTrackLabel(normalizedTrackKey)} application post channel`,
+      });
+    }
+
+    return candidates
+      .sort((a, b) =>
+        getTrackLabel(a.trackKey).localeCompare(getTrackLabel(b.trackKey))
+      )
+      .slice(0, maxDynamicCount);
+  }
 
   function buildSlashCommands() {
+    const setChannelTrackOptions = [
+      ...baseSetChannelTrackOptions,
+      ...buildDynamicSetChannelTrackOptions(),
+    ];
     const setChannelCommand = new SlashCommandBuilder()
       .setName("setchannel")
       .setDescription("Set app/log/bug/suggestions channels");
 
-    for (const optionDef of baseSetChannelTrackOptions) {
+    for (const optionDef of setChannelTrackOptions) {
       if (optionDef.legacyOptionName) {
         setChannelCommand.addChannelOption((option) =>
           option
@@ -189,6 +267,86 @@ function createSlashCommandLifecycle(options = {}) {
             .setName("role_5")
             .setDescription("Fifth role to grant on acceptance")
             .setRequired(false)
+        ),
+      new SlashCommandBuilder()
+        .setName("setapprolegui")
+        .setDescription("Open GUI to set accepted roles for a track"),
+      new SlashCommandBuilder()
+        .setName("reactionrole")
+        .setDescription("Manage reaction-role mappings")
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName("create")
+            .setDescription("Create or update a reaction-role mapping")
+            .addStringOption((option) =>
+              option
+                .setName("message_id")
+                .setDescription("Target message ID")
+                .setRequired(true)
+            )
+            .addStringOption((option) =>
+              option
+                .setName("emoji")
+                .setDescription("Emoji (e.g. ✅ or <:name:id>)")
+                .setRequired(true)
+            )
+            .addRoleOption((option) =>
+              option
+                .setName("role")
+                .setDescription("Role to grant when user reacts")
+                .setRequired(true)
+            )
+            .addChannelOption((option) =>
+              option
+                .setName("channel")
+                .setDescription("Channel containing the target message")
+                .setRequired(false)
+            )
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName("remove")
+            .setDescription("Remove a reaction-role mapping")
+            .addStringOption((option) =>
+              option
+                .setName("message_id")
+                .setDescription("Target message ID")
+                .setRequired(true)
+            )
+            .addStringOption((option) =>
+              option
+                .setName("emoji")
+                .setDescription("Emoji used in the mapping")
+                .setRequired(true)
+            )
+            .addChannelOption((option) =>
+              option
+                .setName("channel")
+                .setDescription("Channel containing the target message")
+                .setRequired(false)
+            )
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName("list")
+            .setDescription("List reaction-role mappings")
+            .addStringOption((option) =>
+              option
+                .setName("message_id")
+                .setDescription("Optional message ID filter")
+                .setRequired(false)
+            )
+            .addChannelOption((option) =>
+              option
+                .setName("channel")
+                .setDescription("Optional channel filter")
+                .setRequired(false)
+            )
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName("gui")
+            .setDescription("Open button/modal GUI for reaction-role management")
         ),
       new SlashCommandBuilder()
         .setName("track")
@@ -497,6 +655,45 @@ function createSlashCommandLifecycle(options = {}) {
           option
             .setName("code_block")
             .setDescription("Wrap content lines in a code block")
+            .setRequired(false)
+        ),
+      new SlashCommandBuilder()
+        .setName("embedmsg")
+        .setDescription("Post an embedded bot message")
+        .addStringOption((option) =>
+          option
+            .setName("title")
+            .setDescription("Embed title")
+            .setRequired(true)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("description")
+            .setDescription("Embed description/body")
+            .setRequired(true)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("color")
+            .setDescription("Optional hex color (e.g. #57F287)")
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("footer")
+            .setDescription("Optional footer text")
+            .setRequired(false)
+        )
+        .addBooleanOption((option) =>
+          option
+            .setName("timestamp")
+            .setDescription("Include current timestamp on embed")
+            .setRequired(false)
+        )
+        .addChannelOption((option) =>
+          option
+            .setName("channel")
+            .setDescription("Target channel (defaults to current channel)")
             .setRequired(false)
         ),
       new SlashCommandBuilder()
