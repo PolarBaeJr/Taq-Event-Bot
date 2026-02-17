@@ -697,6 +697,51 @@ function createSlashCommandLifecycle(options = {}) {
             .setRequired(false)
         ),
       new SlashCommandBuilder()
+        .setName("embededit")
+        .setDescription("Edit an embedded bot message posted by this bot")
+        .addStringOption((option) =>
+          option
+            .setName("message_id")
+            .setDescription("Target bot message ID")
+            .setRequired(true)
+        )
+        .addChannelOption((option) =>
+          option
+            .setName("channel")
+            .setDescription("Target channel (defaults to current channel)")
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("title")
+            .setDescription("New embed title")
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("description")
+            .setDescription("New embed description/body")
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("color")
+            .setDescription("Hex color (#57F287) or `clear`")
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("footer")
+            .setDescription("Footer text or `clear`")
+            .setRequired(false)
+        )
+        .addBooleanOption((option) =>
+          option
+            .setName("timestamp")
+            .setDescription("Set timestamp on/off")
+            .setRequired(false)
+        ),
+      new SlashCommandBuilder()
         .setName("bug")
         .setDescription("Send a bug report to the configured bug channel")
         .addStringOption((option) =>

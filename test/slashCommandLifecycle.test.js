@@ -132,3 +132,30 @@ test("buildSlashCommands includes /embedmsg command", () => {
   const commandNames = new Set(commands.map((command) => command.name));
   assert.ok(commandNames.has("embedmsg"));
 });
+
+test("buildSlashCommands includes /embededit command", () => {
+  const { buildSlashCommands } = createSlashCommandLifecycle({
+    config: {},
+    client: {
+      guilds: {
+        cache: new Map(),
+      },
+    },
+    REST: function REST() {},
+    Routes: {},
+    SlashCommandBuilder,
+    baseSetChannelTrackOptions: [],
+    debugModes: {
+      report: "report",
+      post_test: "post_test",
+      accept_test: "accept_test",
+      deny_test: "deny_test",
+    },
+    getApplicationTrackKeys: () => ["tester"],
+    getTrackLabel: () => "Tester",
+  });
+
+  const commands = buildSlashCommands();
+  const commandNames = new Set(commands.map((command) => command.name));
+  assert.ok(commandNames.has("embededit"));
+});

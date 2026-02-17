@@ -20,6 +20,15 @@ All notable changes to this project are documented in this file.
 - Startup config validation no longer fails hard when optional Discord ID env vars contain placeholder values; invalid optional IDs are now ignored with warnings.
 - Startup config path resolution no longer trims `cwd`, which fixes false missing-file errors for `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` in paths containing trailing spaces.
 
+## [1.3.0] - 2026-02-17
+
+### Added
+- New `/embededit` slash command to edit bot-authored embedded messages by message ID.
+- Additional slash-command coverage test to validate `/embededit` registration.
+
+### Changed
+- Embed command handling now supports safe in-place embed edits (field-level updates, validation, and clear options for color/footer/timestamp).
+
 ## [1.1.1] - 2026-02-15
 
 ### Added

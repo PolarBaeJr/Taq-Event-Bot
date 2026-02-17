@@ -894,6 +894,7 @@ function createInteractionCommandHandler(options = {}) {
         interaction.commandName === "setaccept";
       const isStructuredMsg = interaction.commandName === "structuredmsg";
       const isEmbedMsg = interaction.commandName === "embedmsg";
+      const isEmbedEdit = interaction.commandName === "embededit";
       const isBug = interaction.commandName === "bug";
       const isSuggestions =
         interaction.commandName === "suggestions" ||
@@ -918,6 +919,7 @@ function createInteractionCommandHandler(options = {}) {
         !isSetAcceptMsg &&
         !isStructuredMsg &&
         !isEmbedMsg &&
+        !isEmbedEdit &&
         !isBug &&
         !isSuggestions &&
         !isDebug &&
@@ -1689,6 +1691,177 @@ function createInteractionCommandHandler(options = {}) {
 
         await interaction.reply({
           content: `Embedded message posted in <#${targetChannel.id}>.`,
+          ephemeral: true,
+        });
+        return;
+      }
+
+      if (isEmbedEdit) {
+        if (!canManageServer) {
+          await interaction.reply({
+            content:
+              "You need Manage Server permission (or Administrator) to run this command.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        const channelInput = interaction.options.getChannel("channel");
+        const targetChannel = channelInput || interaction.channel;
+        if (
+          !targetChannel ||
+          !targetChannel.isTextBased() ||
+          typeof targetChannel.messages?.fetch !== "function"
+        ) {
+          await interaction.reply({
+            content: "Please choose a valid text channel.",
+            ephemeral: true,
+          });
+          return;
+        }
+        if (interaction.guildId && targetChannel.guildId !== interaction.guildId) {
+          await interaction.reply({
+            content: "The selected channel must be in this server.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        const messageId = String(interaction.options.getString("message_id", true) || "").trim();
+        if (!isSnowflake(messageId)) {
+          await interaction.reply({
+            content: "Please provide a valid `message_id`.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        const targetMessage = await targetChannel.messages.fetch(messageId).catch(() => null);
+        if (!targetMessage) {
+          await interaction.reply({
+            content: "Message not found in that channel.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        if (!targetMessage.author || targetMessage.author.id !== interaction.client.user?.id) {
+          await interaction.reply({
+            content: "I can only edit embeds on messages posted by this bot.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        const titleInput = interaction.options.getString("title");
+        const descriptionInput = interaction.options.getString("description");
+        const colorInput = interaction.options.getString("color");
+        const footerInput = interaction.options.getString("footer");
+        const timestampInput = interaction.options.getBoolean("timestamp");
+
+        const hasAnyUpdate =
+          titleInput !== null ||
+          descriptionInput !== null ||
+          colorInput !== null ||
+          footerInput !== null ||
+          timestampInput !== null;
+        if (!hasAnyUpdate) {
+          await interaction.reply({
+            content:
+              "Provide at least one field to update (`title`, `description`, `color`, `footer`, or `timestamp`).",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        const existingEmbeds = Array.isArray(targetMessage.embeds)
+          ? targetMessage.embeds.map((embed) =>
+              embed && typeof embed.toJSON === "function" ? embed.toJSON() : { ...(embed || {}) }
+            )
+          : [];
+        const firstEmbed = existingEmbeds.length > 0 ? existingEmbeds[0] : {};
+        const nextEmbed = { ...firstEmbed };
+
+        if (titleInput !== null) {
+          const nextTitle = String(titleInput || "").trim();
+          if (nextTitle) {
+            nextEmbed.title = nextTitle.slice(0, 256);
+          } else {
+            delete nextEmbed.title;
+          }
+        }
+
+        if (descriptionInput !== null) {
+          const nextDescription = String(descriptionInput || "").trim();
+          if (nextDescription) {
+            nextEmbed.description = nextDescription.slice(0, 4096);
+          } else {
+            delete nextEmbed.description;
+          }
+        }
+
+        if (colorInput !== null) {
+          const rawColor = String(colorInput || "").trim().toLowerCase();
+          if (rawColor === "clear" || rawColor === "none") {
+            delete nextEmbed.color;
+          } else {
+            const color = parseEmbedColor(colorInput);
+            if (color === null) {
+              await interaction.reply({
+                content: "Invalid `color`. Use 6-digit hex like `#57F287`, or `clear`.",
+                ephemeral: true,
+              });
+              return;
+            }
+            nextEmbed.color = color;
+          }
+        }
+
+        if (footerInput !== null) {
+          const nextFooter = String(footerInput || "").trim();
+          if (!nextFooter || /^(clear|none)$/i.test(nextFooter)) {
+            delete nextEmbed.footer;
+          } else {
+            nextEmbed.footer = {
+              text: nextFooter.slice(0, 2048),
+            };
+          }
+        }
+
+        if (timestampInput !== null) {
+          if (timestampInput) {
+            nextEmbed.timestamp = new Date().toISOString();
+          } else {
+            delete nextEmbed.timestamp;
+          }
+        }
+
+        const hasRenderableContent =
+          Boolean(String(nextEmbed.title || "").trim()) ||
+          Boolean(String(nextEmbed.description || "").trim()) ||
+          (Array.isArray(nextEmbed.fields) && nextEmbed.fields.length > 0) ||
+          Boolean(nextEmbed.image?.url) ||
+          Boolean(nextEmbed.thumbnail?.url) ||
+          Boolean(nextEmbed.author?.name) ||
+          Boolean(nextEmbed.footer?.text);
+        if (!hasRenderableContent) {
+          await interaction.reply({
+            content:
+              "Resulting embed would be empty. Keep at least one of title/description/fields/image/footer.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        const updatedEmbeds = existingEmbeds.length > 0
+          ? [nextEmbed, ...existingEmbeds.slice(1)]
+          : [nextEmbed];
+        await targetMessage.edit({
+          embeds: updatedEmbeds,
+        });
+
+        await interaction.reply({
+          content: `Embedded message updated in <#${targetChannel.id}>.`,
           ephemeral: true,
         });
         return;
