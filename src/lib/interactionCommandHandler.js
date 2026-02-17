@@ -1533,16 +1533,20 @@ function createInteractionCommandHandler(options = {}) {
           return;
         }
 
-        const subcommand = interaction.options.getSubcommand(true);
+        const settingsAction = String(
+          interaction.options.getString("action", true) || ""
+        )
+          .trim()
+          .toLowerCase();
         logInteractionDebug(
           "settings_command_received",
           "Processing settings command.",
           interaction,
           {
-            subcommand,
+            action: settingsAction,
           }
         );
-        if (subcommand === "show") {
+        if (settingsAction === "show") {
           await interaction.reply({
             content: buildSettingsMessage(),
             ephemeral: true,
@@ -1552,17 +1556,24 @@ function createInteractionCommandHandler(options = {}) {
             "Returned settings summary.",
             interaction,
             {
-              subcommand,
+              action: settingsAction,
             }
           );
           return;
         }
 
-        if (subcommand === "vote") {
-          const track = interaction.options.getString("track", true);
-          const numerator = interaction.options.getInteger("numerator", true);
-          const denominator = interaction.options.getInteger("denominator", true);
+        if (settingsAction === "vote") {
+          const track = interaction.options.getString("track");
+          const numerator = interaction.options.getInteger("numerator");
+          const denominator = interaction.options.getInteger("denominator");
           const minimumVotes = interaction.options.getInteger("minimum_votes");
+          if (track === null || numerator === null || denominator === null) {
+            await interaction.reply({
+              content: "For `action:vote`, provide `track`, `numerator`, and `denominator`.",
+              ephemeral: true,
+            });
+            return;
+          }
 
           let update;
           try {
@@ -1592,14 +1603,14 @@ function createInteractionCommandHandler(options = {}) {
             "Updated settings vote rule.",
             interaction,
             {
-              subcommand,
+              action: settingsAction,
               trackLabel: update.trackLabel,
             }
           );
           return;
         }
 
-        if (subcommand === "reminders") {
+        if (settingsAction === "reminders") {
           const enabled = interaction.options.getBoolean("enabled");
           const thresholdHours = interaction.options.getNumber("threshold_hours");
           const repeatHours = interaction.options.getNumber("repeat_hours");
@@ -1634,7 +1645,7 @@ function createInteractionCommandHandler(options = {}) {
             "Updated reminder settings.",
             interaction,
             {
-              subcommand,
+              action: settingsAction,
               enabled: next.enabled,
               thresholdHours: next.thresholdHours,
               repeatHours: next.repeatHours,
@@ -1643,9 +1654,16 @@ function createInteractionCommandHandler(options = {}) {
           return;
         }
 
-        if (subcommand === "reviewers") {
-          const track = interaction.options.getString("track", true);
-          const mentions = interaction.options.getString("mentions", true);
+        if (settingsAction === "reviewers") {
+          const track = interaction.options.getString("track");
+          const mentions = interaction.options.getString("mentions");
+          if (track === null || mentions === null) {
+            await interaction.reply({
+              content: "For `action:reviewers`, provide `track` and `mentions`.",
+              ephemeral: true,
+            });
+            return;
+          }
           let config;
           let normalizedTrack = null;
           try {
@@ -1676,7 +1694,7 @@ function createInteractionCommandHandler(options = {}) {
             "Updated reviewer rotation settings.",
             interaction,
             {
-              subcommand,
+              action: settingsAction,
               trackLabel,
               reviewerCount: summary.length,
             }
@@ -1684,9 +1702,16 @@ function createInteractionCommandHandler(options = {}) {
           return;
         }
 
-        if (subcommand === "voters") {
-          const track = interaction.options.getString("track", true);
-          const roles = interaction.options.getString("roles", true);
+        if (settingsAction === "voters") {
+          const track = interaction.options.getString("track");
+          const roles = interaction.options.getString("roles");
+          if (track === null || roles === null) {
+            await interaction.reply({
+              content: "For `action:voters`, provide `track` and `roles`.",
+              ephemeral: true,
+            });
+            return;
+          }
           let update;
           try {
             update = setTrackVoterRoles(track, roles);
@@ -1716,7 +1741,7 @@ function createInteractionCommandHandler(options = {}) {
             "Updated vote-eligible role filter.",
             interaction,
             {
-              subcommand,
+              action: settingsAction,
               trackLabel: update.trackLabel,
               roleCount: summary.length,
             }
@@ -1724,7 +1749,7 @@ function createInteractionCommandHandler(options = {}) {
           return;
         }
 
-        if (subcommand === "digest") {
+        if (settingsAction === "digest") {
           const enabled = interaction.options.getBoolean("enabled");
           const hourUtc = interaction.options.getInteger("hour_utc");
           if (enabled === null && hourUtc === null) {
@@ -1751,7 +1776,7 @@ function createInteractionCommandHandler(options = {}) {
             "Updated daily digest settings.",
             interaction,
             {
-              subcommand,
+              action: settingsAction,
               enabled: next.enabled,
               hourUtc: next.hourUtc,
             }
@@ -1759,7 +1784,7 @@ function createInteractionCommandHandler(options = {}) {
           return;
         }
 
-        if (subcommand === "sheets") {
+        if (settingsAction === "sheets") {
           const spreadsheetId = interaction.options.getString("spreadsheet_id");
           const sheetName = interaction.options.getString("sheet_name");
           const reset = interaction.options.getBoolean("reset") === true;
@@ -1799,7 +1824,7 @@ function createInteractionCommandHandler(options = {}) {
             "Updated sheet source settings.",
             interaction,
             {
-              subcommand,
+              action: settingsAction,
               spreadsheetIdSource: effective.spreadsheetIdSource,
               sheetNameSource: effective.sheetNameSource,
             }
@@ -1807,8 +1832,15 @@ function createInteractionCommandHandler(options = {}) {
           return;
         }
 
-        if (subcommand === "missingusermsg") {
-          const message = interaction.options.getString("message", true);
+        if (settingsAction === "missingusermsg") {
+          const message = interaction.options.getString("message");
+          if (message === null) {
+            await interaction.reply({
+              content: "For `action:missingusermsg`, provide `message`.",
+              ephemeral: true,
+            });
+            return;
+          }
           let updatedMessage;
           try {
             updatedMessage = setApplicantMissingDiscordThreadNoticeMessage(message);
@@ -1833,14 +1865,14 @@ function createInteractionCommandHandler(options = {}) {
             "Updated missing-user thread notice message.",
             interaction,
             {
-              subcommand,
+              action: settingsAction,
               length: updatedMessage.length,
             }
           );
           return;
         }
 
-        if (subcommand === "export") {
+        if (settingsAction === "export") {
           const payload = exportAdminConfig();
           try {
             await sendDebugDm(interaction.user, payload);
@@ -1861,15 +1893,22 @@ function createInteractionCommandHandler(options = {}) {
             "Exported configuration via /settings.",
             interaction,
             {
-              subcommand,
+              action: settingsAction,
               payloadLength: typeof payload === "string" ? payload.length : null,
             }
           );
           return;
         }
 
-        if (subcommand === "import") {
-          const rawJson = interaction.options.getString("json", true);
+        if (settingsAction === "import") {
+          const rawJson = interaction.options.getString("json");
+          if (rawJson === null) {
+            await interaction.reply({
+              content: "For `action:import`, provide `json`.",
+              ephemeral: true,
+            });
+            return;
+          }
           let result;
           try {
             result = importAdminConfig(rawJson);
@@ -1888,7 +1927,7 @@ function createInteractionCommandHandler(options = {}) {
           await postConfigurationLog(interaction, "Config Imported", [
             `**Tracks:** ${result.trackCount}`,
             `**Custom Tracks:** ${result.customTrackCount}`,
-            "**Source:** /settings import",
+            "**Source:** /settings action:import",
           ]);
           refreshCommandsIfNeeded();
           logInteractionDebug(
@@ -1896,7 +1935,7 @@ function createInteractionCommandHandler(options = {}) {
             "Imported configuration JSON via /settings.",
             interaction,
             {
-              subcommand,
+              action: settingsAction,
               trackCount: result.trackCount,
               customTrackCount: result.customTrackCount,
             }
@@ -1905,7 +1944,7 @@ function createInteractionCommandHandler(options = {}) {
         }
 
         await interaction.reply({
-          content: `Unknown settings action: ${subcommand}`,
+          content: `Unknown settings action: ${settingsAction}`,
           ephemeral: true,
         });
         return;

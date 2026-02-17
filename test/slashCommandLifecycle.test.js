@@ -141,7 +141,7 @@ test("buildSlashCommands includes /useapprole legacy command", () => {
   assert.ok(subcommandNames.has("gui"));
 });
 
-test("buildSlashCommands includes /settings config import/export subcommands", () => {
+test("buildSlashCommands includes single /settings command with action option", () => {
   const { buildSlashCommands } = createSlashCommandLifecycle({
     config: {},
     client: {
@@ -167,15 +167,25 @@ test("buildSlashCommands includes /settings config import/export subcommands", (
   const settings = commands.find((command) => command.name === "settings");
   assert.ok(settings, "settings command should exist");
 
-  const subcommandNames = new Set(
+  const optionNames = new Set(
     (Array.isArray(settings.options) ? settings.options : []).map((option) => option.name)
   );
-  assert.ok(subcommandNames.has("show"));
-  assert.ok(subcommandNames.has("voters"));
-  assert.ok(subcommandNames.has("missingusermsg"));
-  assert.ok(subcommandNames.has("sheets"));
-  assert.ok(subcommandNames.has("export"));
-  assert.ok(subcommandNames.has("import"));
+  assert.ok(optionNames.has("action"));
+  assert.ok(optionNames.has("track"));
+  assert.ok(optionNames.has("numerator"));
+  assert.ok(optionNames.has("denominator"));
+  assert.ok(optionNames.has("minimum_votes"));
+  assert.ok(optionNames.has("enabled"));
+  assert.ok(optionNames.has("threshold_hours"));
+  assert.ok(optionNames.has("repeat_hours"));
+  assert.ok(optionNames.has("mentions"));
+  assert.ok(optionNames.has("roles"));
+  assert.ok(optionNames.has("hour_utc"));
+  assert.ok(optionNames.has("spreadsheet_id"));
+  assert.ok(optionNames.has("sheet_name"));
+  assert.ok(optionNames.has("reset"));
+  assert.ok(optionNames.has("message"));
+  assert.ok(optionNames.has("json"));
 });
 
 test("buildSlashCommands includes /embedmsg command", () => {

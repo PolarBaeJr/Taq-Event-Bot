@@ -557,181 +557,129 @@ function createSlashCommandLifecycle(options = {}) {
         ),
       new SlashCommandBuilder()
         .setName("settings")
-        .setDescription("Configure bot settings")
-        .addSubcommand((subcommand) =>
-          subcommand
-            .setName("show")
-            .setDescription("Show current bot settings")
+        .setDescription("Configure bot settings (select an action)")
+        .addStringOption((option) =>
+          option
+            .setName("action")
+            .setDescription("Settings action")
+            .addChoices(
+              { name: "Show", value: "show" },
+              { name: "Vote Rule", value: "vote" },
+              { name: "Reminders", value: "reminders" },
+              { name: "Reviewers", value: "reviewers" },
+              { name: "Voters", value: "voters" },
+              { name: "Digest", value: "digest" },
+              { name: "Sheets", value: "sheets" },
+              { name: "Missing-User Message", value: "missingusermsg" },
+              { name: "Export", value: "export" },
+              { name: "Import", value: "import" }
+            )
+            .setRequired(true)
         )
-        .addSubcommand((subcommand) =>
-          subcommand
-            .setName("vote")
-            .setDescription("Set per-track vote threshold/quorum")
-            .addStringOption((option) =>
-              option
-                .setName("track")
-                .setDescription("Track key/alias")
-                .setAutocomplete(true)
-                .setRequired(true)
-            )
-            .addIntegerOption((option) =>
-              option
-                .setName("numerator")
-                .setDescription("Threshold ratio numerator (e.g. 2 for 2/3)")
-                .setMinValue(1)
-                .setMaxValue(20)
-                .setRequired(true)
-            )
-            .addIntegerOption((option) =>
-              option
-                .setName("denominator")
-                .setDescription("Threshold ratio denominator (e.g. 3 for 2/3)")
-                .setMinValue(1)
-                .setMaxValue(20)
-                .setRequired(true)
-            )
-            .addIntegerOption((option) =>
-              option
-                .setName("minimum_votes")
-                .setDescription("Minimum YES/NO votes required to decide")
-                .setMinValue(1)
-                .setMaxValue(200)
-                .setRequired(false)
-            )
+        .addStringOption((option) =>
+          option
+            .setName("track")
+            .setDescription("Track key/alias (for vote/reviewers/voters)")
+            .setAutocomplete(true)
+            .setRequired(false)
         )
-        .addSubcommand((subcommand) =>
-          subcommand
-            .setName("reminders")
-            .setDescription("Set stale pending reminder behavior")
-            .addBooleanOption((option) =>
-              option
-                .setName("enabled")
-                .setDescription("Enable/disable stale reminders")
-                .setRequired(false)
-            )
-            .addNumberOption((option) =>
-              option
-                .setName("threshold_hours")
-                .setDescription("Hours pending before first reminder")
-                .setMinValue(0.25)
-                .setMaxValue(720)
-                .setRequired(false)
-            )
-            .addNumberOption((option) =>
-              option
-                .setName("repeat_hours")
-                .setDescription("Hours between reminder repeats")
-                .setMinValue(0.25)
-                .setMaxValue(720)
-                .setRequired(false)
-            )
+        .addIntegerOption((option) =>
+          option
+            .setName("numerator")
+            .setDescription("Vote numerator (for action:vote)")
+            .setMinValue(1)
+            .setMaxValue(20)
+            .setRequired(false)
         )
-        .addSubcommand((subcommand) =>
-          subcommand
-            .setName("reviewers")
-            .setDescription("Set per-track reviewer mentions (users/roles)")
-            .addStringOption((option) =>
-              option
-                .setName("track")
-                .setDescription("Track key/alias")
-                .setAutocomplete(true)
-                .setRequired(true)
-            )
-            .addStringOption((option) =>
-              option
-                .setName("mentions")
-                .setDescription("Comma/space list of @users, @roles, or IDs. Use `clear` to remove.")
-                .setRequired(true)
-            )
+        .addIntegerOption((option) =>
+          option
+            .setName("denominator")
+            .setDescription("Vote denominator (for action:vote)")
+            .setMinValue(1)
+            .setMaxValue(20)
+            .setRequired(false)
         )
-        .addSubcommand((subcommand) =>
-          subcommand
-            .setName("voters")
-            .setDescription("Set per-track role filter for vote eligibility")
-            .addStringOption((option) =>
-              option
-                .setName("track")
-                .setDescription("Track key/alias")
-                .setAutocomplete(true)
-                .setRequired(true)
-            )
-            .addStringOption((option) =>
-              option
-                .setName("roles")
-                .setDescription("Comma/space list of @roles or IDs. Use `clear` to remove.")
-                .setRequired(true)
-            )
+        .addIntegerOption((option) =>
+          option
+            .setName("minimum_votes")
+            .setDescription("Minimum YES/NO votes (for action:vote)")
+            .setMinValue(1)
+            .setMaxValue(200)
+            .setRequired(false)
         )
-        .addSubcommand((subcommand) =>
-          subcommand
-            .setName("digest")
-            .setDescription("Configure daily summary digest to logs channel")
-            .addBooleanOption((option) =>
-              option
-                .setName("enabled")
-                .setDescription("Enable/disable digest posting")
-                .setRequired(false)
-            )
-            .addIntegerOption((option) =>
-              option
-                .setName("hour_utc")
-                .setDescription("UTC hour for digest post (0-23)")
-                .setMinValue(0)
-                .setMaxValue(23)
-                .setRequired(false)
-            )
+        .addBooleanOption((option) =>
+          option
+            .setName("enabled")
+            .setDescription("Enable/disable (for reminders/digest)")
+            .setRequired(false)
         )
-        .addSubcommand((subcommand) =>
-          subcommand
-            .setName("sheets")
-            .setDescription("Configure source Google Sheet settings")
-            .addStringOption((option) =>
-              option
-                .setName("spreadsheet_id")
-                .setDescription("Google Spreadsheet ID (`default` clears override)")
-                .setRequired(false)
-            )
-            .addStringOption((option) =>
-              option
-                .setName("sheet_name")
-                .setDescription("Sheet tab name (`default` clears override)")
-                .setRequired(false)
-            )
-            .addBooleanOption((option) =>
-              option
-                .setName("reset")
-                .setDescription("Clear both overrides and use .env defaults")
-                .setRequired(false)
-            )
+        .addNumberOption((option) =>
+          option
+            .setName("threshold_hours")
+            .setDescription("Hours before first reminder (for action:reminders)")
+            .setMinValue(0.25)
+            .setMaxValue(720)
+            .setRequired(false)
         )
-        .addSubcommand((subcommand) =>
-          subcommand
-            .setName("missingusermsg")
-            .setDescription("Set thread message when accepted applicant is not in server")
-            .addStringOption((option) =>
-              option
-                .setName("message")
-                .setDescription("Message text. Use `default` to reset.")
-                .setMinLength(1)
-                .setMaxLength(1900)
-                .setRequired(true)
-            )
+        .addNumberOption((option) =>
+          option
+            .setName("repeat_hours")
+            .setDescription("Reminder repeat hours (for action:reminders)")
+            .setMinValue(0.25)
+            .setMaxValue(720)
+            .setRequired(false)
         )
-        .addSubcommand((subcommand) =>
-          subcommand
-            .setName("export")
-            .setDescription("DM your current admin settings JSON")
+        .addStringOption((option) =>
+          option
+            .setName("mentions")
+            .setDescription("Reviewer mentions/IDs (for action:reviewers)")
+            .setRequired(false)
         )
-        .addSubcommand((subcommand) =>
-          subcommand
-            .setName("import")
-            .setDescription("Import admin settings from JSON")
-            .addStringOption((option) =>
-              option
-                .setName("json")
-                .setDescription("JSON payload (code block accepted)")
-                .setRequired(true)
-            )
+        .addStringOption((option) =>
+          option
+            .setName("roles")
+            .setDescription("Role mentions/IDs or `clear` (for action:voters)")
+            .setRequired(false)
+        )
+        .addIntegerOption((option) =>
+          option
+            .setName("hour_utc")
+            .setDescription("UTC digest hour (for action:digest)")
+            .setMinValue(0)
+            .setMaxValue(23)
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("spreadsheet_id")
+            .setDescription("Spreadsheet ID (`default` clears, for action:sheets)")
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("sheet_name")
+            .setDescription("Sheet name (`default` clears, for action:sheets)")
+            .setRequired(false)
+        )
+        .addBooleanOption((option) =>
+          option
+            .setName("reset")
+            .setDescription("Reset sheet overrides (for action:sheets)")
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("message")
+            .setDescription("Message text (for action:missingusermsg)")
+            .setMinLength(1)
+            .setMaxLength(1900)
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("json")
+            .setDescription("JSON payload (for action:import)")
+            .setRequired(false)
         ),
       new SlashCommandBuilder()
         .setName("config")

@@ -278,19 +278,19 @@ Dashboard and settings:
 /uptime
 /repostapps
 /repostapps track:tester limit:25
-/settings show
-/settings vote track:tester numerator:2 denominator:3 minimum_votes:2
-/settings voters track:tester roles:@ReviewerRole @LeadReviewerRole
-/settings voters track:tester roles:clear
-/settings reminders enabled:true threshold_hours:24 repeat_hours:12
-/settings reviewers track:tester mentions:@LeadReviewer @BackupReviewer
-/settings digest enabled:true hour_utc:15
-/settings sheets spreadsheet_id:1AbCdEfGhI... sheet_name:Form Responses 1
-/settings sheets reset:true
-/settings missingusermsg message:user not in discord please dm
-/settings missingusermsg message:default
-/settings export
-/settings import json:{ ... }
+/settings action:show
+/settings action:vote track:tester numerator:2 denominator:3 minimum_votes:2
+/settings action:voters track:tester roles:@ReviewerRole @LeadReviewerRole
+/settings action:voters track:tester roles:clear
+/settings action:reminders enabled:true threshold_hours:24 repeat_hours:12
+/settings action:reviewers track:tester mentions:@LeadReviewer @BackupReviewer
+/settings action:digest enabled:true hour_utc:15
+/settings action:sheets spreadsheet_id:1AbCdEfGhI... sheet_name:Form Responses 1
+/settings action:sheets reset:true
+/settings action:missingusermsg message:user not in discord please dm
+/settings action:missingusermsg message:default
+/settings action:export
+/settings action:import json:{ ... }
 ```
 
 Config backup/restore:
@@ -458,8 +458,8 @@ pm2 restart taq-event-bot --update-env
 - Application posts are sent as embeds.
 - `/bug`, `/suggestions`, and `/suggestion` posts are sent as embeds.
 - Votes are counted only from non-bot users who can view the configured channel.
-- Optional per-track vote-eligible role filters can be configured with `/settings voters`.
-- Vote rules are configurable per track via `/settings vote` (default `2/3`, min `1` vote).
+- Optional per-track vote-eligible role filters can be configured with `/settings action:voters`.
+- Vote rules are configurable per track via `/settings action:vote` (default `2/3`, min `1` vote).
 - Users reacting with both `✅` and `❌` are ignored until they keep only one side.
 - Slash commands auto-register to the guild from `DISCORD_GUILD_ID` or active `/setchannel` channel.
 - `DISCORD_GUILD_ID` is optional and only used as an explicit override.
@@ -488,7 +488,7 @@ pm2 restart taq-event-bot --update-env
 - `/suggestions` (and `/suggestion`) sends an embedded idea into the configured suggestions channel and opens a discussion thread.
 - `/setapprole` requires both `Manage Server` and `Manage Roles`, or `Administrator`.
 - `/setapprole` requires exactly one `track` per command and overwrites that track's roles.
-- `track` options on `/setapprole`, `/setchannel`, `/debug`, `/track edit/remove`, and `/settings vote/reviewers/voters` support autocomplete suggestions.
+- `track` options on `/setapprole`, `/setchannel`, `/debug`, `/track edit/remove`, and `/settings action:vote|reviewers|voters` support autocomplete suggestions.
 - `/track` supports `add`, `edit`, `remove`, and `list`.
 - `/setapprole` supports up to 5 roles in one command: `role`, `role_2`, `role_3`, `role_4`, `role_5`.
 - `/setapprole` writes a configuration update entry to the configured logs channel.
@@ -500,9 +500,9 @@ pm2 restart taq-event-bot --update-env
 - Denied applications DM the resolved `discord_ID` user automatically (if available).
 - Supported denied-DM placeholders: `{user}`, `{user_id}`, `{applicant_name}`, `{track}`, `{application_id}`, `{job_id}`, `{server}`, `{decision_source}`, `{reason}`, `{decided_at}`.
 - Supported accepted-announcement placeholders: `{user}`, `{user_id}`, `{applicant_name}`, `{track}`, `{application_id}`, `{job_id}`, `{server}`, `{role_result}`, `{reason}`, `{decided_at}`.
-- Stale pending reminders can be configured with `/settings reminders`.
-- Reviewer assignment rotation can be configured with `/settings reviewers`.
-- Daily digest schedule can be configured with `/settings digest`.
+- Stale pending reminders can be configured with `/settings action:reminders`.
+- Reviewer assignment rotation can be configured with `/settings action:reviewers`.
+- Daily digest schedule can be configured with `/settings action:digest`.
 - Duplicate application warnings are posted automatically when matching recent submissions are detected.
 - `/debug`, `/stop`, and `/restart` require `Manage Server`, or `Administrator`.
 - `/debug` sends results by DM; if DMs are closed, the bot warns you in-channel.
