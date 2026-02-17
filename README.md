@@ -339,11 +339,6 @@ Decision controls:
 /unassignedrole limit:25
 ```
 
-Post a structured bot message in the current channel:
-```text
-/structuredmsg title:Notice line_1:Server maintenance at 9 PM line_2:Please finish applications before then
-```
-
 Get diagnostic info in your DMs:
 ```text
 /debug mode:report
@@ -530,8 +525,8 @@ pm2 restart taq-event-bot --update-env
 - `/set acceptmsg` requires `Manage Server` (or `Administrator`) and sets accepted-announcement channel/message.
 - `/set acceptmsg` accepts `channel`, `message`, or both.
 - `/rr` is a subcommand shortcut for reaction roles (`create|remove|list|gui`); `/reactionrole` remains supported.
-- `/message` is a subcommand shortcut for message tools (`structured|embed|edit`); `/structuredmsg`, `/embedmsg`, and `/embededit` remain supported.
-- `/structuredmsg` requires `Manage Server` (or `Administrator`) and posts in the current channel.
+- `/message` is the primary command for message tools (`structured|embed|edit`).
+- `/msg` is an alias of `/message` with the same subcommands/options.
 - Denied applications DM the resolved `discord_ID` user automatically (if available).
 - Supported denied-DM placeholders: `{user}`, `{user_id}`, `{applicant_name}`, `{track}`, `{application_id}`, `{job_id}`, `{server}`, `{decision_source}`, `{reason}`, `{decided_at}`.
 - Supported accepted-announcement placeholders: `{user}`, `{user_id}`, `{applicant_name}`, `{track}`, `{application_id}`, `{job_id}`, `{server}`, `{role_result}`, `{reason}`, `{decided_at}`.

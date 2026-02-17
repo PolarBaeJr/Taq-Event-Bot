@@ -427,10 +427,10 @@ function createSlashCommandLifecycle(options = {}) {
         );
     }
 
-    function buildMessageCommand() {
+    function buildMessageCommand(commandName = "message", description = "Post or edit bot messages") {
       return new SlashCommandBuilder()
-        .setName("message")
-        .setDescription("Post or edit bot messages")
+        .setName(commandName)
+        .setDescription(description)
         .addSubcommand((subcommand) =>
           subcommand
             .setName("structured")
@@ -646,7 +646,8 @@ function createSlashCommandLifecycle(options = {}) {
             .setRequired(false)
         ),
       buildSetCommand(),
-      buildMessageCommand(),
+      buildMessageCommand("message", "Post or edit bot messages"),
+      buildMessageCommand("msg", "Alias of /message"),
       new SlashCommandBuilder()
         .setName("useapprole")
         .setDescription("Legacy alias for accepted-role management")
@@ -1022,135 +1023,6 @@ function createSlashCommandLifecycle(options = {}) {
                 .setDescription("JSON payload (code block accepted)")
                 .setRequired(true)
             )
-        ),
-      new SlashCommandBuilder()
-        .setName("structuredmsg")
-        .setDescription("Post a structured bot message in the current channel")
-        .addStringOption((option) =>
-          option
-            .setName("title")
-            .setDescription("Message title")
-            .setRequired(true)
-        )
-        .addStringOption((option) =>
-          option
-            .setName("line_1")
-            .setDescription("First content line")
-            .setRequired(true)
-        )
-        .addStringOption((option) =>
-          option
-            .setName("line_2")
-            .setDescription("Second content line")
-            .setRequired(false)
-        )
-        .addStringOption((option) =>
-          option
-            .setName("line_3")
-            .setDescription("Third content line")
-            .setRequired(false)
-        )
-        .addStringOption((option) =>
-          option
-            .setName("line_4")
-            .setDescription("Fourth content line")
-            .setRequired(false)
-        )
-        .addStringOption((option) =>
-          option
-            .setName("line_5")
-            .setDescription("Fifth content line")
-            .setRequired(false)
-        )
-        .addBooleanOption((option) =>
-          option
-            .setName("code_block")
-            .setDescription("Wrap content lines in a code block")
-            .setRequired(false)
-        ),
-      new SlashCommandBuilder()
-        .setName("embedmsg")
-        .setDescription("Post an embedded bot message")
-        .addStringOption((option) =>
-          option
-            .setName("title")
-            .setDescription("Embed title")
-            .setRequired(true)
-        )
-        .addStringOption((option) =>
-          option
-            .setName("description")
-            .setDescription("Embed description/body")
-            .setRequired(true)
-        )
-        .addStringOption((option) =>
-          option
-            .setName("color")
-            .setDescription("Optional hex color (e.g. #57F287)")
-            .setRequired(false)
-        )
-        .addStringOption((option) =>
-          option
-            .setName("footer")
-            .setDescription("Optional footer text")
-            .setRequired(false)
-        )
-        .addBooleanOption((option) =>
-          option
-            .setName("timestamp")
-            .setDescription("Include current timestamp on embed")
-            .setRequired(false)
-        )
-        .addChannelOption((option) =>
-          option
-            .setName("channel")
-            .setDescription("Target channel (defaults to current channel)")
-            .setRequired(false)
-        ),
-      new SlashCommandBuilder()
-        .setName("embededit")
-        .setDescription("Edit an embedded bot message posted by this bot")
-        .addStringOption((option) =>
-          option
-            .setName("message_id")
-            .setDescription("Target bot message ID")
-            .setRequired(true)
-        )
-        .addChannelOption((option) =>
-          option
-            .setName("channel")
-            .setDescription("Target channel (defaults to current channel)")
-            .setRequired(false)
-        )
-        .addStringOption((option) =>
-          option
-            .setName("title")
-            .setDescription("New embed title")
-            .setRequired(false)
-        )
-        .addStringOption((option) =>
-          option
-            .setName("description")
-            .setDescription("New embed description/body")
-            .setRequired(false)
-        )
-        .addStringOption((option) =>
-          option
-            .setName("color")
-            .setDescription("Hex color (#57F287) or `clear`")
-            .setRequired(false)
-        )
-        .addStringOption((option) =>
-          option
-            .setName("footer")
-            .setDescription("Footer text or `clear`")
-            .setRequired(false)
-        )
-        .addBooleanOption((option) =>
-          option
-            .setName("timestamp")
-            .setDescription("Set timestamp on/off")
-            .setRequired(false)
         ),
       new SlashCommandBuilder()
         .setName("bug")

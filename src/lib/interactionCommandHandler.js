@@ -1322,7 +1322,8 @@ function createInteractionCommandHandler(options = {}) {
       const isUnassignedRole = interaction.commandName === "unassignedrole";
       const isSettings = interaction.commandName === "settings";
       const isConfig = interaction.commandName === "config";
-      const isMessageUnified = interaction.commandName === "message";
+      const isMessageUnified =
+        interaction.commandName === "message" || interaction.commandName === "msg";
       const messageSubcommand = isMessageUnified ? safeGetSubcommand(interaction) : null;
       const messageCommandMode = isMessageUnified
         ? String(
@@ -1338,15 +1339,9 @@ function createInteractionCommandHandler(options = {}) {
         interaction.commandName === "setacceptmsg" ||
         interaction.commandName === "setaccept" ||
         (isSetUnified && setCommandMode === "acceptmsg");
-      const isStructuredMsg =
-        interaction.commandName === "structuredmsg" ||
-        (isMessageUnified && messageCommandMode === "structured");
-      const isEmbedMsg =
-        interaction.commandName === "embedmsg" ||
-        (isMessageUnified && messageCommandMode === "embed");
-      const isEmbedEdit =
-        interaction.commandName === "embededit" ||
-        (isMessageUnified && messageCommandMode === "edit");
+      const isStructuredMsg = isMessageUnified && messageCommandMode === "structured";
+      const isEmbedMsg = isMessageUnified && messageCommandMode === "embed";
+      const isEmbedEdit = isMessageUnified && messageCommandMode === "edit";
       const isBug = interaction.commandName === "bug";
       const isSuggestions =
         interaction.commandName === "suggestions" ||
@@ -1439,7 +1434,7 @@ function createInteractionCommandHandler(options = {}) {
       }
       if (isMessageUnified && !validMessageModes.has(messageCommandMode)) {
         await interaction.reply({
-          content: "Unknown `/message` action. Use one of: `structured`, `embed`, `edit`.",
+          content: "Unknown `/message`/`/msg` action. Use one of: `structured`, `embed`, `edit`.",
           ephemeral: true,
         });
         return;

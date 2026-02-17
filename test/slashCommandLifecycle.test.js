@@ -256,61 +256,7 @@ test("buildSlashCommands includes /settings subcommands", () => {
   assert.ok(importOptionNames.has("json"));
 });
 
-test("buildSlashCommands includes /embedmsg command", () => {
-  const { buildSlashCommands } = createSlashCommandLifecycle({
-    config: {},
-    client: {
-      guilds: {
-        cache: new Map(),
-      },
-    },
-    REST: function REST() {},
-    Routes: {},
-    SlashCommandBuilder,
-    baseSetChannelTrackOptions: [],
-    debugModes: {
-      report: "report",
-      post_test: "post_test",
-      accept_test: "accept_test",
-      deny_test: "deny_test",
-    },
-    getApplicationTrackKeys: () => ["tester"],
-    getTrackLabel: () => "Tester",
-  });
-
-  const commands = buildSlashCommands();
-  const commandNames = new Set(commands.map((command) => command.name));
-  assert.ok(commandNames.has("embedmsg"));
-});
-
-test("buildSlashCommands includes /embededit command", () => {
-  const { buildSlashCommands } = createSlashCommandLifecycle({
-    config: {},
-    client: {
-      guilds: {
-        cache: new Map(),
-      },
-    },
-    REST: function REST() {},
-    Routes: {},
-    SlashCommandBuilder,
-    baseSetChannelTrackOptions: [],
-    debugModes: {
-      report: "report",
-      post_test: "post_test",
-      accept_test: "accept_test",
-      deny_test: "deny_test",
-    },
-    getApplicationTrackKeys: () => ["tester"],
-    getTrackLabel: () => "Tester",
-  });
-
-  const commands = buildSlashCommands();
-  const commandNames = new Set(commands.map((command) => command.name));
-  assert.ok(commandNames.has("embededit"));
-});
-
-test("buildSlashCommands includes /message subcommands", () => {
+test("buildSlashCommands includes /message and /msg subcommands", () => {
   const { buildSlashCommands } = createSlashCommandLifecycle({
     config: {},
     client: {
@@ -335,12 +281,20 @@ test("buildSlashCommands includes /message subcommands", () => {
   const commands = buildSlashCommands();
   const message = commands.find((command) => command.name === "message");
   assert.ok(message, "message command should exist");
+  const msg = commands.find((command) => command.name === "msg");
+  assert.ok(msg, "msg command should exist");
   const subcommandNames = new Set(
     (Array.isArray(message.options) ? message.options : []).map((option) => option.name)
   );
   assert.ok(subcommandNames.has("structured"));
   assert.ok(subcommandNames.has("embed"));
   assert.ok(subcommandNames.has("edit"));
+  const msgSubcommandNames = new Set(
+    (Array.isArray(msg.options) ? msg.options : []).map((option) => option.name)
+  );
+  assert.ok(msgSubcommandNames.has("structured"));
+  assert.ok(msgSubcommandNames.has("embed"));
+  assert.ok(msgSubcommandNames.has("edit"));
 
   const structuredSubcommand = (Array.isArray(message.options) ? message.options : []).find(
     (option) => option.name === "structured"
@@ -385,6 +339,11 @@ test("buildSlashCommands includes /message subcommands", () => {
   assert.ok(editOptionNames.has("color"));
   assert.ok(editOptionNames.has("footer"));
   assert.ok(editOptionNames.has("timestamp"));
+
+  const commandNames = new Set(commands.map((command) => command.name));
+  assert.equal(commandNames.has("structuredmsg"), false);
+  assert.equal(commandNames.has("embedmsg"), false);
+  assert.equal(commandNames.has("embededit"), false);
 });
 
 test("buildSlashCommands includes /repostapps command", () => {
