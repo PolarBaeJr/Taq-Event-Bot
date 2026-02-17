@@ -20,6 +20,41 @@ All notable changes to this project are documented in this file.
 - Startup config validation no longer fails hard when optional Discord ID env vars contain placeholder values; invalid optional IDs are now ignored with warnings.
 - Startup config path resolution no longer trims `cwd`, which fixes false missing-file errors for `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` in paths containing trailing spaces.
 
+## [1.3.14] - 2026-02-17
+
+### Added
+- New `/settings missingusermsg` subcommand to configure the thread notice shown when an accepted applicant is not in the server.
+
+### Changed
+- The missing-user application thread notice is now configurable from Discord settings (default remains `user not in discord please dm`).
+
+## [1.3.13] - 2026-02-17
+
+### Fixed
+- Hotfix: when an accepted applicant's Discord user is not in the server, the bot now posts `user not in discord please dm` in the application thread.
+
+## [1.3.12] - 2026-02-17
+
+### Added
+- New `/settings voters` subcommand to set per-track vote-eligible roles from Discord.
+
+### Changed
+- Vote counting now supports optional per-track role filters; when configured, only members with allowed roles can cast `✅`/`❌` votes.
+- `/settings show` now includes per-track vote-eligible role filters.
+
+### Fixed
+- Hotfix: reviewer-only voting behavior can now be enforced by role instead of counting all channel viewers.
+
+## [1.3.11] - 2026-02-17
+
+### Added
+- New `/repostapps` command to repost tracked historical applications in row order to configured application post channels.
+
+### Changed
+- Discord log messages now use embeds consistently.
+- Application closure logs now use decision color coding (accepted=green, denied=red).
+- Non-application logs now use red embeds by default.
+
 ## [1.3.10] - 2026-02-17
 
 ### Added

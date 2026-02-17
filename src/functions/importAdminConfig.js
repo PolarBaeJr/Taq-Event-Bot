@@ -44,6 +44,12 @@ function importAdminConfig(rawJson) {
     settings.voteRules = normalizeTrackVoteRuleMap(settings.voteRules);
   }
 
+  if (Object.prototype.hasOwnProperty.call(settingsPayload, "voterRoles")) {
+    settings.voterRoles = normalizeTrackRoleMap(settingsPayload.voterRoles);
+  } else {
+    settings.voterRoles = normalizeTrackRoleMap(settings.voterRoles);
+  }
+
   if (Object.prototype.hasOwnProperty.call(settingsPayload, "reviewerMentions")) {
     settings.reviewerMentions = normalizeTrackReviewerMap(settingsPayload.reviewerMentions);
   } else {
@@ -70,6 +76,23 @@ function importAdminConfig(rawJson) {
     });
   } else {
     settings.sheetSource = normalizeSheetSourceSettings(settings.sheetSource);
+  }
+
+  if (
+    Object.prototype.hasOwnProperty.call(
+      settingsPayload,
+      "applicantMissingDiscordThreadNoticeMessage"
+    )
+  ) {
+    settings.applicantMissingDiscordThreadNoticeMessage =
+      normalizeApplicantMissingDiscordThreadNoticeMessage(
+        settingsPayload.applicantMissingDiscordThreadNoticeMessage
+      );
+  } else {
+    settings.applicantMissingDiscordThreadNoticeMessage =
+      normalizeApplicantMissingDiscordThreadNoticeMessage(
+        settings.applicantMissingDiscordThreadNoticeMessage
+      );
   }
 
   if (Object.prototype.hasOwnProperty.call(settingsPayload, "reactionRoles")) {

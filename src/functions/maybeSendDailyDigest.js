@@ -58,7 +58,7 @@ async function maybeSendDailyDigest() {
   });
 
   const lines = [
-    `🗓️ **Daily Application Summary (${targetDateKey} UTC)**`,
+    `Daily Application Summary (${targetDateKey} UTC)`,
   ];
   for (const trackKey of trackKeys) {
     lines.push(
@@ -72,7 +72,21 @@ async function maybeSendDailyDigest() {
     return;
   }
 
-  await sendChannelMessage(digestChannelId, lines.join("\n"), { parse: [] });
+  const digestEmbed = {
+    title: "🗓️ Daily Application Summary",
+    color: APPLICATION_LOG_PROCESSING_COLOR,
+    description: joinEmbedDescription(lines, 3500),
+    timestamp: new Date().toISOString(),
+  };
+
+  await sendChannelMessage(
+    digestChannelId,
+    {
+      embeds: [digestEmbed],
+      allowedMentions: { parse: [] },
+    },
+    { parse: [] }
+  );
   settings.dailyDigest.lastDigestDate = targetDateKey;
   writeState(state);
 }

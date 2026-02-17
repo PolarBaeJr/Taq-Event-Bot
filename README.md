@@ -276,13 +276,19 @@ Dashboard and settings:
 ```text
 /dashboard
 /uptime
+/repostapps
+/repostapps track:tester limit:25
 /settings show
 /settings vote track:tester numerator:2 denominator:3 minimum_votes:2
+/settings voters track:tester roles:@ReviewerRole @LeadReviewerRole
+/settings voters track:tester roles:clear
 /settings reminders enabled:true threshold_hours:24 repeat_hours:12
 /settings reviewers track:tester mentions:@LeadReviewer @BackupReviewer
 /settings digest enabled:true hour_utc:15
 /settings sheets spreadsheet_id:1AbCdEfGhI... sheet_name:Form Responses 1
 /settings sheets reset:true
+/settings missingusermsg message:user not in discord please dm
+/settings missingusermsg message:default
 /settings export
 /settings import json:{ ... }
 ```
@@ -449,6 +455,7 @@ pm2 restart taq-event-bot --update-env
 - Application posts are sent as embeds.
 - `/bug`, `/suggestions`, and `/suggestion` posts are sent as embeds.
 - Votes are counted only from non-bot users who can view the configured channel.
+- Optional per-track vote-eligible role filters can be configured with `/settings voters`.
 - Vote rules are configurable per track via `/settings vote` (default `2/3`, min `1` vote).
 - Users reacting with both `✅` and `❌` are ignored until they keep only one side.
 - Slash commands auto-register to the guild from `DISCORD_GUILD_ID` or active `/setchannel` channel.
@@ -458,19 +465,23 @@ pm2 restart taq-event-bot --update-env
 - `/accept` and `/deny` can target by `message_id`, by `job_id`, or from inside the application thread, and support optional `reason`.
 - If one `job_id` created multiple track posts, run `/accept` or `/deny` inside the target track thread/channel, or pass `message_id`.
 - Forced `/accept` and `/deny` also post the rendered accept/deny message template into that specific application thread.
+- If an accepted applicant is not in the server, the bot posts the configurable missing-user thread notice message (default: `user not in discord please dm`).
 - `/reopen` reopens a decided application back to pending (it does not auto-revert prior side effects).
 - `/dashboard` shows per-track pending/accepted/denied counts, oldest pending age, and vote rule.
 - `/uptime` shows how long the current bot process has been running.
-- `/settings` controls vote rules, stale reminders, reviewer assignment, daily digests, and active Google Sheet source overrides.
+- `/repostapps` replays tracked historical applications back into configured post channels in row order.
+- `/settings` controls vote rules, vote-eligible role filters, stale reminders, reviewer assignment, daily digests, and active Google Sheet source overrides.
 - `/config export` DMs JSON config backup; `/config import` restores settings from JSON.
 - `/setchannel` requires `Manage Server` (or `Administrator`).
 - `/setchannel` can be run with no options to set tester channel to the current channel.
 - `/setchannel` supports `application_log:#channel`, `log:#channel`, `accept_message:#channel`, `bug:#channel`, and `suggestions:#channel` (`bot_log:#channel` remains a legacy alias for `log`).
+- Application log channel messages are posted as embeds; decision-closure embeds use status colors (accepted=green, denied=red).
+- Non-application log channel messages are posted as red embeds.
 - `/bug` sends an embedded bug report into the configured bug channel and opens a discussion thread.
 - `/suggestions` (and `/suggestion`) sends an embedded idea into the configured suggestions channel and opens a discussion thread.
 - `/setapprole` requires both `Manage Server` and `Manage Roles`, or `Administrator`.
 - `/setapprole` requires exactly one `track` per command and overwrites that track's roles.
-- `track` options on `/setapprole`, `/setchannel`, `/debug`, `/track edit/remove`, and `/settings vote/reviewers` support autocomplete suggestions.
+- `track` options on `/setapprole`, `/setchannel`, `/debug`, `/track edit/remove`, and `/settings vote/reviewers/voters` support autocomplete suggestions.
 - `/track` supports `add`, `edit`, `remove`, and `list`.
 - `/setapprole` supports up to 5 roles in one command: `role`, `role_2`, `role_3`, `role_4`, `role_5`.
 - `/setapprole` writes a configuration update entry to the configured logs channel.

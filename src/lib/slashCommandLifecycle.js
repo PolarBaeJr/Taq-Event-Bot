@@ -511,6 +511,24 @@ function createSlashCommandLifecycle(options = {}) {
             .setRequired(false)
         ),
       new SlashCommandBuilder()
+        .setName("repostapps")
+        .setDescription("Repost tracked applications in row order")
+        .addStringOption((option) =>
+          option
+            .setName("track")
+            .setDescription("Optional track key/alias filter")
+            .setAutocomplete(true)
+            .setRequired(false)
+        )
+        .addIntegerOption((option) =>
+          option
+            .setName("limit")
+            .setDescription("Maximum number of applications to repost")
+            .setMinValue(1)
+            .setMaxValue(500)
+            .setRequired(false)
+        ),
+      new SlashCommandBuilder()
         .setName("settings")
         .setDescription("Configure bot settings")
         .addSubcommand((subcommand) =>
@@ -601,6 +619,24 @@ function createSlashCommandLifecycle(options = {}) {
         )
         .addSubcommand((subcommand) =>
           subcommand
+            .setName("voters")
+            .setDescription("Set per-track role filter for vote eligibility")
+            .addStringOption((option) =>
+              option
+                .setName("track")
+                .setDescription("Track key/alias")
+                .setAutocomplete(true)
+                .setRequired(true)
+            )
+            .addStringOption((option) =>
+              option
+                .setName("roles")
+                .setDescription("Comma/space list of @roles or IDs. Use `clear` to remove.")
+                .setRequired(true)
+            )
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
             .setName("digest")
             .setDescription("Configure daily summary digest to logs channel")
             .addBooleanOption((option) =>
@@ -639,6 +675,19 @@ function createSlashCommandLifecycle(options = {}) {
                 .setName("reset")
                 .setDescription("Clear both overrides and use .env defaults")
                 .setRequired(false)
+            )
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName("missingusermsg")
+            .setDescription("Set thread message when accepted applicant is not in server")
+            .addStringOption((option) =>
+              option
+                .setName("message")
+                .setDescription("Message text. Use `default` to reset.")
+                .setMinLength(1)
+                .setMaxLength(1900)
+                .setRequired(true)
             )
         )
         .addSubcommand((subcommand) =>

@@ -14,17 +14,34 @@ async function postConfigurationLog(interaction, title, detailLines = []) {
       return;
     }
 
-    const lines = [
-      `⚙️ **${title}**`,
-      `**By:** ${userDisplayName(interaction.user)} (<@${interaction.user.id}>)`,
-      `**Guild:** ${interaction.guild.name} (${interaction.guild.id})`,
-      `**Source Channel:** <#${interaction.channelId}>`,
-      `**Time:** ${new Date().toISOString()}`,
-      ...detailLines,
-    ];
+    const embed = {
+      title: `⚙️ ${String(title || "Configuration Update").trim() || "Configuration Update"}`,
+      color: LOG_EMBED_COLOR,
+      description: joinEmbedDescription(detailLines, 3000),
+      fields: [
+        {
+          name: "By",
+          value: trimEmbedValue(
+            `${userDisplayName(interaction.user)} (<@${interaction.user.id}>)`
+          ),
+          inline: false,
+        },
+        {
+          name: "Guild",
+          value: trimEmbedValue(`${interaction.guild.name} (${interaction.guild.id})`),
+          inline: false,
+        },
+        {
+          name: "Source Channel",
+          value: trimEmbedValue(`<#${interaction.channelId}>`),
+          inline: false,
+        },
+      ],
+      timestamp: new Date().toISOString(),
+    };
 
     await logsChannel.send({
-      content: lines.join("\n"),
+      embeds: [embed],
       allowedMentions: { parse: [] },
     });
   } catch (err) {

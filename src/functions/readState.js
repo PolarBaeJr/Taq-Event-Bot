@@ -179,6 +179,7 @@ function readState() {
             : null,
         customTracks: normalizedCustomTracks,
         voteRules: normalizeTrackVoteRuleMap(legacySettings.voteRules),
+        voterRoles: normalizeTrackRoleMap(legacySettings.voterRoles),
         reviewerMentions: normalizeTrackReviewerMap(legacySettings.reviewerMentions),
         reminders: normalizeReminderSettings(legacySettings.reminders),
         dailyDigest: normalizeDailyDigestSettings(legacySettings.dailyDigest),
@@ -190,6 +191,10 @@ function readState() {
               sheetName: legacySettings.sheetName,
             }
         ),
+        applicantMissingDiscordThreadNoticeMessage:
+          normalizeApplicantMissingDiscordThreadNoticeMessage(
+            legacySettings.applicantMissingDiscordThreadNoticeMessage
+          ),
         reactionRoles: normalizeReactionRoleBindings(legacySettings.reactionRoles),
       },
     };

@@ -187,6 +187,10 @@ const DEBUG_MODE_DENY_TEST = "deny_test";
 
 const ACCEPT_EMOJI = "✅";
 const DENY_EMOJI = "❌";
+const LOG_EMBED_COLOR = 0xed4245;
+const APPLICATION_LOG_ACCEPT_COLOR = 0x57f287;
+const APPLICATION_LOG_DENY_COLOR = 0xed4245;
+const APPLICATION_LOG_PROCESSING_COLOR = 0xfee75c;
 const REQUIRED_CHANNEL_PERMISSIONS = [
   ["ViewChannel", PermissionsBitField.Flags.ViewChannel],
   ["ReadMessageHistory", PermissionsBitField.Flags.ReadMessageHistory],
@@ -210,6 +214,8 @@ const DEFAULT_DENY_DM_TEMPLATE = [
 ].join("\n");
 const DEFAULT_ACCEPT_ANNOUNCE_TEMPLATE =
   "Welcome to {track} team, if you need any information please contact administrators.";
+const DEFAULT_APPLICANT_MISSING_DISCORD_THREAD_NOTICE_MESSAGE =
+  "user not in discord please dm";
 const DEFAULT_VOTE_RULE = Object.freeze({
   numerator: 2,
   denominator: 3,
@@ -472,6 +478,14 @@ function normalizeSheetSourceSettings(rawSheetSource) {
   };
 }
 
+function normalizeApplicantMissingDiscordThreadNoticeMessage(rawMessage) {
+  const normalized = String(rawMessage || "").trim();
+  if (!normalized) {
+    return DEFAULT_APPLICANT_MISSING_DISCORD_THREAD_NOTICE_MESSAGE;
+  }
+  return normalized.slice(0, 1900);
+}
+
 let reactionRoleManager = null;
 
 function normalizeReactionRoleBindings(rawBindings) {
@@ -481,10 +495,15 @@ function normalizeReactionRoleBindings(rawBindings) {
 function ensureExtendedSettingsContainers(state) {
   const settings = ensureTrackSettingsContainers(state);
   settings.voteRules = normalizeTrackVoteRuleMap(settings.voteRules);
+  settings.voterRoles = normalizeTrackRoleMap(settings.voterRoles);
   settings.reviewerMentions = normalizeTrackReviewerMap(settings.reviewerMentions);
   settings.reminders = normalizeReminderSettings(settings.reminders);
   settings.dailyDigest = normalizeDailyDigestSettings(settings.dailyDigest);
   settings.sheetSource = normalizeSheetSourceSettings(settings.sheetSource);
+  settings.applicantMissingDiscordThreadNoticeMessage =
+    normalizeApplicantMissingDiscordThreadNoticeMessage(
+      settings.applicantMissingDiscordThreadNoticeMessage
+    );
   settings.reactionRoles = normalizeReactionRoleBindings(settings.reactionRoles);
   return settings;
 }
@@ -534,11 +553,47 @@ function parseReviewerMentionInput(rawValue) {
   };
 }
 
+function parseRoleMentionInput(rawValue) {
+  const raw = String(rawValue || "").trim();
+  if (!raw) {
+    return [];
+  }
+
+  const roleIds = [];
+  const seenRoles = new Set();
+  const tokens = raw.split(/[,\s]+/).map((token) => token.trim()).filter(Boolean);
+
+  for (const token of tokens) {
+    const roleMatch =
+      /^<@&(\d{17,20})>$/.exec(token) ||
+      /^role:(\d{17,20})$/i.exec(token) ||
+      /^(\d{17,20})$/.exec(token);
+    if (!roleMatch) {
+      continue;
+    }
+    const roleId = roleMatch[1];
+    if (seenRoles.has(roleId)) {
+      continue;
+    }
+    seenRoles.add(roleId);
+    roleIds.push(roleId);
+  }
+
+  return roleIds;
+}
+
 function getActiveVoteRule(trackKey) {
   const normalizedTrack = normalizeTrackKey(trackKey) || DEFAULT_TRACK_KEY;
   const state = readState();
   const settings = ensureExtendedSettingsContainers(state);
   return normalizeVoteRule(settings.voteRules[normalizedTrack]);
+}
+
+function getTrackVoterRoleIds(trackKey) {
+  const normalizedTrack = normalizeTrackKey(trackKey) || DEFAULT_TRACK_KEY;
+  const state = readState();
+  const settings = ensureExtendedSettingsContainers(state);
+  return parseRoleIdList(settings.voterRoles[normalizedTrack]);
 }
 
 function upsertCustomTrack({ name, key, aliases }) {
@@ -622,6 +677,7 @@ function removeCustomTrack(track) {
   settings.channels = normalizeTrackMap(settings.channels);
   settings.approvedRoles = normalizeTrackRoleMap(settings.approvedRoles);
   settings.voteRules = normalizeTrackVoteRuleMap(settings.voteRules);
+  settings.voterRoles = normalizeTrackRoleMap(settings.voterRoles);
   settings.reviewerMentions = normalizeTrackReviewerMap(settings.reviewerMentions);
   writeState(state);
 
@@ -643,6 +699,41 @@ function setTrackVoteRule(trackKey, rawRule) {
     trackKey: normalizedTrack,
     trackLabel: getTrackLabel(normalizedTrack),
     voteRule,
+  };
+}
+
+function setTrackVoterRoles(trackKey, mentionInput) {
+  const normalizedTrack = normalizeTrackKey(trackKey);
+  if (!normalizedTrack) {
+    throw new Error("Unknown track.");
+  }
+
+  const raw = String(mentionInput || "").trim();
+  const state = readState();
+  const settings = ensureExtendedSettingsContainers(state);
+  if (/^clear$/i.test(raw)) {
+    settings.voterRoles[normalizedTrack] = [];
+    writeState(state);
+    return {
+      trackKey: normalizedTrack,
+      trackLabel: getTrackLabel(normalizedTrack),
+      roleIds: [],
+    };
+  }
+
+  const roleIds = parseRoleMentionInput(raw);
+  if (roleIds.length === 0) {
+    throw new Error(
+      "No valid roles found. Provide @role mentions, role IDs, or `role:<id>`."
+    );
+  }
+
+  settings.voterRoles[normalizedTrack] = roleIds;
+  writeState(state);
+  return {
+    trackKey: normalizedTrack,
+    trackLabel: getTrackLabel(normalizedTrack),
+    roleIds,
   };
 }
 
@@ -735,6 +826,33 @@ function setSheetSourceConfiguration({ spreadsheetId, sheetName, reset = false }
   };
 }
 
+function getApplicantMissingDiscordThreadNoticeMessage() {
+  const state = readState();
+  const settings = ensureExtendedSettingsContainers(state);
+  return normalizeApplicantMissingDiscordThreadNoticeMessage(
+    settings.applicantMissingDiscordThreadNoticeMessage
+  );
+}
+
+function setApplicantMissingDiscordThreadNoticeMessage(rawMessage) {
+  const raw = String(rawMessage || "").trim();
+  const state = readState();
+  const settings = ensureExtendedSettingsContainers(state);
+  if (!raw) {
+    throw new Error("Message cannot be empty. Provide text or `default`.");
+  }
+
+  const shouldReset = /^(default|reset|clear)$/i.test(raw);
+  settings.applicantMissingDiscordThreadNoticeMessage =
+    normalizeApplicantMissingDiscordThreadNoticeMessage(
+      shouldReset
+        ? DEFAULT_APPLICANT_MISSING_DISCORD_THREAD_NOTICE_MESSAGE
+        : raw
+    );
+  writeState(state);
+  return settings.applicantMissingDiscordThreadNoticeMessage;
+}
+
 function setTrackReviewerMentions(trackKey, mentionInput) {
   const normalizedTrack = normalizeTrackKey(trackKey);
   if (!normalizedTrack) {
@@ -817,10 +935,13 @@ function defaultState() {
       denyDmTemplate: null,
       customTracks: getCustomTracksSnapshot(),
       voteRules: createEmptyTrackVoteRuleMap(),
+      voterRoles: createEmptyTrackRoleMap(),
       reviewerMentions: createEmptyTrackReviewerMap(),
       reminders: normalizeReminderSettings(null),
       dailyDigest: normalizeDailyDigestSettings(null),
       sheetSource: normalizeSheetSourceSettings(null),
+      applicantMissingDiscordThreadNoticeMessage:
+        normalizeApplicantMissingDiscordThreadNoticeMessage(null),
       reactionRoles: [],
     },
   };
@@ -1002,6 +1123,7 @@ function readState() {
             : null,
         customTracks: normalizedCustomTracks,
         voteRules: normalizeTrackVoteRuleMap(legacySettings.voteRules),
+        voterRoles: normalizeTrackRoleMap(legacySettings.voterRoles),
         reviewerMentions: normalizeTrackReviewerMap(legacySettings.reviewerMentions),
         reminders: normalizeReminderSettings(legacySettings.reminders),
         dailyDigest: normalizeDailyDigestSettings(legacySettings.dailyDigest),
@@ -1013,6 +1135,10 @@ function readState() {
               sheetName: legacySettings.sheetName,
             }
         ),
+        applicantMissingDiscordThreadNoticeMessage:
+          normalizeApplicantMissingDiscordThreadNoticeMessage(
+            legacySettings.applicantMissingDiscordThreadNoticeMessage
+          ),
         reactionRoles: normalizeReactionRoleBindings(legacySettings.reactionRoles),
       },
     };
@@ -1281,6 +1407,11 @@ function summarizeReviewerMentions(configEntry) {
   return combined.length > 0 ? combined.join(", ") : "none";
 }
 
+function summarizeRoleMentions(roleIds, emptyLabel = "none") {
+  const mentions = parseRoleIdList(roleIds).map((id) => `<@&${id}>`);
+  return mentions.length > 0 ? mentions.join(", ") : emptyLabel;
+}
+
 function getReviewerMentionsForTrackFromState(state, trackKey) {
   const settings = ensureExtendedSettingsContainers(state);
   const normalizedTrack = normalizeTrackKey(trackKey) || DEFAULT_TRACK_KEY;
@@ -1371,6 +1502,10 @@ function buildSettingsMessage() {
   const state = readState();
   const settings = ensureExtendedSettingsContainers(state);
   const activeSheetSource = getActiveSheetSourceFromSettings(settings);
+  const applicantMissingDiscordThreadNoticeMessage =
+    normalizeApplicantMissingDiscordThreadNoticeMessage(
+      settings.applicantMissingDiscordThreadNoticeMessage
+    ).replace(/\n/g, "\\n");
   const applicationLogsChannelId = getActiveLogsChannelId();
   const botLogsChannelId = getActiveBotLogsChannelId();
   const lines = [
@@ -1387,6 +1522,7 @@ function buildSettingsMessage() {
     }`,
     `Reaction Roles: ${Array.isArray(settings.reactionRoles) ? settings.reactionRoles.length : 0}`,
     `Sheets Source: spreadsheet_id=${activeSheetSource.spreadsheetId} (${activeSheetSource.spreadsheetIdSource}) | sheet_name=${activeSheetSource.sheetName} (${activeSheetSource.sheetNameSource})`,
+    `Missing-User Thread Notice: ${applicantMissingDiscordThreadNoticeMessage}`,
     `Application Logs Channel: ${applicationLogsChannelId ? `<#${applicationLogsChannelId}>` : "not set"}`,
     `Log Channel: ${botLogsChannelId ? `<#${botLogsChannelId}>` : "not set (falls back to application logs)"}`,
   ];
@@ -1394,13 +1530,14 @@ function buildSettingsMessage() {
   for (const trackKey of getApplicationTrackKeys()) {
     const trackLabel = getTrackLabel(trackKey);
     const voteRule = settings.voteRules[trackKey] || DEFAULT_VOTE_RULE;
+    const voterRoles = settings.voterRoles[trackKey] || [];
     const reviewers = settings.reviewerMentions[trackKey] || {
       roleIds: [],
       userIds: [],
       rotationIndex: 0,
     };
     lines.push(
-      `${trackLabel}: vote=${formatVoteRule(voteRule)} | reviewers=${summarizeReviewerMentions(reviewers)}`
+      `${trackLabel}: vote=${formatVoteRule(voteRule)} | voters=${summarizeRoleMentions(voterRoles, "any channel member")} | reviewers=${summarizeReviewerMentions(reviewers)}`
     );
   }
 
@@ -1434,10 +1571,13 @@ function exportAdminConfig() {
       acceptAnnounceTemplate: settings.acceptAnnounceTemplate || null,
       denyDmTemplate: settings.denyDmTemplate || null,
       voteRules: settings.voteRules,
+      voterRoles: settings.voterRoles,
       reviewerMentions: settings.reviewerMentions,
       reminders: settings.reminders,
       dailyDigest: settings.dailyDigest,
       sheetSource: settings.sheetSource,
+      applicantMissingDiscordThreadNoticeMessage:
+        settings.applicantMissingDiscordThreadNoticeMessage,
       reactionRoles: settings.reactionRoles,
     },
   };
@@ -1485,6 +1625,12 @@ function importAdminConfig(rawJson) {
     settings.voteRules = normalizeTrackVoteRuleMap(settings.voteRules);
   }
 
+  if (Object.prototype.hasOwnProperty.call(settingsPayload, "voterRoles")) {
+    settings.voterRoles = normalizeTrackRoleMap(settingsPayload.voterRoles);
+  } else {
+    settings.voterRoles = normalizeTrackRoleMap(settings.voterRoles);
+  }
+
   if (Object.prototype.hasOwnProperty.call(settingsPayload, "reviewerMentions")) {
     settings.reviewerMentions = normalizeTrackReviewerMap(settingsPayload.reviewerMentions);
   } else {
@@ -1511,6 +1657,23 @@ function importAdminConfig(rawJson) {
     });
   } else {
     settings.sheetSource = normalizeSheetSourceSettings(settings.sheetSource);
+  }
+
+  if (
+    Object.prototype.hasOwnProperty.call(
+      settingsPayload,
+      "applicantMissingDiscordThreadNoticeMessage"
+    )
+  ) {
+    settings.applicantMissingDiscordThreadNoticeMessage =
+      normalizeApplicantMissingDiscordThreadNoticeMessage(
+        settingsPayload.applicantMissingDiscordThreadNoticeMessage
+      );
+  } else {
+    settings.applicantMissingDiscordThreadNoticeMessage =
+      normalizeApplicantMissingDiscordThreadNoticeMessage(
+        settings.applicantMissingDiscordThreadNoticeMessage
+      );
   }
 
   if (Object.prototype.hasOwnProperty.call(settingsPayload, "reactionRoles")) {
@@ -1571,6 +1734,187 @@ function importAdminConfig(rawJson) {
   return {
     trackCount: getApplicationTrackKeys().length,
     customTrackCount: getCustomTracksSnapshot().length,
+  };
+}
+
+function compareApplicationsByRowOrder(left, right) {
+  const leftRow = Number.isInteger(left?.rowIndex) ? left.rowIndex : Number.MAX_SAFE_INTEGER;
+  const rightRow = Number.isInteger(right?.rowIndex) ? right.rowIndex : Number.MAX_SAFE_INTEGER;
+  if (leftRow !== rightRow) {
+    return leftRow - rightRow;
+  }
+
+  const leftCreated = parseIsoTimeMs(left?.createdAt);
+  const rightCreated = parseIsoTimeMs(right?.createdAt);
+  const leftCreatedSafe = Number.isFinite(leftCreated) ? leftCreated : Number.MAX_SAFE_INTEGER;
+  const rightCreatedSafe = Number.isFinite(rightCreated)
+    ? rightCreated
+    : Number.MAX_SAFE_INTEGER;
+  if (leftCreatedSafe !== rightCreatedSafe) {
+    return leftCreatedSafe - rightCreatedSafe;
+  }
+
+  const leftId = String(left?.messageId || left?.applicationId || "");
+  const rightId = String(right?.messageId || right?.applicationId || "");
+  return leftId.localeCompare(rightId);
+}
+
+function truncateContent(value, maxLength = 1900) {
+  const text = String(value || "");
+  if (text.length <= maxLength) {
+    return text;
+  }
+  return `${text.slice(0, Math.max(0, maxLength - 20))}\n...[truncated]`;
+}
+
+function buildRepostFallbackPayload(application, normalizedTrackKey) {
+  const trackLabel = getTrackLabel(normalizedTrackKey);
+  const submitted = Array.isArray(application?.submittedFields)
+    ? application.submittedFields
+        .map((line) => truncateContent(line, 180))
+        .filter(Boolean)
+    : [];
+  const submittedPreview = submitted.slice(0, 12);
+  if (submitted.length > submittedPreview.length) {
+    submittedPreview.push(`...and ${submitted.length - submittedPreview.length} more field(s).`);
+  }
+
+  const lines = [
+    "♻️ **Reposted Historical Application**",
+    `🧭 **Track:** ${trackLabel}`,
+    `🆔 **Application ID:** ${getApplicationDisplayId(application, application?.messageId || "")}`,
+    `👤 **Applicant:** ${application?.applicantName || "Unknown"}`,
+    `📄 **Original Message ID:** ${application?.messageId || "Unknown"}`,
+    `📊 **Original Status:** ${String(application?.status || STATUS_PENDING).toUpperCase()}`,
+    `🗂️ **Row:** ${Number.isInteger(application?.rowIndex) ? application.rowIndex : "Unknown"}`,
+    "",
+    "**Submitted Fields:**",
+    ...(submittedPreview.length > 0 ? submittedPreview : ["_No answered fields stored_"]),
+  ];
+  return {
+    content: truncateContent(lines.join("\n"), 1900),
+    allowedMentions: { parse: [] },
+  };
+}
+
+async function buildRepostPayloadFromTrackedApplication(application, normalizedTrackKey) {
+  const fallback = buildRepostFallbackPayload(application, normalizedTrackKey);
+  if (!isSnowflake(application?.channelId) || !isSnowflake(application?.messageId)) {
+    return fallback;
+  }
+
+  try {
+    const sourceChannel = await client.channels.fetch(application.channelId);
+    if (
+      !sourceChannel ||
+      !sourceChannel.isTextBased() ||
+      typeof sourceChannel.messages?.fetch !== "function"
+    ) {
+      return fallback;
+    }
+    const sourceMessage = await sourceChannel.messages.fetch(application.messageId);
+    const embeds = Array.isArray(sourceMessage?.embeds)
+      ? sourceMessage.embeds.map((embed) => embed.toJSON()).slice(0, 10)
+      : [];
+    const content = typeof sourceMessage?.content === "string" ? sourceMessage.content : "";
+    if (!content && embeds.length === 0) {
+      return fallback;
+    }
+    return {
+      content: truncateContent(content, 1900),
+      embeds,
+      allowedMentions: { parse: [] },
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+async function repostTrackedApplications({ trackKey, limit } = {}) {
+  const normalizedTrackFilter =
+    typeof trackKey === "string" && trackKey.trim()
+      ? normalizeTrackKey(trackKey)
+      : null;
+  if (trackKey && !normalizedTrackFilter) {
+    throw new Error("Unknown track. Use `/track list` to view available tracks.");
+  }
+
+  const effectiveLimit = Number.isInteger(limit) && limit > 0 ? limit : null;
+  const state = readState();
+  const applications = Object.values(state.applications || {})
+    .filter((application) => application && typeof application === "object")
+    .map((application) => {
+      const normalizedTrackKey = normalizeTrackKey(application.trackKey) || DEFAULT_TRACK_KEY;
+      return {
+        ...application,
+        normalizedTrackKey,
+      };
+    })
+    .filter((application) =>
+      normalizedTrackFilter ? application.normalizedTrackKey === normalizedTrackFilter : true
+    )
+    .sort(compareApplicationsByRowOrder);
+
+  const selected = effectiveLimit ? applications.slice(0, effectiveLimit) : applications;
+  if (selected.length === 0) {
+    return {
+      matched: applications.length,
+      attempted: 0,
+      reposted: 0,
+      failed: 0,
+      firstError: null,
+      missingRows: [],
+      limit: effectiveLimit,
+      trackLabel: normalizedTrackFilter ? getTrackLabel(normalizedTrackFilter) : null,
+    };
+  }
+
+  let reposted = 0;
+  let failed = 0;
+  let firstError = null;
+  const missingRows = [];
+
+  for (const application of selected) {
+    const targetChannelId = getActiveChannelId(application.normalizedTrackKey);
+    if (!isSnowflake(targetChannelId)) {
+      failed += 1;
+      const message = `No active post channel configured for ${getTrackLabel(
+        application.normalizedTrackKey
+      )}.`;
+      if (!firstError) {
+        firstError = message;
+      }
+      continue;
+    }
+
+    if (!Number.isInteger(application.rowIndex) || application.rowIndex < 2) {
+      missingRows.push(application.rowIndex);
+    }
+
+    try {
+      const payload = await buildRepostPayloadFromTrackedApplication(
+        application,
+        application.normalizedTrackKey
+      );
+      await sendChannelMessage(targetChannelId, payload, { parse: [] });
+      reposted += 1;
+    } catch (err) {
+      failed += 1;
+      if (!firstError) {
+        firstError = err?.message || "Failed reposting application.";
+      }
+    }
+  }
+
+  return {
+    matched: applications.length,
+    attempted: selected.length,
+    reposted,
+    failed,
+    firstError,
+    missingRows: missingRows.filter((value) => Number.isInteger(value)).slice(0, 50),
+    limit: effectiveLimit,
+    trackLabel: normalizedTrackFilter ? getTrackLabel(normalizedTrackFilter) : null,
   };
 }
 
@@ -1855,7 +2199,7 @@ async function maybeSendDailyDigest() {
   });
 
   const lines = [
-    `🗓️ **Daily Application Summary (${targetDateKey} UTC)**`,
+    `Daily Application Summary (${targetDateKey} UTC)`,
   ];
   for (const trackKey of trackKeys) {
     lines.push(
@@ -1869,7 +2213,21 @@ async function maybeSendDailyDigest() {
     return;
   }
 
-  await sendChannelMessage(digestChannelId, lines.join("\n"), { parse: [] });
+  const digestEmbed = {
+    title: "🗓️ Daily Application Summary",
+    color: APPLICATION_LOG_PROCESSING_COLOR,
+    description: joinEmbedDescription(lines, 3500),
+    timestamp: new Date().toISOString(),
+  };
+
+  await sendChannelMessage(
+    digestChannelId,
+    {
+      embeds: [digestEmbed],
+      allowedMentions: { parse: [] },
+    },
+    { parse: [] }
+  );
   settings.dailyDigest.lastDigestDate = targetDateKey;
   writeState(state);
 }
@@ -2125,6 +2483,39 @@ function userDisplayName(user) {
   return user.username;
 }
 
+function trimEmbedValue(value, maxLength = 1024, fallback = "n/a") {
+  const text = String(value ?? "").trim();
+  if (!text) {
+    return fallback;
+  }
+  if (text.length <= maxLength) {
+    return text;
+  }
+  return `${text.slice(0, Math.max(0, maxLength - 20))}\n...[truncated]`;
+}
+
+function joinEmbedDescription(lines, maxLength = 3500) {
+  if (!Array.isArray(lines) || lines.length === 0) {
+    return "n/a";
+  }
+  const out = [];
+  let remaining = maxLength;
+  for (const rawLine of lines) {
+    const line = String(rawLine ?? "").trim();
+    if (!line) {
+      continue;
+    }
+    const cost = line.length + (out.length > 0 ? 1 : 0);
+    if (cost > remaining) {
+      out.push("...[truncated]");
+      break;
+    }
+    out.push(line);
+    remaining -= cost;
+  }
+  return out.length > 0 ? out.join("\n") : "n/a";
+}
+
 async function postConfigurationLog(interaction, title, detailLines = []) {
   if (!interaction?.guild) {
     return;
@@ -2136,17 +2527,34 @@ async function postConfigurationLog(interaction, title, detailLines = []) {
       return;
     }
 
-    const lines = [
-      `⚙️ **${title}**`,
-      `**By:** ${userDisplayName(interaction.user)} (<@${interaction.user.id}>)`,
-      `**Guild:** ${interaction.guild.name} (${interaction.guild.id})`,
-      `**Source Channel:** <#${interaction.channelId}>`,
-      `**Time:** ${new Date().toISOString()}`,
-      ...detailLines,
-    ];
+    const embed = {
+      title: `⚙️ ${String(title || "Configuration Update").trim() || "Configuration Update"}`,
+      color: LOG_EMBED_COLOR,
+      description: joinEmbedDescription(detailLines, 3000),
+      fields: [
+        {
+          name: "By",
+          value: trimEmbedValue(
+            `${userDisplayName(interaction.user)} (<@${interaction.user.id}>)`
+          ),
+          inline: false,
+        },
+        {
+          name: "Guild",
+          value: trimEmbedValue(`${interaction.guild.name} (${interaction.guild.id})`),
+          inline: false,
+        },
+        {
+          name: "Source Channel",
+          value: trimEmbedValue(`<#${interaction.channelId}>`),
+          inline: false,
+        },
+      ],
+      timestamp: new Date().toISOString(),
+    };
 
     await logsChannel.send({
-      content: lines.join("\n"),
+      embeds: [embed],
       allowedMentions: { parse: [] },
     });
   } catch (err) {
@@ -2230,16 +2638,37 @@ async function logControlCommand(action, interaction) {
       return;
     }
 
-    const details = [
-      `🛑 **Bot ${action.toUpperCase()} Command Executed**`,
-      `**By:** ${userDisplayName(interaction.user)} (<@${interaction.user.id}>)`,
-      `**User ID:** ${interaction.user.id}`,
-      `**Guild:** ${interaction.guild.name} (${interaction.guild.id})`,
-      `**Channel:** <#${interaction.channelId}>`,
-      `**Time:** ${entry.at}`,
-    ].join("\n");
+    const embed = {
+      title: `🛑 Bot ${String(action || "action").toUpperCase()} Command Executed`,
+      color: LOG_EMBED_COLOR,
+      fields: [
+        {
+          name: "By",
+          value: trimEmbedValue(
+            `${userDisplayName(interaction.user)} (<@${interaction.user.id}>)`
+          ),
+          inline: false,
+        },
+        {
+          name: "User ID",
+          value: trimEmbedValue(interaction.user.id),
+          inline: true,
+        },
+        {
+          name: "Guild",
+          value: trimEmbedValue(`${interaction.guild.name} (${interaction.guild.id})`),
+          inline: true,
+        },
+        {
+          name: "Channel",
+          value: trimEmbedValue(`<#${interaction.channelId}>`),
+          inline: true,
+        },
+      ],
+      timestamp: entry.at,
+    };
 
-    await logsChannel.send({ content: details, allowedMentions: { parse: [] } });
+    await logsChannel.send({ embeds: [embed], allowedMentions: { parse: [] } });
   } catch (err) {
     logger.error("control_log_channel_write_failed", "Failed writing control log to Discord.", {
       action,
@@ -2420,7 +2849,12 @@ const {
   getActiveAcceptAnnounceChannelId,
   getActiveAcceptAnnounceTemplate,
   defaultAcceptAnnounceTemplate: DEFAULT_ACCEPT_ANNOUNCE_TEMPLATE,
+  getApplicantMissingDiscordThreadNoticeMessage,
+  defaultApplicantMissingDiscordThreadNoticeMessage:
+    DEFAULT_APPLICANT_MISSING_DISCORD_THREAD_NOTICE_MESSAGE,
   sendChannelMessage,
+  applicationLogAcceptColor: APPLICATION_LOG_ACCEPT_COLOR,
+  applicationLogDenyColor: APPLICATION_LOG_DENY_COLOR,
 });
 
 const {
@@ -2441,6 +2875,7 @@ const {
   getApplicationDisplayId,
   formatVoteRule,
   computeVoteThreshold,
+  getTrackVoterRoleIds,
   grantApprovedRoleOnAcceptance,
   sendAcceptedApplicationAnnouncement,
   sendDeniedApplicationDm,
@@ -2651,13 +3086,16 @@ const onInteractionCreate = createInteractionCommandHandler({
   resolveMessageIdForCommand,
   finalizeApplication,
   reopenApplication,
+  repostTrackedApplications,
   buildDashboardMessage,
   buildUptimeMessage,
   buildSettingsMessage,
   setTrackVoteRule,
+  setTrackVoterRoles,
   setReminderConfiguration,
   setDailyDigestConfiguration,
   setSheetSourceConfiguration,
+  setApplicantMissingDiscordThreadNoticeMessage,
   setTrackReviewerMentions,
   upsertReactionRoleBinding,
   removeReactionRoleBinding,

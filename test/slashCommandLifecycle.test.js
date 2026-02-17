@@ -171,6 +171,8 @@ test("buildSlashCommands includes /settings config import/export subcommands", (
     (Array.isArray(settings.options) ? settings.options : []).map((option) => option.name)
   );
   assert.ok(subcommandNames.has("show"));
+  assert.ok(subcommandNames.has("voters"));
+  assert.ok(subcommandNames.has("missingusermsg"));
   assert.ok(subcommandNames.has("sheets"));
   assert.ok(subcommandNames.has("export"));
   assert.ok(subcommandNames.has("import"));
@@ -228,4 +230,31 @@ test("buildSlashCommands includes /embededit command", () => {
   const commands = buildSlashCommands();
   const commandNames = new Set(commands.map((command) => command.name));
   assert.ok(commandNames.has("embededit"));
+});
+
+test("buildSlashCommands includes /repostapps command", () => {
+  const { buildSlashCommands } = createSlashCommandLifecycle({
+    config: {},
+    client: {
+      guilds: {
+        cache: new Map(),
+      },
+    },
+    REST: function REST() {},
+    Routes: {},
+    SlashCommandBuilder,
+    baseSetChannelTrackOptions: [],
+    debugModes: {
+      report: "report",
+      post_test: "post_test",
+      accept_test: "accept_test",
+      deny_test: "deny_test",
+    },
+    getApplicationTrackKeys: () => ["tester"],
+    getTrackLabel: () => "Tester",
+  });
+
+  const commands = buildSlashCommands();
+  const repostApps = commands.find((command) => command.name === "repostapps");
+  assert.ok(repostApps, "repostapps command should exist");
 });

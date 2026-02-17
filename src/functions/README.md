@@ -2,7 +2,7 @@
 
 This directory is auto-generated from `src/index.js` and contains one top-level function per file for easier reading.
 
-Generated functions: 85
+Generated functions: 99
 
 - `sendOperationalAlert.js`
 - `normalizeCell.js`
@@ -17,21 +17,27 @@ Generated functions: 85
 - `normalizeReminderSettings.js`
 - `normalizeDailyDigestSettings.js`
 - `normalizeSheetSourceSettings.js`
+- `normalizeApplicantMissingDiscordThreadNoticeMessage.js`
 - `normalizeReactionRoleBindings.js`
 - `ensureExtendedSettingsContainers.js`
 - `parseReviewerMentionInput.js`
+- `parseRoleMentionInput.js`
 - `getActiveVoteRule.js`
+- `getTrackVoterRoleIds.js`
 - `upsertCustomTrack.js`
 - `editCustomTrack.js`
 - `hasTrackUsageInState.js`
 - `removeCustomTrack.js`
 - `setTrackVoteRule.js`
+- `setTrackVoterRoles.js`
 - `setReminderConfiguration.js`
 - `setDailyDigestConfiguration.js`
 - `getActiveSheetSourceFromSettings.js`
 - `getActiveSheetSource.js`
 - `normalizeSheetSourceInputValue.js`
 - `setSheetSourceConfiguration.js`
+- `getApplicantMissingDiscordThreadNoticeMessage.js`
+- `setApplicantMissingDiscordThreadNoticeMessage.js`
 - `setTrackReviewerMentions.js`
 - `requireReactionRoleManager.js`
 - `upsertReactionRoleBinding.js`
@@ -54,6 +60,7 @@ Generated functions: 85
 - `formatBotUptime.js`
 - `buildUptimeMessage.js`
 - `summarizeReviewerMentions.js`
+- `summarizeRoleMentions.js`
 - `getReviewerMentionsForTrackFromState.js`
 - `getReviewerAllowedMentions.js`
 - `formatUtcDateKey.js`
@@ -63,6 +70,11 @@ Generated functions: 85
 - `stripCodeFence.js`
 - `exportAdminConfig.js`
 - `importAdminConfig.js`
+- `compareApplicationsByRowOrder.js`
+- `truncateContent.js`
+- `buildRepostFallbackPayload.js`
+- `buildRepostPayloadFromTrackedApplication.js`
+- `repostTrackedApplications.js`
 - `findDuplicateApplications.js`
 - `postDuplicateWarning.js`
 - `announceReviewerAssignment.js`
@@ -79,6 +91,8 @@ Generated functions: 85
 - `ensureLogsChannel.js`
 - `ensureBotLogsChannel.js`
 - `userDisplayName.js`
+- `trimEmbedValue.js`
+- `joinEmbedDescription.js`
 - `postConfigurationLog.js`
 - `appendControlLogToFile.js`
 - `logControlCommand.js`

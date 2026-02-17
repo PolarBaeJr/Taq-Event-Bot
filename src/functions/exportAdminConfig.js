@@ -21,10 +21,13 @@ function exportAdminConfig() {
       acceptAnnounceTemplate: settings.acceptAnnounceTemplate || null,
       denyDmTemplate: settings.denyDmTemplate || null,
       voteRules: settings.voteRules,
+      voterRoles: settings.voterRoles,
       reviewerMentions: settings.reviewerMentions,
       reminders: settings.reminders,
       dailyDigest: settings.dailyDigest,
       sheetSource: settings.sheetSource,
+      applicantMissingDiscordThreadNoticeMessage:
+        settings.applicantMissingDiscordThreadNoticeMessage,
       reactionRoles: settings.reactionRoles,
     },
   };

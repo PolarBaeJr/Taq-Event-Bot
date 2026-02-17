@@ -29,6 +29,7 @@ function removeCustomTrack(track) {
   settings.channels = normalizeTrackMap(settings.channels);
   settings.approvedRoles = normalizeTrackRoleMap(settings.approvedRoles);
   settings.voteRules = normalizeTrackVoteRuleMap(settings.voteRules);
+  settings.voterRoles = normalizeTrackRoleMap(settings.voterRoles);
   settings.reviewerMentions = normalizeTrackReviewerMap(settings.reviewerMentions);
   writeState(state);
 

@@ -57,6 +57,66 @@ function createApplicationDecisionUtils(options = {}) {
     typeof options.sendChannelMessage === "function"
       ? options.sendChannelMessage
       : async () => {};
+  const applicationLogAcceptColor = Number.isInteger(options.applicationLogAcceptColor)
+    ? options.applicationLogAcceptColor
+    : 0x57f287;
+  const applicationLogDenyColor = Number.isInteger(options.applicationLogDenyColor)
+    ? options.applicationLogDenyColor
+    : 0xed4245;
+  const defaultApplicantMissingDiscordThreadNoticeMessage = String(
+    options.defaultApplicantMissingDiscordThreadNoticeMessage ||
+      "user not in discord please dm"
+  );
+  const getApplicantMissingDiscordThreadNoticeMessage =
+    typeof options.getApplicantMissingDiscordThreadNoticeMessage === "function"
+      ? options.getApplicantMissingDiscordThreadNoticeMessage
+      : () => defaultApplicantMissingDiscordThreadNoticeMessage;
+
+  function trimEmbedValue(value, maxLength = 1024, fallback = "n/a") {
+    const text = String(value ?? "").trim();
+    if (!text) {
+      return fallback;
+    }
+    if (text.length <= maxLength) {
+      return text;
+    }
+    return `${text.slice(0, Math.max(0, maxLength - 20))}\n...[truncated]`;
+  }
+
+  async function postApplicantNotInDiscordThreadNotice(application) {
+    if (!application?.threadId) {
+      return false;
+    }
+
+    const noticeMessage =
+      String(getApplicantMissingDiscordThreadNoticeMessage() || "").trim() ||
+      defaultApplicantMissingDiscordThreadNoticeMessage;
+
+    try {
+      const thread = await client.channels.fetch(application.threadId);
+      if (!thread || !thread.isTextBased()) {
+        return false;
+      }
+      if (
+        "archived" in thread &&
+        thread.archived &&
+        typeof thread.setArchived === "function"
+      ) {
+        try {
+          await thread.setArchived(false, "Posting applicant not-in-server notice");
+        } catch {
+          // continue and attempt send
+        }
+      }
+      await thread.send({
+        content: noticeMessage,
+        allowedMentions: { parse: [] },
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
 
   async function postClosureLog(application) {
     try {
@@ -99,31 +159,90 @@ function createApplicationDecisionUtils(options = {}) {
         application.denyDmResult && application.status !== statusAccepted
           ? application.denyDmResult.message
           : "No denied-DM action recorded.";
+      const embed = {
+        title: "📚 Application Closed (History Log)",
+        color:
+          application.status === statusAccepted
+            ? applicationLogAcceptColor
+            : applicationLogDenyColor,
+        fields: [
+          {
+            name: "Decision",
+            value: trimEmbedValue(decisionLabel),
+            inline: true,
+          },
+          {
+            name: "Track",
+            value: trimEmbedValue(trackLabel),
+            inline: true,
+          },
+          {
+            name: "Applicant",
+            value: trimEmbedValue(application.applicantName || "Unknown"),
+            inline: true,
+          },
+          {
+            name: "Row",
+            value: trimEmbedValue(application.rowIndex || "Unknown"),
+            inline: true,
+          },
+          {
+            name: "Application ID",
+            value: trimEmbedValue(getApplicationDisplayId(application)),
+            inline: true,
+          },
+          {
+            name: "Decision Source",
+            value: trimEmbedValue(application.decisionSource || "Unknown"),
+            inline: true,
+          },
+          {
+            name: "Decided By",
+            value: trimEmbedValue(
+              application.decidedBy ? `<@${application.decidedBy}>` : "Unknown"
+            ),
+            inline: false,
+          },
+          {
+            name: "Decision Reason",
+            value: trimEmbedValue(application.decisionReason || "None provided."),
+            inline: false,
+          },
+          {
+            name: "Approved Role Action",
+            value: trimEmbedValue(approvedRoleNote),
+            inline: false,
+          },
+          {
+            name: "Acceptance Announcement Action",
+            value: trimEmbedValue(acceptAnnounceNote),
+            inline: false,
+          },
+          {
+            name: "Denied DM Action",
+            value: trimEmbedValue(deniedDmNote),
+            inline: false,
+          },
+          {
+            name: "Application Message",
+            value: trimEmbedValue(messageLink),
+            inline: false,
+          },
+          {
+            name: "Discussion Thread",
+            value: trimEmbedValue(threadLink),
+            inline: false,
+          },
+          {
+            name: "Submitted Fields",
+            value: trimEmbedValue(submittedLines, 1024, "_No answered fields stored_"),
+            inline: false,
+          },
+        ],
+        timestamp: application.decidedAt || new Date().toISOString(),
+      };
 
-      const logLines = [
-        "📚 **Application Closed (History Log)**",
-        `**Decision:** ${decisionLabel}`,
-        `**Track:** ${trackLabel}`,
-        `**Applicant:** ${application.applicantName || "Unknown"}`,
-        `**Row:** ${application.rowIndex || "Unknown"}`,
-        `**Application ID:** ${getApplicationDisplayId(application)}`,
-        `**Created At:** ${application.createdAt || "Unknown"}`,
-        `**Decided At:** ${application.decidedAt || "Unknown"}`,
-        `**Decision Source:** ${application.decisionSource || "Unknown"}`,
-        `**Decision Reason:** ${application.decisionReason || "None provided"}`,
-        `**Decided By:** ${application.decidedBy ? `<@${application.decidedBy}>` : "Unknown"}`,
-        `**Approved Role Action:** ${approvedRoleNote}`,
-        `**Acceptance Announcement Action:** ${acceptAnnounceNote}`,
-        `**Denied DM Action:** ${deniedDmNote}`,
-        `**Application Message:** ${messageLink}`,
-        `**Discussion Thread:** ${threadLink}`,
-        "",
-        "**Submitted Fields:**",
-        submittedLines,
-      ];
-      const log = logLines.join("\n");
-
-      await logsChannel.send({ content: log, allowedMentions: { parse: [] } });
+      await logsChannel.send({ embeds: [embed], allowedMentions: { parse: [] } });
     } catch (err) {
       console.error("Failed posting closure log:", err.message);
     }
@@ -181,9 +300,10 @@ function createApplicationDecisionUtils(options = {}) {
       }
 
       if (!member) {
+        const noticePosted = await postApplicantNotInDiscordThreadNotice(application);
         return {
           status: "failed_member_not_found",
-          message: `Applicant user <@${application.applicantUserId}> is not in this server.`,
+          message: `Applicant user <@${application.applicantUserId}> is not in this server.${noticePosted ? " Posted configured not-in-server notice in the application thread." : ""}`,
           roleIds: approvedRoleIds,
           userId: application.applicantUserId,
         };

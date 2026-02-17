@@ -69,16 +69,37 @@ async function logControlCommand(action, interaction) {
       return;
     }
 
-    const details = [
-      `🛑 **Bot ${action.toUpperCase()} Command Executed**`,
-      `**By:** ${userDisplayName(interaction.user)} (<@${interaction.user.id}>)`,
-      `**User ID:** ${interaction.user.id}`,
-      `**Guild:** ${interaction.guild.name} (${interaction.guild.id})`,
-      `**Channel:** <#${interaction.channelId}>`,
-      `**Time:** ${entry.at}`,
-    ].join("\n");
+    const embed = {
+      title: `🛑 Bot ${String(action || "action").toUpperCase()} Command Executed`,
+      color: LOG_EMBED_COLOR,
+      fields: [
+        {
+          name: "By",
+          value: trimEmbedValue(
+            `${userDisplayName(interaction.user)} (<@${interaction.user.id}>)`
+          ),
+          inline: false,
+        },
+        {
+          name: "User ID",
+          value: trimEmbedValue(interaction.user.id),
+          inline: true,
+        },
+        {
+          name: "Guild",
+          value: trimEmbedValue(`${interaction.guild.name} (${interaction.guild.id})`),
+          inline: true,
+        },
+        {
+          name: "Channel",
+          value: trimEmbedValue(`<#${interaction.channelId}>`),
+          inline: true,
+        },
+      ],
+      timestamp: entry.at,
+    };
 
-    await logsChannel.send({ content: details, allowedMentions: { parse: [] } });
+    await logsChannel.send({ embeds: [embed], allowedMentions: { parse: [] } });
   } catch (err) {
     logger.error("control_log_channel_write_failed", "Failed writing control log to Discord.", {
       action,

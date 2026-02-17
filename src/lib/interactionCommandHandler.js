@@ -107,6 +107,11 @@ function createInteractionCommandHandler(options = {}) {
   const resolveMessageIdForCommand = options.resolveMessageIdForCommand;
   const finalizeApplication = options.finalizeApplication;
   const reopenApplication = options.reopenApplication;
+  const repostTrackedApplications = typeof options.repostTrackedApplications === "function"
+    ? options.repostTrackedApplications
+    : async () => {
+        throw new Error("Repost applications operation is unavailable.");
+      };
   const buildDashboardMessage = options.buildDashboardMessage;
   const buildUptimeMessage = typeof options.buildUptimeMessage === "function"
     ? options.buildUptimeMessage
@@ -120,7 +125,18 @@ function createInteractionCommandHandler(options = {}) {
     : () => {
         throw new Error("Sheet source configuration is unavailable.");
       };
+  const setApplicantMissingDiscordThreadNoticeMessage =
+    typeof options.setApplicantMissingDiscordThreadNoticeMessage === "function"
+      ? options.setApplicantMissingDiscordThreadNoticeMessage
+      : () => {
+          throw new Error("Missing-user thread notice configuration is unavailable.");
+        };
   const setTrackReviewerMentions = options.setTrackReviewerMentions;
+  const setTrackVoterRoles = typeof options.setTrackVoterRoles === "function"
+    ? options.setTrackVoterRoles
+    : () => {
+        throw new Error("Voter role configuration is unavailable.");
+      };
   const upsertReactionRoleBinding = options.upsertReactionRoleBinding;
   const removeReactionRoleBinding = options.removeReactionRoleBinding;
   const listReactionRoleBindings = options.listReactionRoleBindings;
@@ -1185,7 +1201,8 @@ function createInteractionCommandHandler(options = {}) {
             interaction.commandName === "setchannel" ||
             interaction.commandName === "debug" ||
             interaction.commandName === "track" ||
-            interaction.commandName === "settings");
+            interaction.commandName === "settings" ||
+            interaction.commandName === "repostapps");
 
         if (!supportsTrackAutocomplete) {
           await interaction.respond([]);
@@ -1270,6 +1287,7 @@ function createInteractionCommandHandler(options = {}) {
       const isDeny = interaction.commandName === "deny";
       const isReopen = interaction.commandName === "reopen";
       const isSetChannel = interaction.commandName === "setchannel";
+      const isRepostApps = interaction.commandName === "repostapps";
       const isUseAppRole = interaction.commandName === "useapprole";
       const useAppRoleSubcommand = isUseAppRole ? safeGetSubcommand(interaction) : null;
       const isSetAppRole =
@@ -1304,6 +1322,7 @@ function createInteractionCommandHandler(options = {}) {
         !isDeny &&
         !isReopen &&
         !isSetChannel &&
+        !isRepostApps &&
         !isSetAppRole &&
         !isSetAppRoleGui &&
         !isReactionRole &&
@@ -1398,6 +1417,84 @@ function createInteractionCommandHandler(options = {}) {
           content: buildDashboardMessage(),
           ephemeral: true,
         });
+        return;
+      }
+
+      if (isRepostApps) {
+        if (!canManageServer) {
+          await interaction.reply({
+            content: "You need Manage Server permission (or Administrator) to use /repostapps.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        const trackInput = interaction.options.getString("track");
+        const limitInput = interaction.options.getInteger("limit");
+        await interaction.deferReply({ ephemeral: true });
+
+        let result;
+        try {
+          result = await repostTrackedApplications({
+            trackKey: trackInput === null ? undefined : trackInput,
+            limit: limitInput === null ? undefined : limitInput,
+          });
+        } catch (err) {
+          await interaction.editReply({
+            content: err?.message || "Failed reposting tracked applications.",
+          });
+          return;
+        }
+
+        const summaryLines = [
+          "♻️ Repost run completed.",
+          `Matched: ${result.matched}`,
+          `Attempted: ${result.attempted}`,
+          `Reposted: ${result.reposted}`,
+          `Failed: ${result.failed}`,
+        ];
+        if (result.trackLabel) {
+          summaryLines.push(`Track filter: ${result.trackLabel}`);
+        }
+        if (Number.isInteger(result.limit) && result.limit > 0) {
+          summaryLines.push(`Limit: ${result.limit}`);
+        }
+        if (Array.isArray(result.missingRows) && result.missingRows.length > 0) {
+          summaryLines.push(`Missing sheet rows: ${result.missingRows.slice(0, 10).join(", ")}`);
+        }
+        if (result.firstError) {
+          summaryLines.push(`First error: ${result.firstError}`);
+        }
+
+        await interaction.editReply({
+          content: summaryLines.join("\n"),
+        });
+        await postConfigurationLog(interaction, "Applications Reposted", [
+          `**Matched:** ${result.matched}`,
+          `**Attempted:** ${result.attempted}`,
+          `**Reposted:** ${result.reposted}`,
+          `**Failed:** ${result.failed}`,
+          `**Track Filter:** ${result.trackLabel || "none"}`,
+          `**Limit:** ${Number.isInteger(result.limit) && result.limit > 0 ? result.limit : "none"}`,
+          `**Missing Rows:** ${
+            Array.isArray(result.missingRows) && result.missingRows.length > 0
+              ? result.missingRows.slice(0, 20).join(", ")
+              : "none"
+          }`,
+        ]);
+        logInteractionDebug(
+          "repostapps_command_completed",
+          "Reposted tracked applications in row order.",
+          interaction,
+          {
+            matched: result.matched,
+            attempted: result.attempted,
+            reposted: result.reposted,
+            failed: result.failed,
+            limit: result.limit || null,
+            trackLabel: result.trackLabel || null,
+          }
+        );
         return;
       }
 
@@ -1561,6 +1658,46 @@ function createInteractionCommandHandler(options = {}) {
           return;
         }
 
+        if (subcommand === "voters") {
+          const track = interaction.options.getString("track", true);
+          const roles = interaction.options.getString("roles", true);
+          let update;
+          try {
+            update = setTrackVoterRoles(track, roles);
+          } catch (err) {
+            await interaction.reply({
+              content: err.message || "Failed updating voter roles.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          const summary = Array.isArray(update.roleIds)
+            ? update.roleIds.map((id) => `<@&${id}>`)
+            : [];
+          await interaction.reply({
+            content: `${update.trackLabel} vote-eligible roles set to: ${summary.length > 0 ? summary.join(", ") : "any channel member"}.`,
+            ephemeral: true,
+          });
+          await postConfigurationLog(interaction, "Vote Voter Roles Updated", [
+            `**Track:** ${update.trackLabel}`,
+            `**Vote-Eligible Roles:** ${
+              summary.length > 0 ? summary.join(", ") : "any channel member"
+            }`,
+          ]);
+          logInteractionDebug(
+            "settings_voters_updated",
+            "Updated vote-eligible role filter.",
+            interaction,
+            {
+              subcommand,
+              trackLabel: update.trackLabel,
+              roleCount: summary.length,
+            }
+          );
+          return;
+        }
+
         if (subcommand === "digest") {
           const enabled = interaction.options.getBoolean("enabled");
           const hourUtc = interaction.options.getInteger("hour_utc");
@@ -1639,6 +1776,39 @@ function createInteractionCommandHandler(options = {}) {
               subcommand,
               spreadsheetIdSource: effective.spreadsheetIdSource,
               sheetNameSource: effective.sheetNameSource,
+            }
+          );
+          return;
+        }
+
+        if (subcommand === "missingusermsg") {
+          const message = interaction.options.getString("message", true);
+          let updatedMessage;
+          try {
+            updatedMessage = setApplicantMissingDiscordThreadNoticeMessage(message);
+          } catch (err) {
+            await interaction.reply({
+              content: err.message || "Failed updating missing-user thread notice message.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          await interaction.reply({
+            content: `Missing-user thread notice message updated.\nMessage: ${updatedMessage}`,
+            ephemeral: true,
+            allowedMentions: { parse: [] },
+          });
+          await postConfigurationLog(interaction, "Missing-User Thread Notice Updated", [
+            `**Message:** \`${updatedMessage}\``,
+          ]);
+          logInteractionDebug(
+            "settings_missing_user_notice_updated",
+            "Updated missing-user thread notice message.",
+            interaction,
+            {
+              subcommand,
+              length: updatedMessage.length,
             }
           );
           return;

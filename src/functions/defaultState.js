@@ -23,10 +23,13 @@ function defaultState() {
       denyDmTemplate: null,
       customTracks: getCustomTracksSnapshot(),
       voteRules: createEmptyTrackVoteRuleMap(),
+      voterRoles: createEmptyTrackRoleMap(),
       reviewerMentions: createEmptyTrackReviewerMap(),
       reminders: normalizeReminderSettings(null),
       dailyDigest: normalizeDailyDigestSettings(null),
       sheetSource: normalizeSheetSourceSettings(null),
+      applicantMissingDiscordThreadNoticeMessage:
+        normalizeApplicantMissingDiscordThreadNoticeMessage(null),
       reactionRoles: [],
     },
   };

@@ -29,6 +29,10 @@ function createApplicationDecisionWorkflow(options = {}) {
     typeof options.computeVoteThreshold === "function"
       ? options.computeVoteThreshold
       : () => ({ threshold: 1, rule: null });
+  const getTrackVoterRoleIds =
+    typeof options.getTrackVoterRoleIds === "function"
+      ? options.getTrackVoterRoleIds
+      : () => [];
   const grantApprovedRoleOnAcceptance =
     typeof options.grantApprovedRoleOnAcceptance === "function"
       ? options.grantApprovedRoleOnAcceptance
@@ -91,13 +95,25 @@ function createApplicationDecisionWorkflow(options = {}) {
     });
   }
 
-  async function getReviewersWithChannelAccess(channel) {
+  async function getReviewersWithChannelAccess(channel, trackKey) {
     const members = await channel.guild.members.fetch();
     const reviewers = new Set();
+    const voterRoleIds = new Set(getTrackVoterRoleIds(trackKey));
+    const enforceRoleFilter = voterRoleIds.size > 0;
+    const voterRoleIdList = enforceRoleFilter ? Array.from(voterRoleIds) : [];
 
     for (const member of members.values()) {
       if (member.user.bot) {
         continue;
+      }
+
+      if (enforceRoleFilter) {
+        const hasAllowedRole = voterRoleIdList.some((roleId) =>
+          member.roles?.cache?.has(roleId)
+        );
+        if (!hasAllowedRole) {
+          continue;
+        }
       }
 
       const perms = channel.permissionsFor(member);
@@ -446,7 +462,10 @@ function createApplicationDecisionWorkflow(options = {}) {
     }
 
     const message = await channel.messages.fetch(messageId);
-    const eligibleReviewerIds = await getReviewersWithChannelAccess(channel);
+    const eligibleReviewerIds = await getReviewersWithChannelAccess(
+      channel,
+      application.trackKey
+    );
     if (eligibleReviewerIds.size === 0) {
       return;
     }
