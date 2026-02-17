@@ -14,6 +14,7 @@ const REACTION_ROLE_GUI_ACTION_ADD = "add";
 const REACTION_ROLE_GUI_ACTION_REMOVE = "remove";
 const REACTION_ROLE_GUI_ACTION_MODAL_ADD = "modal_add";
 const REACTION_ROLE_GUI_ACTION_MODAL_REMOVE = "modal_remove";
+const REACTION_ROLE_BUTTON_PREFIX = "rrbtn";
 const APPROLE_GUI_PREFIX = "approlegui";
 const APPROLE_GUI_ACTION_TRACK = "track";
 const APPROLE_GUI_ACTION_ROLES = "roles";
@@ -212,6 +213,71 @@ function createInteractionCommandHandler(options = {}) {
           .setStyle(ButtonStyle.Danger)
       ),
     ];
+  }
+
+  function buildReactionRoleButtonCustomId(guildId, roleId) {
+    return `${REACTION_ROLE_BUTTON_PREFIX}:${String(guildId || "")}:${String(roleId || "")}`;
+  }
+
+  function parseReactionRoleButtonCustomId(customId) {
+    const raw = String(customId || "").trim();
+    if (!raw.startsWith(`${REACTION_ROLE_BUTTON_PREFIX}:`)) {
+      return null;
+    }
+    const parts = raw.split(":");
+    if (parts.length !== 3) {
+      return null;
+    }
+    const guildId = String(parts[1] || "").trim();
+    const roleId = String(parts[2] || "").trim();
+    if (!isSnowflake(guildId) || !isSnowflake(roleId)) {
+      return null;
+    }
+    return {
+      guildId,
+      roleId,
+    };
+  }
+
+  function buildReactionRoleButtonPanelComponents(guildId, buttonEntries) {
+    const entries = Array.isArray(buttonEntries)
+      ? buttonEntries
+          .map((entry) => {
+            const roleId = String(entry?.roleId || "").trim();
+            if (!isSnowflake(roleId)) {
+              return null;
+            }
+            const labelSource = String(entry?.label || "").trim();
+            const label = labelSource ? labelSource.slice(0, 80) : `Role ${roleId.slice(-4)}`;
+            return {
+              roleId,
+              label,
+            };
+          })
+          .filter(Boolean)
+      : [];
+    const unique = new Map();
+    for (const entry of entries) {
+      if (!unique.has(entry.roleId)) {
+        unique.set(entry.roleId, entry);
+      }
+    }
+    const usableEntries = [...unique.values()].slice(0, 25);
+    const rows = [];
+    for (let i = 0; i < usableEntries.length; i += 5) {
+      const rowEntries = usableEntries.slice(i, i + 5);
+      const row = new ActionRowBuilder();
+      for (const entry of rowEntries) {
+        row.addComponents(
+          new ButtonBuilder()
+            .setCustomId(buildReactionRoleButtonCustomId(guildId, entry.roleId))
+            .setLabel(entry.label)
+            .setStyle(ButtonStyle.Secondary)
+        );
+      }
+      rows.push(row);
+    }
+    return rows;
   }
 
   function buildAppRoleGuiCustomId(action, userId, trackKey = "") {
@@ -951,54 +1017,159 @@ function createInteractionCommandHandler(options = {}) {
 
       if (interaction.isButton()) {
         const guiContext = parseReactionRoleGuiCustomId(interaction.customId);
-        if (!guiContext) {
+        if (guiContext) {
+          logInteractionDebug(
+            "reaction_role_gui_button_received",
+            "Received reaction-role GUI button interaction.",
+            interaction,
+            {
+              action: guiContext.action || null,
+            }
+          );
+
+          if (!interaction.inGuild()) {
+            await interaction.reply({
+              content: "Reaction role GUI can only be used in a server.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          if (guiContext.userId && guiContext.userId !== interaction.user.id) {
+            await interaction.reply({
+              content: "This reaction role panel was opened by another user.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          if (!hasManageRolesConfigPermission(interaction.memberPermissions)) {
+            await interaction.reply({
+              content:
+                "You need both Manage Server and Manage Roles (or Administrator) to manage reaction roles.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          if (guiContext.action === REACTION_ROLE_GUI_ACTION_ADD) {
+            await interaction.showModal(buildReactionRoleAddModal(interaction.user.id));
+            return;
+          }
+
+          if (guiContext.action === REACTION_ROLE_GUI_ACTION_REMOVE) {
+            await interaction.showModal(buildReactionRoleRemoveModal(interaction.user.id));
+            return;
+          }
+
+          return;
+        }
+
+        const reactionRoleButtonContext = parseReactionRoleButtonCustomId(interaction.customId);
+        if (!reactionRoleButtonContext) {
           return;
         }
 
         logInteractionDebug(
-          "reaction_role_gui_button_received",
-          "Received reaction-role GUI button interaction.",
+          "reaction_role_button_toggle_received",
+          "Received reaction-role panel button interaction.",
           interaction,
           {
-            action: guiContext.action || null,
+            roleId: reactionRoleButtonContext.roleId,
+            buttonGuildId: reactionRoleButtonContext.guildId,
           }
         );
 
         if (!interaction.inGuild()) {
           await interaction.reply({
-            content: "Reaction role GUI can only be used in a server.",
+            content: "This button role panel can only be used in a server.",
             ephemeral: true,
           });
           return;
         }
 
-        if (guiContext.userId && guiContext.userId !== interaction.user.id) {
+        if (reactionRoleButtonContext.guildId !== interaction.guildId) {
           await interaction.reply({
-            content: "This reaction role panel was opened by another user.",
+            content: "This button role panel belongs to another server.",
             ephemeral: true,
           });
           return;
         }
 
-        if (!hasManageRolesConfigPermission(interaction.memberPermissions)) {
-          await interaction.reply({
-            content:
-              "You need both Manage Server and Manage Roles (or Administrator) to manage reaction roles.",
-            ephemeral: true,
-          });
+        await interaction.deferReply({ ephemeral: true });
+
+        const guild = interaction.guild;
+        const roleId = reactionRoleButtonContext.roleId;
+        const [me, member, role] = await Promise.all([
+          guild.members.fetchMe().catch(() => null),
+          guild.members.fetch(interaction.user.id).catch(() => null),
+          guild.roles.fetch(roleId).catch(() => null),
+        ]);
+
+        if (!member) {
+          await interaction.editReply("Could not resolve your member record in this server.");
+          return;
+        }
+        if (!role) {
+          await interaction.editReply("This role no longer exists.");
+          return;
+        }
+        if (!me) {
+          await interaction.editReply("I could not resolve my own member record.");
+          return;
+        }
+        if (!me.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
+          await interaction.editReply("I need Manage Roles permission to change roles.");
+          return;
+        }
+        if (role.managed || me.roles.highest.comparePositionTo(role) <= 0) {
+          await interaction.editReply(
+            `I cannot manage <@&${role.id}>. Move my top role above it and try again.`
+          );
           return;
         }
 
-        if (guiContext.action === REACTION_ROLE_GUI_ACTION_ADD) {
-          await interaction.showModal(buildReactionRoleAddModal(interaction.user.id));
+        const hasRole = member.roles.cache.has(role.id);
+        const action = hasRole ? "remove" : "add";
+        const reason = `Reaction-role button ${action} on message ${interaction.message?.id || "unknown"}`;
+
+        try {
+          if (hasRole) {
+            await member.roles.remove(role.id, reason);
+          } else {
+            await member.roles.add(role.id, reason);
+          }
+        } catch (err) {
+          logInteractionFailure(
+            "reaction_role_button_toggle_failed",
+            "Failed applying reaction-role button toggle.",
+            interaction,
+            err,
+            {
+              roleId: role.id,
+              action,
+            }
+          );
+          await interaction.editReply(
+            err?.message || "Failed toggling role. Check role hierarchy and permissions."
+          );
           return;
         }
 
-        if (guiContext.action === REACTION_ROLE_GUI_ACTION_REMOVE) {
-          await interaction.showModal(buildReactionRoleRemoveModal(interaction.user.id));
-          return;
-        }
-
+        await interaction.editReply(
+          hasRole
+            ? `Removed role <@&${role.id}>.`
+            : `Added role <@&${role.id}>.`
+        );
+        logInteractionDebug(
+          "reaction_role_button_toggle_applied",
+          "Applied reaction-role panel button toggle.",
+          interaction,
+          {
+            roleId: role.id,
+            action,
+          }
+        );
         return;
       }
 
@@ -3313,6 +3484,162 @@ function createInteractionCommandHandler(options = {}) {
             interaction,
             {
               action,
+            }
+          );
+          return;
+        }
+
+        if (action === "button") {
+          const selectedRoleIds = extractRoleIdsFromInteractionOptions(interaction).slice(0, 25);
+          if (selectedRoleIds.length === 0) {
+            await interaction.reply({
+              content: "Please provide at least one role (`role`, up to `role_5`).",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          const channelInput = interaction.options.getChannel("channel");
+          const targetChannel = channelInput || interaction.channel;
+          if (!targetChannel || !targetChannel.isTextBased() || typeof targetChannel.send !== "function") {
+            await interaction.reply({
+              content: "Please select a valid text channel.",
+              ephemeral: true,
+            });
+            return;
+          }
+          if (targetChannel.guildId !== interaction.guildId) {
+            await interaction.reply({
+              content: "The selected channel must be in this server.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          const panelMessageInput = String(interaction.options.getString("message") || "").trim();
+          if (panelMessageInput.length > 2000) {
+            await interaction.reply({
+              content: "Panel message cannot exceed 2000 characters.",
+              ephemeral: true,
+            });
+            return;
+          }
+          const panelMessageText =
+            panelMessageInput || "Click a button below to add or remove the matching role.";
+
+          const resolvedRoles = [];
+          const missingRoleIds = [];
+          for (const roleId of selectedRoleIds) {
+            const role = await interaction.guild.roles.fetch(roleId).catch(() => null);
+            if (!role) {
+              missingRoleIds.push(roleId);
+              continue;
+            }
+            resolvedRoles.push(role);
+          }
+
+          if (resolvedRoles.length === 0) {
+            await interaction.reply({
+              content: "None of the provided roles were found in this server.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          const panelComponents = buildReactionRoleButtonPanelComponents(
+            interaction.guildId,
+            resolvedRoles.map((role) => ({
+              roleId: role.id,
+              label: role.name,
+            }))
+          );
+
+          const warningLines = [];
+          if (missingRoleIds.length > 0) {
+            warningLines.push(
+              `Skipped missing roles: ${missingRoleIds.map((id) => `\`${id}\``).join(", ")}.`
+            );
+          }
+          try {
+            const me = await interaction.guild.members.fetchMe();
+            if (!me.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
+              warningLines.push("I do not currently have Manage Roles permission.");
+            } else {
+              for (const role of resolvedRoles) {
+                if (me.roles.highest.comparePositionTo(role) <= 0) {
+                  warningLines.push(`My top role must be above <@&${role.id}> to assign it.`);
+                }
+                if (role.managed) {
+                  warningLines.push(
+                    `<@&${role.id}> is a managed/integration role and may not be assignable.`
+                  );
+                }
+              }
+            }
+          } catch (err) {
+            warningLines.push(`Could not fully validate role assignability (${err.message}).`);
+          }
+
+          let panelMessage;
+          try {
+            panelMessage = await targetChannel.send({
+              content: panelMessageText,
+              components: panelComponents,
+              allowedMentions: {
+                parse: [],
+              },
+            });
+          } catch (err) {
+            logInteractionFailure(
+              "reaction_role_button_panel_send_failed",
+              "Failed posting reaction-role button panel.",
+              interaction,
+              err,
+              {
+                action,
+                channelId: targetChannel.id,
+                roleCount: resolvedRoles.length,
+                roleIds: resolvedRoles.map((role) => role.id),
+              }
+            );
+            await interaction.reply({
+              content:
+                err?.message || "Failed posting button role panel. Check my channel permissions.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          const roleMentions = resolvedRoles.map((role) => `<@&${role.id}>`).join(", ");
+          const replyLines = [
+            `Button role panel posted in <#${targetChannel.id}>.`,
+            `Message: ${panelMessage.url}`,
+            `Roles (${resolvedRoles.length}): ${roleMentions}`,
+          ];
+          if (warningLines.length > 0) {
+            replyLines.push(`Warnings: ${warningLines.join(" ")}`);
+          }
+          await interaction.reply({
+            content: replyLines.join("\n"),
+            ephemeral: true,
+            components: buildReactionRoleGuiComponents(interaction.user.id),
+          });
+
+          await postConfigurationLog(interaction, "Reaction Role Button Panel Posted", [
+            `**Channel:** <#${targetChannel.id}>`,
+            `**Message ID:** \`${panelMessage.id}\``,
+            `**Roles (${resolvedRoles.length}):** ${roleMentions}`,
+          ]);
+          logInteractionDebug(
+            "reaction_role_button_panel_posted",
+            "Posted reaction-role button panel.",
+            interaction,
+            {
+              action,
+              channelId: targetChannel.id,
+              messageId: panelMessage.id,
+              roleCount: resolvedRoles.length,
+              roleIds: resolvedRoles.map((role) => role.id),
             }
           );
           return;

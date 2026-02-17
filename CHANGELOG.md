@@ -12,6 +12,7 @@ All notable changes to this project are documented in this file.
 - Runbook documentation (`RUNBOOK.md`) for incident response and restore flow.
 - Branch-protection setup script (`npm run protect:main`) to enforce CI/review rules on `main`.
 - New `/uptime` slash command to show current bot process uptime.
+- New `/reactionrole button` and `/rr button` subcommand to post clickable role-toggle button panels (supports multiple roles in one message).
 
 ### Changed
 - Startup config now includes env parsing for alerting, maintenance, and backup operations.

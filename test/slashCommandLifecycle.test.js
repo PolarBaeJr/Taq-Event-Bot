@@ -149,6 +149,7 @@ test("buildSlashCommands includes /reactionrole and /rr commands", () => {
   assert.ok(subcommandNames.has("create"));
   assert.ok(subcommandNames.has("remove"));
   assert.ok(subcommandNames.has("list"));
+  assert.ok(subcommandNames.has("button"));
   assert.ok(subcommandNames.has("gui"));
 
   const rr = commands.find((command) => command.name === "rr");
@@ -159,6 +160,7 @@ test("buildSlashCommands includes /reactionrole and /rr commands", () => {
   assert.ok(rrSubcommandNames.has("create"));
   assert.ok(rrSubcommandNames.has("remove"));
   assert.ok(rrSubcommandNames.has("list"));
+  assert.ok(rrSubcommandNames.has("button"));
   assert.ok(rrSubcommandNames.has("gui"));
 });
 

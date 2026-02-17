@@ -261,6 +261,53 @@ function createSlashCommandLifecycle(options = {}) {
         )
         .addSubcommand((subcommand) =>
           subcommand
+            .setName("button")
+            .setDescription("Post a button role panel (click to toggle roles)")
+            .addRoleOption((option) =>
+              option
+                .setName("role")
+                .setDescription("First role")
+                .setRequired(true)
+            )
+            .addRoleOption((option) =>
+              option
+                .setName("role_2")
+                .setDescription("Second role")
+                .setRequired(false)
+            )
+            .addRoleOption((option) =>
+              option
+                .setName("role_3")
+                .setDescription("Third role")
+                .setRequired(false)
+            )
+            .addRoleOption((option) =>
+              option
+                .setName("role_4")
+                .setDescription("Fourth role")
+                .setRequired(false)
+            )
+            .addRoleOption((option) =>
+              option
+                .setName("role_5")
+                .setDescription("Fifth role")
+                .setRequired(false)
+            )
+            .addStringOption((option) =>
+              option
+                .setName("message")
+                .setDescription("Panel message text")
+                .setRequired(false)
+            )
+            .addChannelOption((option) =>
+              option
+                .setName("channel")
+                .setDescription("Target channel (defaults to current)")
+                .setRequired(false)
+            )
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
             .setName("gui")
             .setDescription("Open button/modal GUI for reaction-role management")
         );

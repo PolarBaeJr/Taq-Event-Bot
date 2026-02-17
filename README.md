@@ -290,10 +290,12 @@ Set accepted announcement channel/message:
 Reaction roles (subcommand shortcut):
 ```text
 /rr create message_id:123456789012345678 emoji:✅ role:@EventRole channel:#roles
+/rr button role:@EventRole role_2:@HelperRole channel:#roles message:Pick your roles below
 /rr list
 /rr remove message_id:123456789012345678 emoji:✅ channel:#roles
 /rr gui
 ```
+`/rr button` posts clickable buttons; users can click again to remove the same role.
 
 Message tools (subcommand shortcut):
 ```text
