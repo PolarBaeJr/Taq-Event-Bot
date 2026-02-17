@@ -737,9 +737,13 @@ function createPollingPipeline(options = {}) {
 
     if (!hasAnyActivePostChannelConfigured()) {
       if (!loggedNoChannelWarning) {
+        const queuedJobs = Array.isArray(state.postJobs) ? state.postJobs.length : 0;
         logInfo(
           "queue_paused_no_channels",
-          "Posting paused: no application post channels configured. Use /setchannel."
+          `Posting paused: no application post channels configured. queued=${queuedJobs}. Use /setchannel.`,
+          {
+            queuedJobs,
+          }
         );
         loggedNoChannelWarning = true;
       }
@@ -756,6 +760,9 @@ function createPollingPipeline(options = {}) {
       ];
       if (queueResult.failed > 0 && queueResult.failedJobId) {
         details.push(`blocked=${queueResult.failedJobId}`);
+      }
+      if (queueResult.failed > 0 && queueResult.failedError) {
+        details.push(`error=${String(queueResult.failedError).slice(0, 180)}`);
       }
       logInfo("queue_run_summary", `Job run summary: ${details.join(", ")}`, queueResult);
     }

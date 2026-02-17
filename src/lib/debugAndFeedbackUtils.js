@@ -21,6 +21,23 @@ function createDebugAndFeedbackUtils(options = {}) {
     typeof options.getActiveAcceptAnnounceChannelId === "function"
       ? options.getActiveAcceptAnnounceChannelId
       : () => null;
+  const getActiveLogsChannelId = typeof options.getActiveLogsChannelId === "function"
+    ? options.getActiveLogsChannelId
+    : () => null;
+  const getActiveBugChannelId = typeof options.getActiveBugChannelId === "function"
+    ? options.getActiveBugChannelId
+    : () => null;
+  const getActiveSuggestionsChannelId =
+    typeof options.getActiveSuggestionsChannelId === "function"
+      ? options.getActiveSuggestionsChannelId
+      : () => null;
+  const hasAnyActivePostChannelConfigured =
+    typeof options.hasAnyActivePostChannelConfigured === "function"
+      ? options.hasAnyActivePostChannelConfigured
+      : () => false;
+  const getStateFilePath = typeof options.getStateFilePath === "function"
+    ? options.getStateFilePath
+    : () => null;
   const requiredChannelPermissions = Array.isArray(options.requiredChannelPermissions)
     ? options.requiredChannelPermissions
     : [];
@@ -135,6 +152,7 @@ function createDebugAndFeedbackUtils(options = {}) {
     const state = readState();
     const activeChannelMap = getActiveChannelMap();
     const activeApprovedRoleMap = getActiveApprovedRoleMap();
+    const postJobs = Array.isArray(state.postJobs) ? state.postJobs : [];
 
     lines.push(`Bot User ID: ${client.user?.id || "unknown"}`);
     lines.push(`Configured Client ID: ${config.clientId || "missing"}`);
@@ -142,6 +160,27 @@ function createDebugAndFeedbackUtils(options = {}) {
       `Client ID matches bot user ID: ${client.user?.id === config.clientId ? "yes" : "no"}`
     );
     lines.push(`Interaction Guild ID: ${interaction.guildId || "none"}`);
+    lines.push(`State File Path: ${getStateFilePath() || config.stateFile || "unknown"}`);
+    lines.push(
+      `Posting Enabled (channel configured): ${
+        hasAnyActivePostChannelConfigured() ? "yes" : "no"
+      }`
+    );
+    lines.push(
+      `Tracked Applications: ${
+        state.applications && typeof state.applications === "object"
+          ? Object.keys(state.applications).length
+          : 0
+      }`
+    );
+    lines.push(
+      `Tracked Threads: ${
+        state.threads && typeof state.threads === "object"
+          ? Object.keys(state.threads).length
+          : 0
+      }`
+    );
+    lines.push(`Last Processed Sheet Row: ${Number.isInteger(state.lastRow) ? state.lastRow : 0}`);
     for (const trackKey of getApplicationTrackKeys()) {
       const trackLabel = getTrackLabel(trackKey);
       const approvedRoles = Array.isArray(activeApprovedRoleMap[trackKey])
@@ -164,6 +203,9 @@ function createDebugAndFeedbackUtils(options = {}) {
       }`
     );
     lines.push(`Accept Announcement Channel ID: ${getActiveAcceptAnnounceChannelId() || "none"}`);
+    lines.push(`Logs Channel ID: ${getActiveLogsChannelId() || "none"}`);
+    lines.push(`Bug Channel ID: ${getActiveBugChannelId() || "none"}`);
+    lines.push(`Suggestions Channel ID: ${getActiveSuggestionsChannelId() || "none"}`);
     lines.push(
       `Accept Announcement Template Configured: ${
         typeof state.settings?.acceptAnnounceTemplate === "string" &&
@@ -175,7 +217,36 @@ function createDebugAndFeedbackUtils(options = {}) {
             : "default"
       }`
     );
-    lines.push(`Queued Post Jobs: ${Array.isArray(state.postJobs) ? state.postJobs.length : 0}`);
+    lines.push(`Queued Post Jobs: ${postJobs.length}`);
+    if (!hasAnyActivePostChannelConfigured()) {
+      lines.push("Posting Pause Reason: no active application post channels configured.");
+    }
+    if (postJobs.length > 0) {
+      const queuePreview = postJobs.slice(0, 3);
+      for (const [index, job] of queuePreview.entries()) {
+        const trackKeys = Array.isArray(job?.trackKeys)
+          ? job.trackKeys.filter(Boolean)
+          : job?.trackKey
+            ? [job.trackKey]
+            : [];
+        const trackSummary = trackKeys.length > 0 ? trackKeys.join(",") : "unknown";
+        const attempts = Number.isInteger(job?.attempts) ? job.attempts : 0;
+        const rowIndex = Number.isInteger(job?.rowIndex) ? job.rowIndex : "unknown";
+        const createdAt = typeof job?.createdAt === "string" ? job.createdAt : "unknown";
+        const lastAttemptAt =
+          typeof job?.lastAttemptAt === "string" ? job.lastAttemptAt : "none";
+        const lastError = String(job?.lastError || "").trim();
+        lines.push(
+          `Queue[${index}] job=${job?.jobId || "unknown"} row=${rowIndex} track=${trackSummary} attempts=${attempts} createdAt=${createdAt} lastAttemptAt=${lastAttemptAt}`
+        );
+        if (lastError) {
+          lines.push(`Queue[${index}] lastError=${lastError.slice(0, 240)}`);
+        }
+      }
+      if (postJobs.length > queuePreview.length) {
+        lines.push(`Queue additional jobs: ${postJobs.length - queuePreview.length}`);
+      }
+    }
 
     const rest = new REST({ version: "10" }).setToken(config.botToken);
     try {

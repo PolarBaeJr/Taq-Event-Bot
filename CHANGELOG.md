@@ -20,6 +20,16 @@ All notable changes to this project are documented in this file.
 - Startup config validation no longer fails hard when optional Discord ID env vars contain placeholder values; invalid optional IDs are now ignored with warnings.
 - Startup config path resolution no longer trims `cwd`, which fixes false missing-file errors for `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` in paths containing trailing spaces.
 
+## [1.3.4] - 2026-02-17
+
+### Added
+- Expanded `/debug report` diagnostics for queue and posting health, including state-file path, tracked counts, queue head details, and posting pause reasons.
+- Additional channel diagnostics in `/debug report` for logs/bug/suggestions channel IDs.
+
+### Changed
+- Queue pause logs now include queued job count when no post channels are configured.
+- Queue run summary logs now include the first failed error snippet when a job blocks processing.
+
 ## [1.3.3] - 2026-02-17
 
 ### Added
