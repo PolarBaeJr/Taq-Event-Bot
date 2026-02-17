@@ -3674,11 +3674,13 @@ function createInteractionCommandHandler(options = {}) {
             return;
           }
 
-          if (channelTarget === "post") {
+          const isPostChannelTarget =
+            channelTarget === "post" || channelTarget === "channel_post";
+          if (isPostChannelTarget) {
             if (!dynamicTrackInput) {
               await interaction.reply({
                 content:
-                  "For `/set channel channel_target:post`, provide `track` and `channel`.",
+                  "For `/set channel channel_target:post` (or `channel_post`), provide `track` and `channel`.",
                 ephemeral: true,
               });
               return;
@@ -3707,7 +3709,7 @@ function createInteractionCommandHandler(options = {}) {
           } else {
             await interaction.reply({
               content:
-                "Unknown `channel_target`. Use one of: `post`, `application_log`, `log`, `accept_message`, `bug`, `suggestions`.",
+                "Unknown `channel_target`. Use one of: `post`, `channel_post`, `application_log`, `log`, `accept_message`, `bug`, `suggestions`.",
               ephemeral: true,
             });
             return;

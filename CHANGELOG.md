@@ -20,6 +20,12 @@ All notable changes to this project are documented in this file.
 - Startup config validation no longer fails hard when optional Discord ID env vars contain placeholder values; invalid optional IDs are now ignored with warnings.
 - Startup config path resolution no longer trims `cwd`, which fixes false missing-file errors for `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` in paths containing trailing spaces.
 
+## [1.3.21] - 2026-02-17
+
+### Fixed
+- `/set channel` now accepts `channel_target:channel_post` as a legacy alias of `channel_target:post`.
+- Updated slash command choices and validation messaging to include the `channel_post` alias.
+
 ## [1.3.20] - 2026-02-17
 
 ### Changed

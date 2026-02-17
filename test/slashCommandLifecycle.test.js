@@ -56,6 +56,17 @@ test("buildSlashCommands includes unified /set command subcommands", () => {
   assert.ok(channelOptionNames.has("channel_target"));
   assert.ok(channelOptionNames.has("track"));
   assert.ok(channelOptionNames.has("channel"));
+  const channelTargetOption = (Array.isArray(channelSubcommand?.options)
+    ? channelSubcommand.options
+    : []
+  ).find((option) => option.name === "channel_target");
+  const channelTargetValues = new Set(
+    (Array.isArray(channelTargetOption?.choices) ? channelTargetOption.choices : []).map(
+      (choice) => choice.value
+    )
+  );
+  assert.ok(channelTargetValues.has("post"));
+  assert.ok(channelTargetValues.has("channel_post"));
 
   const defaultSubcommand = (Array.isArray(setCommand.options) ? setCommand.options : []).find(
     (option) => option.name === "default"

@@ -280,6 +280,7 @@ function createSlashCommandLifecycle(options = {}) {
                 .setDescription("Channel target")
                 .addChoices(
                   { name: "Post Channel (track)", value: "post" },
+                  { name: "Post Channel (legacy channel_post)", value: "channel_post" },
                   { name: "Application Log", value: "application_log" },
                   { name: "Bot Log", value: "log" },
                   { name: "Accept Message", value: "accept_message" },

@@ -512,6 +512,7 @@ pm2 restart taq-event-bot --update-env
 - `/set channel` requires `Manage Server` (or `Administrator`).
 - `/set channel` requires `channel_target` and `channel`; for `channel_target:post`, also provide `track`.
 - `/set channel` supports `channel_target:application_log|log|accept_message|bug|suggestions` and `channel_target:post track:<track>`.
+- `channel_target:channel_post` is also accepted as a legacy alias of `post`.
 - `/set default` requires `Manage Server` (or `Administrator`) and applies one server-level default channel to all track/shared channel targets.
 - `/set default` accepts optional `role..role_5` to apply the same accepted roles to every track (requires Manage Roles).
 - `/set default` accepts optional `message` to set the accepted-announcement template.
