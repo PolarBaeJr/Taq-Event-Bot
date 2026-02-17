@@ -87,6 +87,7 @@ Required keys:
 - `DAILY_DIGEST_ENABLED` (optional; `true`/`false`, default `true`)
 - `DAILY_DIGEST_HOUR_UTC` (optional; `0-23`, default `15`)
 - `DUPLICATE_LOOKBACK_DAYS` (optional; duplicate detection lookback window, default `60`)
+- `AUTO_REGISTER_TRACKS_FROM_FORM` (optional boolean, default `false`; when `true`, new track values found in form responses can auto-create custom tracks)
 - `DISCORD_TESTER_APPROVED_ROLE_IDS` (optional CSV list fallback if you do not use `/setapprole`)
 - `DISCORD_BUILDER_APPROVED_ROLE_IDS` (optional CSV list fallback if you do not use `/setapprole`)
 - `DISCORD_CMD_APPROVED_ROLE_IDS` (optional CSV list fallback if you do not use `/setapprole`)

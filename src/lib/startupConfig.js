@@ -292,6 +292,12 @@ function loadStartupConfig(options = {}) {
     reminderRepeatHours: parseNumberEnv(env, "REMINDER_REPEAT_HOURS", 12, {
       min: 0.5,
     }, errors),
+    autoRegisterTracksFromForm: parseBooleanEnv(
+      env,
+      "AUTO_REGISTER_TRACKS_FROM_FORM",
+      false,
+      warnings
+    ),
     dailyDigestEnabled: normalizeString(env.DAILY_DIGEST_ENABLED || "true")
       .toLowerCase() !== "false",
     dailyDigestHourUtc: parseNumberEnv(env, "DAILY_DIGEST_HOUR_UTC", 15, {

@@ -160,6 +160,11 @@ function createDebugAndFeedbackUtils(options = {}) {
       `Client ID matches bot user ID: ${client.user?.id === config.clientId ? "yes" : "no"}`
     );
     lines.push(`Interaction Guild ID: ${interaction.guildId || "none"}`);
+    lines.push(
+      `Auto Track Registration From Form: ${
+        config.autoRegisterTracksFromForm === true ? "enabled" : "disabled"
+      }`
+    );
     lines.push(`State File Path: ${getStateFilePath() || config.stateFile || "unknown"}`);
     lines.push(
       `Posting Enabled (channel configured): ${

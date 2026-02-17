@@ -21,6 +21,7 @@ const DEFAULT_AUTO_TRACK_SKIP_VALUES = [
 ];
 
 function createTrackAutoManager(options = {}) {
+  const autoTrackRegistrationEnabled = options.autoTrackRegistrationEnabled === true;
   const autoTrackHeaderHints = Array.isArray(options.autoTrackHeaderHints)
     ? options.autoTrackHeaderHints
     : DEFAULT_AUTO_TRACK_HEADER_HINTS;
@@ -165,6 +166,9 @@ function createTrackAutoManager(options = {}) {
   }
 
   function autoRegisterTracksFromFormRow(state, headers, row) {
+    if (!autoTrackRegistrationEnabled) {
+      return [];
+    }
     const createdTrackKeys = new Set();
     const rawTrackValues = collectTrackValuesFromFormFields(headers, row);
 

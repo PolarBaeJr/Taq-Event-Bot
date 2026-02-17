@@ -260,6 +260,7 @@ const {
   upsertCustomTrackInState,
   autoRegisterTracksFromFormRow,
 } = createTrackAutoManager({
+  autoTrackRegistrationEnabled: config.autoRegisterTracksFromForm === true,
   setRuntimeCustomTracks,
   normalizeTrackMap,
   normalizeTrackRoleMap,

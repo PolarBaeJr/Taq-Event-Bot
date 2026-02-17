@@ -33,3 +33,18 @@ test("startup config validation reports malformed ids", () => {
   assert.ok(result.warnings.some((message) => message.includes("DISCORD_TESTER_CHANNEL_ID")));
   assert.ok(result.warnings.some((message) => message.includes("DISCORD_TESTER_APPROVED_ROLE_IDS")));
 });
+
+test("startup config defaults auto track registration to disabled", () => {
+  const result = loadStartupConfig({
+    env: {
+      GOOGLE_SPREADSHEET_ID: "sheet",
+      GOOGLE_SHEET_NAME: "Form Responses",
+      DISCORD_BOT_TOKEN: "token",
+      DISCORD_CLIENT_ID: "123456789012345678",
+      GOOGLE_SERVICE_ACCOUNT_JSON: "{}",
+    },
+    cwd: process.cwd(),
+  });
+
+  assert.equal(result.config.autoRegisterTracksFromForm, false);
+});
