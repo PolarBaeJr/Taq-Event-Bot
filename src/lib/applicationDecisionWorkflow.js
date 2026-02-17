@@ -37,6 +37,9 @@ function createApplicationDecisionWorkflow(options = {}) {
     typeof options.grantApprovedRoleOnAcceptance === "function"
       ? options.grantApprovedRoleOnAcceptance
       : async () => ({ message: "No role action recorded." });
+  const missingMemberRoleStatusValue = String(
+    options.missingMemberRoleStatusValue || "failed_member_not_found"
+  );
   const sendAcceptedApplicationAnnouncement =
     typeof options.sendAcceptedApplicationAnnouncement === "function"
       ? options.sendAcceptedApplicationAnnouncement
@@ -93,6 +96,42 @@ function createApplicationDecisionWorkflow(options = {}) {
       }
       return editableEmbed;
     });
+  }
+
+  async function postAcceptanceBlockedUpdate(application, reason) {
+    const summary = [
+      "⚠️ **Acceptance Blocked**",
+      reason,
+      "Application remains pending.",
+      "Use `/accept ... mode:force` to accept anyway.",
+    ].join("\n");
+
+    try {
+      const parentChannel = await client.channels.fetch(application.channelId);
+      if (parentChannel && parentChannel.isTextBased()) {
+        const message = await parentChannel.messages.fetch(application.messageId);
+        await message.reply({ content: summary, allowedMentions: { parse: [] } });
+      }
+    } catch (err) {
+      console.error(
+        `Failed posting blocked-accept notice to parent message ${application.messageId}:`,
+        err.message
+      );
+    }
+
+    if (application.threadId) {
+      try {
+        const thread = await client.channels.fetch(application.threadId);
+        if (thread && thread.isTextBased()) {
+          await thread.send({ content: summary, allowedMentions: { parse: [] } });
+        }
+      } catch (err) {
+        console.error(
+          `Failed posting blocked-accept notice to thread ${application.threadId}:`,
+          err.message
+        );
+      }
+    }
   }
 
   async function getReviewersWithChannelAccess(channel, trackKey) {
@@ -364,6 +403,7 @@ function createApplicationDecisionWorkflow(options = {}) {
     application.decisionSource = null;
     application.decisionReason = null;
     application.approvedRoleResult = null;
+    application.lastAcceptanceBlock = null;
     application.acceptAnnounceResult = null;
     application.denyDmResult = null;
     application.voteContext = null;
@@ -401,29 +441,71 @@ function createApplicationDecisionWorkflow(options = {}) {
     }
 
     application.applicationId = getApplicationDisplayId(application, messageId);
-    application.status = decision;
-    application.decidedAt = new Date().toISOString();
-    application.decidedBy = actorId;
-    application.decisionSource = sourceLabel;
-    application.decisionReason = String(context?.reason || "").trim() || null;
-
     const voteContext =
       context?.voteContext && typeof context.voteContext === "object"
         ? context.voteContext
         : null;
+    const allowMissingMemberAccept = context?.allowMissingMemberAccept === true;
+    const normalizedDecisionReason = String(context?.reason || "").trim() || null;
+    const decidedAt = new Date().toISOString();
     let decisionReason =
       sourceLabel === "vote"
         ? `Decision reached by vote. YES ${voteContext?.yesCount ?? "?"}/${voteContext?.eligibleCount ?? "?"}, NO ${voteContext?.noCount ?? "?"}/${voteContext?.eligibleCount ?? "?"}, threshold ${voteContext?.threshold ?? "?"} using ${voteContext ? formatVoteRule(voteContext.rule) : "configured vote rule"}.`
         : `Forced by <@${actorId}> using slash command.`;
-    if (application.decisionReason) {
-      decisionReason = `${decisionReason}\nReviewer reason: ${application.decisionReason}`;
-    }
-    if (voteContext) {
-      application.voteContext = voteContext;
+    if (normalizedDecisionReason) {
+      decisionReason = `${decisionReason}\nReviewer reason: ${normalizedDecisionReason}`;
     }
 
     if (decision === statusAccepted) {
-      const roleResult = await grantApprovedRoleOnAcceptance(application);
+      const roleResult = await grantApprovedRoleOnAcceptance(application, {
+        postMissingMemberThreadNotice: allowMissingMemberAccept,
+      });
+
+      if (
+        roleResult?.status === missingMemberRoleStatusValue &&
+        !allowMissingMemberAccept
+      ) {
+        const blockReason = String(roleResult.message || "").trim() ||
+          "Applicant is not in this server.";
+        const alreadyWarned = Boolean(
+          application.lastAcceptanceBlock &&
+            application.lastAcceptanceBlock.status === missingMemberRoleStatusValue &&
+            String(application.lastAcceptanceBlock.userId || "") ===
+              String(roleResult.userId || "")
+        );
+
+        application.lastAcceptanceBlock = {
+          status: missingMemberRoleStatusValue,
+          userId: roleResult.userId || null,
+          reason: blockReason,
+          source: sourceLabel,
+          actorId: actorId || null,
+          warnedAt: decidedAt,
+        };
+        writeState(state);
+
+        if (!alreadyWarned) {
+          await postAcceptanceBlockedUpdate(application, blockReason);
+        }
+
+        return {
+          ok: false,
+          reason: "missing_member_not_in_guild",
+          roleResult,
+          warningPosted: !alreadyWarned,
+          application,
+        };
+      }
+
+      application.status = decision;
+      application.decidedAt = decidedAt;
+      application.decidedBy = actorId;
+      application.decisionSource = sourceLabel;
+      application.decisionReason = normalizedDecisionReason;
+      application.lastAcceptanceBlock = null;
+      if (voteContext) {
+        application.voteContext = voteContext;
+      }
       application.approvedRoleResult = roleResult;
       decisionReason = `${decisionReason}\n${roleResult.message}`;
       const acceptAnnounceResult = await sendAcceptedApplicationAnnouncement(
@@ -433,6 +515,15 @@ function createApplicationDecisionWorkflow(options = {}) {
       application.acceptAnnounceResult = acceptAnnounceResult;
       decisionReason = `${decisionReason}\n${acceptAnnounceResult.message}`;
     } else if (decision === statusDenied) {
+      application.status = decision;
+      application.decidedAt = decidedAt;
+      application.decidedBy = actorId;
+      application.decisionSource = sourceLabel;
+      application.decisionReason = normalizedDecisionReason;
+      application.lastAcceptanceBlock = null;
+      if (voteContext) {
+        application.voteContext = voteContext;
+      }
       const denyDmReason = application.decisionReason || decisionReason;
       const denyDmResult = await sendDeniedApplicationDm(application, denyDmReason);
       application.denyDmResult = denyDmResult;
@@ -445,7 +536,7 @@ function createApplicationDecisionWorkflow(options = {}) {
     await postForcedDecisionTemplateToThread(application, decision, decisionReason);
     await postClosureLog(application);
 
-    return { ok: true };
+    return { ok: true, application };
   }
 
   async function evaluateAndApplyVoteDecision(messageId) {

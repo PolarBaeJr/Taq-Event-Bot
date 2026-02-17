@@ -248,7 +248,9 @@ function createApplicationDecisionUtils(options = {}) {
     }
   }
 
-  async function grantApprovedRoleOnAcceptance(application) {
+  async function grantApprovedRoleOnAcceptance(application, behavior = {}) {
+    const postMissingMemberThreadNotice =
+      behavior?.postMissingMemberThreadNotice === true;
     const trackKey = normalizeTrackKey(application.trackKey) || defaultTrackKey;
     const trackLabel = getTrackLabel(trackKey);
     const approvedRoleIds = getActiveApprovedRoleIds(trackKey);
@@ -300,7 +302,10 @@ function createApplicationDecisionUtils(options = {}) {
       }
 
       if (!member) {
-        const noticePosted = await postApplicantNotInDiscordThreadNotice(application);
+        let noticePosted = false;
+        if (postMissingMemberThreadNotice) {
+          noticePosted = await postApplicantNotInDiscordThreadNotice(application);
+        }
         return {
           status: "failed_member_not_found",
           message: `Applicant user <@${application.applicantUserId}> is not in this server.${noticePosted ? " Posted configured not-in-server notice in the application thread." : ""}`,

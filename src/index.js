@@ -180,6 +180,7 @@ const BASE_SETCHANNEL_TRACK_OPTIONS = Object.freeze([
 const STATUS_PENDING = "pending";
 const STATUS_ACCEPTED = "accepted";
 const STATUS_DENIED = "denied";
+const APPROVED_ROLE_STATUS_MEMBER_NOT_FOUND = "failed_member_not_found";
 const DEBUG_MODE_REPORT = "report";
 const DEBUG_MODE_POST_TEST = "post_test";
 const DEBUG_MODE_ACCEPT_TEST = "accept_test";
@@ -1496,6 +1497,75 @@ function buildDashboardMessage() {
   }
 
   return [...header, ...lines].join("\n");
+}
+
+function buildUnassignedRoleMessage({ limit } = {}) {
+  const state = readState();
+  const maxItems = clampInteger(limit, {
+    min: 1,
+    max: 50,
+    fallback: 15,
+  });
+  const applications = Object.entries(state.applications || {})
+    .map(([messageId, application]) => ({
+      messageId,
+      ...(application && typeof application === "object" ? application : {}),
+    }))
+    .filter(
+      (application) =>
+        application.status === STATUS_ACCEPTED &&
+        String(application?.approvedRoleResult?.status || "") ===
+          APPROVED_ROLE_STATUS_MEMBER_NOT_FOUND
+    )
+    .sort((left, right) => {
+      const leftDecided = parseIsoTimeMs(left.decidedAt);
+      const rightDecided = parseIsoTimeMs(right.decidedAt);
+      const leftMs = Number.isFinite(leftDecided) ? leftDecided : 0;
+      const rightMs = Number.isFinite(rightDecided) ? rightDecided : 0;
+      if (leftMs !== rightMs) {
+        return rightMs - leftMs;
+      }
+      return String(left.messageId || "").localeCompare(String(right.messageId || ""));
+    });
+
+  if (applications.length === 0) {
+    return [
+      "✅ **Unassigned Roles**",
+      "No accepted applications are pending role assignment for users outside the server.",
+    ].join("\n");
+  }
+
+  const lines = [
+    "⚠️ **Unassigned Roles (Accepted but user not in server)**",
+    `Total: ${applications.length}`,
+  ];
+  const shown = applications.slice(0, maxItems);
+  let overflowCount = 0;
+
+  for (let index = 0; index < shown.length; index += 1) {
+    const application = shown[index];
+    const trackLabel = getTrackLabel(application.trackKey);
+    const applicationId = getApplicationDisplayId(application, application.messageId);
+    const applicantUserLabel = isSnowflake(application.applicantUserId)
+      ? `<@${application.applicantUserId}>`
+      : application.applicantName || "Unknown";
+    const decidedAt = application.decidedAt || "unknown";
+    const line = `${index + 1}. \`${applicationId}\` | track=${trackLabel} | user=${applicantUserLabel} | decided=${decidedAt}`;
+    const nextContent = [...lines, line].join("\n");
+    if (nextContent.length > 1850) {
+      overflowCount = shown.length - index;
+      break;
+    }
+    lines.push(line);
+  }
+
+  if (overflowCount > 0) {
+    lines.push(`...and ${overflowCount} more (increase \`limit\` up to 50).`);
+  } else if (applications.length > shown.length) {
+    lines.push(`...and ${applications.length - shown.length} more (increase \`limit\` up to 50).`);
+  }
+
+  return lines.join("\n");
 }
 
 function buildSettingsMessage() {
@@ -2877,6 +2947,7 @@ const {
   computeVoteThreshold,
   getTrackVoterRoleIds,
   grantApprovedRoleOnAcceptance,
+  missingMemberRoleStatusValue: APPROVED_ROLE_STATUS_MEMBER_NOT_FOUND,
   sendAcceptedApplicationAnnouncement,
   sendDeniedApplicationDm,
   postClosureLog,
@@ -3089,6 +3160,7 @@ const onInteractionCreate = createInteractionCommandHandler({
   repostTrackedApplications,
   buildDashboardMessage,
   buildUptimeMessage,
+  buildUnassignedRoleMessage,
   buildSettingsMessage,
   setTrackVoteRule,
   setTrackVoterRoles,

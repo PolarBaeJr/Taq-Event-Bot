@@ -258,3 +258,37 @@ test("buildSlashCommands includes /repostapps command", () => {
   const repostApps = commands.find((command) => command.name === "repostapps");
   assert.ok(repostApps, "repostapps command should exist");
 });
+
+test("buildSlashCommands includes /accept mode option and /unassignedrole command", () => {
+  const { buildSlashCommands } = createSlashCommandLifecycle({
+    config: {},
+    client: {
+      guilds: {
+        cache: new Map(),
+      },
+    },
+    REST: function REST() {},
+    Routes: {},
+    SlashCommandBuilder,
+    baseSetChannelTrackOptions: [],
+    debugModes: {
+      report: "report",
+      post_test: "post_test",
+      accept_test: "accept_test",
+      deny_test: "deny_test",
+    },
+    getApplicationTrackKeys: () => ["tester"],
+    getTrackLabel: () => "Tester",
+  });
+
+  const commands = buildSlashCommands();
+  const accept = commands.find((command) => command.name === "accept");
+  assert.ok(accept, "accept command should exist");
+  const acceptOptionNames = new Set(
+    (Array.isArray(accept.options) ? accept.options : []).map((option) => option.name)
+  );
+  assert.ok(acceptOptionNames.has("mode"));
+
+  const unassignedRole = commands.find((command) => command.name === "unassignedrole");
+  assert.ok(unassignedRole, "unassignedrole command should exist");
+});

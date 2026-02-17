@@ -2,7 +2,7 @@
 
 This directory is auto-generated from `src/index.js` and contains one top-level function per file for easier reading.
 
-Generated functions: 99
+Generated functions: 100
 
 - `sendOperationalAlert.js`
 - `normalizeCell.js`
@@ -66,6 +66,7 @@ Generated functions: 99
 - `formatUtcDateKey.js`
 - `parseIsoTimeMs.js`
 - `buildDashboardMessage.js`
+- `buildUnassignedRoleMessage.js`
 - `buildSettingsMessage.js`
 - `stripCodeFence.js`
 - `exportAdminConfig.js`

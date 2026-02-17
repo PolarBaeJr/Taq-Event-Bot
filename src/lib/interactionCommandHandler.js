@@ -116,6 +116,10 @@ function createInteractionCommandHandler(options = {}) {
   const buildUptimeMessage = typeof options.buildUptimeMessage === "function"
     ? options.buildUptimeMessage
     : () => "⏱️ Uptime is unavailable.";
+  const buildUnassignedRoleMessage =
+    typeof options.buildUnassignedRoleMessage === "function"
+      ? options.buildUnassignedRoleMessage
+      : () => "⚠️ Unassigned-role report is unavailable.";
   const buildSettingsMessage = options.buildSettingsMessage;
   const setTrackVoteRule = options.setTrackVoteRule;
   const setReminderConfiguration = options.setReminderConfiguration;
@@ -1301,6 +1305,7 @@ function createInteractionCommandHandler(options = {}) {
       const isTrackCommand = interaction.commandName === "track";
       const isDashboard = interaction.commandName === "dashboard";
       const isUptime = interaction.commandName === "uptime";
+      const isUnassignedRole = interaction.commandName === "unassignedrole";
       const isSettings = interaction.commandName === "settings";
       const isConfig = interaction.commandName === "config";
       const isSetDenyMsg = interaction.commandName === "setdenymsg";
@@ -1329,6 +1334,7 @@ function createInteractionCommandHandler(options = {}) {
         !isTrackCommand &&
         !isDashboard &&
         !isUptime &&
+        !isUnassignedRole &&
         !isSettings &&
         !isConfig &&
         !isSetDenyMsg &&
@@ -1379,6 +1385,26 @@ function createInteractionCommandHandler(options = {}) {
         (memberPerms.has(PermissionsBitField.Flags.ManageGuild) &&
           memberPerms.has(PermissionsBitField.Flags.ManageRoles));
       const canManageRolesConfig = hasManageRolesConfigPermission(memberPerms);
+
+      if (isUnassignedRole) {
+        if (!canManageServer) {
+          await interaction.reply({
+            content: "You need Manage Server permission (or Administrator) to use /unassignedrole.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        const limitInput = interaction.options.getInteger("limit");
+        await interaction.reply({
+          content: buildUnassignedRoleMessage({
+            limit: limitInput === null ? undefined : limitInput,
+          }),
+          ephemeral: true,
+          allowedMentions: { parse: [] },
+        });
+        return;
+      }
 
       if (isBug) {
         await relayFeedbackCommand({
@@ -3721,6 +3747,10 @@ function createInteractionCommandHandler(options = {}) {
       const suppliedApplicationId = interaction.options.getString("application_id");
       const suppliedJobId = interaction.options.getString("job_id");
       const suppliedReason = String(interaction.options.getString("reason") || "").trim();
+      const acceptModeRaw = isAccept
+        ? String(interaction.options.getString("mode") || "normal").trim().toLowerCase()
+        : "normal";
+      const acceptMode = acceptModeRaw === "force" ? "force" : "normal";
       const messageId = resolveMessageIdForCommand(interaction);
       logInteractionDebug(
         "decision_command_received",
@@ -3732,6 +3762,7 @@ function createInteractionCommandHandler(options = {}) {
           suppliedApplicationId: suppliedApplicationId || null,
           suppliedJobId: suppliedJobId || null,
           hasReason: Boolean(suppliedReason),
+          acceptMode: isAccept ? acceptMode : null,
         }
       );
       if (!messageId) {
@@ -3753,6 +3784,7 @@ function createInteractionCommandHandler(options = {}) {
         interaction.user.id,
         {
           reason: suppliedReason,
+          allowMissingMemberAccept: isAccept && acceptMode === "force",
         }
       );
 
@@ -3774,10 +3806,19 @@ function createInteractionCommandHandler(options = {}) {
         return;
       }
 
+      if (!result.ok && result.reason === "missing_member_not_in_guild") {
+        await interaction.reply({
+          content:
+            "Acceptance blocked: applicant is not in this server. The application is still pending. Use `/accept ... mode:force` if you want to accept anyway.",
+          ephemeral: true,
+        });
+        return;
+      }
+
       await interaction.reply({
         content: suppliedReason
-          ? `Application ${decision} by force command. Reason saved: ${suppliedReason}`
-          : `Application ${decision} by force command.`,
+          ? `Application ${decision} by force command${isAccept ? ` (mode: ${acceptMode})` : ""}. Reason saved: ${suppliedReason}`
+          : `Application ${decision} by force command${isAccept ? ` (mode: ${acceptMode})` : ""}.`,
         ephemeral: true,
       });
       logInteractionDebug(

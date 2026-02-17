@@ -6,7 +6,7 @@ Simple Node.js bot that:
 2. Routes applications to per-track channels (`Tester`, `Builder`, `CMD`) and posts with the bot account.
 3. Adds `✅` and `❌` reactions for approve/decline voting.
 4. Uses per-track configurable vote thresholds (default `2/3`, minimum 1 vote) for decisions.
-5. Supports force override with `/accept` and `/deny` (with optional reason), and undo flow with `/reopen`.
+5. Supports decision overrides with `/accept` and `/deny` (with optional reason), and undo flow with `/reopen` (`/accept mode:force` bypasses missing-member block).
 6. Supports `/setchannel` so you can configure track channels in Discord (no code edit).
 7. `/setchannel` configures tester/builder/cmd post channels, application log channel, log channel, accept-message channel, bug channel, and suggestions channel.
 8. Posts applications, bug reports, and suggestions in embedded format.
@@ -302,8 +302,11 @@ Config backup/restore:
 Decision controls:
 ```text
 /accept job_id:job-000123 reason:Strong trial + clean history
+/accept job_id:job-000123 mode:force reason:Accepting before user joins server
 /deny message_id:1234567890123456789 reason:Missing requirements
 /reopen job_id:job-000123 reason:Needs second review
+/unassignedrole
+/unassignedrole limit:25
 ```
 
 Post a structured bot message in the current channel:
@@ -463,12 +466,16 @@ pm2 restart taq-event-bot --update-env
 - On startup, the bot audits required permissions and exits with missing permission names if setup is incomplete.
 - `/accept` and `/deny` require both `Manage Server` and `Manage Roles`, or `Administrator`.
 - `/accept` and `/deny` can target by `message_id`, by `job_id`, or from inside the application thread, and support optional `reason`.
+- `/accept` supports `mode:normal` (default) and `mode:force`.
 - If one `job_id` created multiple track posts, run `/accept` or `/deny` inside the target track thread/channel, or pass `message_id`.
 - Forced `/accept` and `/deny` also post the rendered accept/deny message template into that specific application thread.
+- Automatic vote acceptance and `/accept mode:normal` are blocked when applicant is not in the server; the bot posts a warning and keeps the application pending.
+- `/accept mode:force` can accept anyway when applicant is not in the server.
 - If an accepted applicant is not in the server, the bot posts the configurable missing-user thread notice message (default: `user not in discord please dm`).
 - `/reopen` reopens a decided application back to pending (it does not auto-revert prior side effects).
 - `/dashboard` shows per-track pending/accepted/denied counts, oldest pending age, and vote rule.
 - `/uptime` shows how long the current bot process has been running.
+- `/unassignedrole` lists accepted applications where role assignment failed because the applicant is not in server.
 - `/repostapps` replays tracked historical applications back into configured post channels in row order.
 - `/settings` controls vote rules, vote-eligible role filters, stale reminders, reviewer assignment, daily digests, and active Google Sheet source overrides.
 - `/config export` DMs JSON config backup; `/config import` restores settings from JSON.

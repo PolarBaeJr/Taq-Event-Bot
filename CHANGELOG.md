@@ -20,6 +20,16 @@ All notable changes to this project are documented in this file.
 - Startup config validation no longer fails hard when optional Discord ID env vars contain placeholder values; invalid optional IDs are now ignored with warnings.
 - Startup config path resolution no longer trims `cwd`, which fixes false missing-file errors for `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` in paths containing trailing spaces.
 
+## [1.3.15] - 2026-02-17
+
+### Added
+- New `/accept mode` option with `normal` and `force` choices.
+- New `/unassignedrole` command to list accepted applications that could not receive roles because the applicant is not in the server.
+
+### Changed
+- Normal acceptance now blocks when the applicant is not in the server, keeps the application pending, and posts a warning in the application thread/channel.
+- `/accept mode:force` bypasses the missing-member acceptance block and accepts anyway.
+
 ## [1.3.14] - 2026-02-17
 
 ### Added

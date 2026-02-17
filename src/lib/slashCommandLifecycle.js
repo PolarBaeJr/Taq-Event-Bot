@@ -189,7 +189,7 @@ function createSlashCommandLifecycle(options = {}) {
     return [
       new SlashCommandBuilder()
         .setName("accept")
-        .setDescription("Force-accept an application")
+        .setDescription("Accept an application")
         .addStringOption((option) =>
           option
             .setName("message_id")
@@ -212,6 +212,22 @@ function createSlashCommandLifecycle(options = {}) {
           option
             .setName("reason")
             .setDescription("Optional reason to store in logs/DM templates")
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("mode")
+            .setDescription("Accept mode (`force` accepts even if user is not in server)")
+            .addChoices(
+              {
+                name: "Normal (block if user not in server)",
+                value: "normal",
+              },
+              {
+                name: "Force (accept anyway)",
+                value: "force",
+              }
+            )
             .setRequired(false)
         ),
       new SlashCommandBuilder()
@@ -483,6 +499,17 @@ function createSlashCommandLifecycle(options = {}) {
       new SlashCommandBuilder()
         .setName("uptime")
         .setDescription("Show how long the bot process has been running"),
+      new SlashCommandBuilder()
+        .setName("unassignedrole")
+        .setDescription("List accepted applications that could not get roles (user not in server)")
+        .addIntegerOption((option) =>
+          option
+            .setName("limit")
+            .setDescription("Maximum rows to show")
+            .setMinValue(1)
+            .setMaxValue(50)
+            .setRequired(false)
+        ),
       new SlashCommandBuilder()
         .setName("reopen")
         .setDescription("Reopen a previously accepted/denied application")
