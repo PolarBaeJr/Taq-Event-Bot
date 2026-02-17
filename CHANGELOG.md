@@ -20,6 +20,15 @@ All notable changes to this project are documented in this file.
 - Startup config validation no longer fails hard when optional Discord ID env vars contain placeholder values; invalid optional IDs are now ignored with warnings.
 - Startup config path resolution no longer trims `cwd`, which fixes false missing-file errors for `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` in paths containing trailing spaces.
 
+## [1.3.3] - 2026-02-17
+
+### Added
+- Interaction debug instrumentation for slash commands, GUI component interactions, and modal submissions.
+- Command-level trace logs for newer configuration/admin workflows (`/setapprole`, `/useapprole`, `/reactionrole`, `/embedmsg`, `/embededit`, `/setchannel`, `/settings`, `/config`, `/track`).
+
+### Changed
+- Global interaction failure logging now includes stack traces, option summaries, select-menu values, and modal field summaries to make generic "Failed to process command." errors diagnosable.
+
 ## [1.3.2] - 2026-02-17
 
 ### Added

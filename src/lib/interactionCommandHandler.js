@@ -528,6 +528,113 @@ function createInteractionCommandHandler(options = {}) {
     return parseRoleIdList([...namedRoleOptionIds, ...discoveredRoleIds]);
   }
 
+  function summarizeDebugString(value, maxLength = 120) {
+    const raw = String(value ?? "");
+    if (raw.length <= maxLength) {
+      return raw;
+    }
+    return `${raw.slice(0, maxLength)}...(${raw.length})`;
+  }
+
+  function summarizeCommandOptionValue(optionName, value) {
+    if (value === undefined || value === null) {
+      return null;
+    }
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      const isLargeText =
+        /(json|message|description|line_|footer|title|mentions)/i.test(
+          String(optionName || "")
+        ) && trimmed.length > 40;
+      if (isLargeText) {
+        return `${summarizeDebugString(trimmed, 40)} [len=${trimmed.length}]`;
+      }
+      return summarizeDebugString(trimmed, 120);
+    }
+    if (typeof value === "number" || typeof value === "boolean") {
+      return value;
+    }
+    if (typeof value === "object") {
+      return summarizeDebugString(JSON.stringify(value), 120);
+    }
+    return summarizeDebugString(String(value), 120);
+  }
+
+  function summarizeCommandOptionsForDebug(interaction) {
+    const options = flattenCommandOptions(interaction?.options?.data);
+    if (!Array.isArray(options) || options.length === 0) {
+      return [];
+    }
+    return options.slice(0, 25).map((option) => ({
+      name: String(option?.name || ""),
+      type: Number(option?.type) || null,
+      value: summarizeCommandOptionValue(option?.name, option?.value),
+    }));
+  }
+
+  function summarizeModalFieldsForDebug(interaction) {
+    const fields = interaction?.fields?.fields;
+    if (!fields || typeof fields.values !== "function") {
+      return [];
+    }
+    return Array.from(fields.values())
+      .slice(0, 25)
+      .map((field) => {
+        const value = String(field?.value || "");
+        return {
+          id: String(field?.customId || ""),
+          length: value.length,
+          preview: summarizeDebugString(value.trim(), 40),
+        };
+      });
+  }
+
+  function buildInteractionDebugContext(interaction, extra = {}) {
+    const type =
+      interaction && interaction.type !== undefined && interaction.type !== null
+        ? Number(interaction.type)
+        : null;
+    const subcommand = safeGetSubcommand(interaction);
+    return {
+      interactionId: interaction?.id || null,
+      interactionType: Number.isFinite(type) ? type : null,
+      commandName: interaction?.commandName || null,
+      subcommand: subcommand || null,
+      customId: interaction?.customId || null,
+      userId: interaction?.user?.id || null,
+      guildId: interaction?.guildId || null,
+      channelId: interaction?.channelId || null,
+      deferred: Boolean(interaction?.deferred),
+      replied: Boolean(interaction?.replied),
+      ...extra,
+    };
+  }
+
+  function logInteractionDebug(event, message, interaction, extra = {}) {
+    if (!logger || typeof logger.info !== "function") {
+      return;
+    }
+    logger.info(event, message, buildInteractionDebugContext(interaction, extra));
+  }
+
+  function logInteractionFailure(event, message, interaction, err, extra = {}) {
+    const payload = buildInteractionDebugContext(interaction, {
+      ...extra,
+      error: err?.message || String(err || ""),
+      stack: typeof err?.stack === "string" ? summarizeDebugString(err.stack, 4000) : null,
+      options: summarizeCommandOptionsForDebug(interaction),
+      values: Array.isArray(interaction?.values)
+        ? interaction.values.slice(0, 10).map((value) => summarizeDebugString(value, 120))
+        : [],
+      modalFields: summarizeModalFieldsForDebug(interaction),
+    });
+    if (logger && typeof logger.error === "function") {
+      logger.error(event, message, payload);
+      return;
+    }
+    console.error(message, payload);
+  }
+
   return async function onInteractionCreate(interaction) {
     try {
       const refreshCommandsIfNeeded = () => {
@@ -555,6 +662,17 @@ function createInteractionCommandHandler(options = {}) {
         if (!guiContext || guiContext.action !== APPROLE_GUI_ACTION_TRACK) {
           return;
         }
+
+        logInteractionDebug(
+          "accepted_roles_gui_track_select_received",
+          "Received accepted-roles track select interaction.",
+          interaction,
+          {
+            values: Array.isArray(interaction.values)
+              ? interaction.values.slice(0, 5)
+              : [],
+          }
+        );
 
         if (!interaction.inGuild()) {
           await interaction.reply({
@@ -605,6 +723,15 @@ function createInteractionCommandHandler(options = {}) {
           ].join("\n"),
           components: buildAppRoleGuiComponents(interaction.user.id, selectedTrack),
         });
+        logInteractionDebug(
+          "accepted_roles_gui_track_select_applied",
+          "Accepted-roles GUI track selected.",
+          interaction,
+          {
+            trackKey: selectedTrack,
+            currentRoleCount: currentRoleIds.length,
+          }
+        );
         return;
       }
 
@@ -613,6 +740,18 @@ function createInteractionCommandHandler(options = {}) {
         if (!guiContext || guiContext.action !== APPROLE_GUI_ACTION_ROLES) {
           return;
         }
+
+        logInteractionDebug(
+          "accepted_roles_gui_role_select_received",
+          "Received accepted-roles role select interaction.",
+          interaction,
+          {
+            values: Array.isArray(interaction.values)
+              ? interaction.values.slice(0, 5)
+              : [],
+            trackKey: guiContext.trackKey || null,
+          }
+        );
 
         if (!interaction.inGuild()) {
           await interaction.reply({
@@ -653,6 +792,16 @@ function createInteractionCommandHandler(options = {}) {
         try {
           roleUpdate = setActiveApprovedRoles(selectedTrack, selectedRoleIds);
         } catch (err) {
+          logInteractionFailure(
+            "accepted_roles_gui_role_update_failed",
+            "Failed updating accepted roles from GUI selector.",
+            interaction,
+            err,
+            {
+              trackKey: selectedTrack,
+              selectedRoleIds,
+            }
+          );
           await interaction.reply({
             content: err?.message || "Failed updating accepted roles.",
             ephemeral: true,
@@ -679,6 +828,16 @@ function createInteractionCommandHandler(options = {}) {
           `**Roles (${roleUpdate.roleIds.length}):** ${currentRoleMentions}`,
           "**Source:** GUI panel",
         ]);
+        logInteractionDebug(
+          "accepted_roles_gui_role_update_applied",
+          "Accepted roles updated from GUI selector.",
+          interaction,
+          {
+            trackKey: selectedTrack,
+            roleCount: roleUpdate.roleIds.length,
+            roleIds: roleUpdate.roleIds,
+          }
+        );
         return;
       }
 
@@ -687,6 +846,15 @@ function createInteractionCommandHandler(options = {}) {
         if (!guiContext) {
           return;
         }
+
+        logInteractionDebug(
+          "reaction_role_gui_button_received",
+          "Received reaction-role GUI button interaction.",
+          interaction,
+          {
+            action: guiContext.action || null,
+          }
+        );
 
         if (!interaction.inGuild()) {
           await interaction.reply({
@@ -731,6 +899,16 @@ function createInteractionCommandHandler(options = {}) {
         if (!guiContext) {
           return;
         }
+
+        logInteractionDebug(
+          "reaction_role_gui_modal_received",
+          "Received reaction-role GUI modal interaction.",
+          interaction,
+          {
+            action: guiContext.action || null,
+            modalFields: summarizeModalFieldsForDebug(interaction),
+          }
+        );
 
         if (!interaction.inGuild()) {
           await interaction.reply({
@@ -824,6 +1002,19 @@ function createInteractionCommandHandler(options = {}) {
               actorId: interaction.user.id,
             });
           } catch (err) {
+            logInteractionFailure(
+              "reaction_role_modal_create_failed",
+              "Failed creating reaction-role mapping from modal.",
+              interaction,
+              err,
+              {
+                action: guiContext.action,
+                messageId,
+                channelId: targetChannel.id,
+                roleId: role.id,
+                emoji,
+              }
+            );
             await interaction.reply({
               content: err.message || "Failed saving reaction role mapping.",
               ephemeral: true,
@@ -886,6 +1077,19 @@ function createInteractionCommandHandler(options = {}) {
             `**Channel:** <#${targetChannel.id}>`,
             `**Message ID:** \`${messageId}\``,
           ]);
+          logInteractionDebug(
+            "reaction_role_modal_create_applied",
+            "Reaction-role mapping created/updated from modal.",
+            interaction,
+            {
+              action: guiContext.action,
+              created: Boolean(result.created),
+              channelId: targetChannel.id,
+              messageId,
+              roleId: role.id,
+              emoji: result.binding.emojiDisplay,
+            }
+          );
           return;
         }
 
@@ -898,6 +1102,18 @@ function createInteractionCommandHandler(options = {}) {
             emojiInput: emoji,
           });
         } catch (err) {
+          logInteractionFailure(
+            "reaction_role_modal_remove_failed",
+            "Failed removing reaction-role mapping from modal.",
+            interaction,
+            err,
+            {
+              action: guiContext.action,
+              messageId,
+              channelId: targetChannel.id,
+              emoji,
+            }
+          );
           await interaction.reply({
             content: err.message || "Failed removing reaction role mapping.",
             ephemeral: true,
@@ -930,6 +1146,18 @@ function createInteractionCommandHandler(options = {}) {
           `**Channel:** <#${targetChannel.id}>`,
           `**Message ID:** \`${messageId}\``,
         ]);
+        logInteractionDebug(
+          "reaction_role_modal_remove_applied",
+          "Reaction-role mapping removed from modal.",
+          interaction,
+          {
+            action: guiContext.action,
+            channelId: targetChannel.id,
+            messageId,
+            roleId: removal.binding.roleId,
+            emoji: removal.binding.emojiDisplay,
+          }
+        );
         return;
       }
 
@@ -1083,6 +1311,15 @@ function createInteractionCommandHandler(options = {}) {
         return;
       }
 
+      logInteractionDebug(
+        "interaction_command_received",
+        "Received slash command interaction.",
+        interaction,
+        {
+          options: summarizeCommandOptionsForDebug(interaction),
+        }
+      );
+
       if (isUptime) {
         await interaction.reply({
           content: buildUptimeMessage(),
@@ -1159,11 +1396,27 @@ function createInteractionCommandHandler(options = {}) {
         }
 
         const subcommand = interaction.options.getSubcommand(true);
+        logInteractionDebug(
+          "settings_command_received",
+          "Processing settings command.",
+          interaction,
+          {
+            subcommand,
+          }
+        );
         if (subcommand === "show") {
           await interaction.reply({
             content: buildSettingsMessage(),
             ephemeral: true,
           });
+          logInteractionDebug(
+            "settings_show_completed",
+            "Returned settings summary.",
+            interaction,
+            {
+              subcommand,
+            }
+          );
           return;
         }
 
@@ -1196,6 +1449,15 @@ function createInteractionCommandHandler(options = {}) {
             `**Track:** ${update.trackLabel}`,
             `**Rule:** ${formatVoteRule(update.voteRule)}`,
           ]);
+          logInteractionDebug(
+            "settings_vote_updated",
+            "Updated settings vote rule.",
+            interaction,
+            {
+              subcommand,
+              trackLabel: update.trackLabel,
+            }
+          );
           return;
         }
 
@@ -1229,6 +1491,17 @@ function createInteractionCommandHandler(options = {}) {
             `**Threshold:** ${next.thresholdHours}h`,
             `**Repeat:** ${next.repeatHours}h`,
           ]);
+          logInteractionDebug(
+            "settings_reminders_updated",
+            "Updated reminder settings.",
+            interaction,
+            {
+              subcommand,
+              enabled: next.enabled,
+              thresholdHours: next.thresholdHours,
+              repeatHours: next.repeatHours,
+            }
+          );
           return;
         }
 
@@ -1260,6 +1533,16 @@ function createInteractionCommandHandler(options = {}) {
             `**Track:** ${trackLabel}`,
             `**Reviewers:** ${summary.length > 0 ? summary.join(", ") : "none"}`,
           ]);
+          logInteractionDebug(
+            "settings_reviewers_updated",
+            "Updated reviewer rotation settings.",
+            interaction,
+            {
+              subcommand,
+              trackLabel,
+              reviewerCount: summary.length,
+            }
+          );
           return;
         }
 
@@ -1285,6 +1568,16 @@ function createInteractionCommandHandler(options = {}) {
             `**Enabled:** ${next.enabled ? "yes" : "no"}`,
             `**Hour (UTC):** ${next.hourUtc}`,
           ]);
+          logInteractionDebug(
+            "settings_digest_updated",
+            "Updated daily digest settings.",
+            interaction,
+            {
+              subcommand,
+              enabled: next.enabled,
+              hourUtc: next.hourUtc,
+            }
+          );
           return;
         }
 
@@ -1305,6 +1598,14 @@ function createInteractionCommandHandler(options = {}) {
         }
 
         const subcommand = interaction.options.getSubcommand(true);
+        logInteractionDebug(
+          "config_command_received",
+          "Processing config command.",
+          interaction,
+          {
+            subcommand,
+          }
+        );
         if (subcommand === "export") {
           const payload = exportAdminConfig();
           try {
@@ -1321,6 +1622,15 @@ function createInteractionCommandHandler(options = {}) {
             content: "Config export sent to your DMs as JSON.",
             ephemeral: true,
           });
+          logInteractionDebug(
+            "config_export_completed",
+            "Exported configuration via DM.",
+            interaction,
+            {
+              subcommand,
+              payloadLength: typeof payload === "string" ? payload.length : null,
+            }
+          );
           return;
         }
 
@@ -1346,6 +1656,16 @@ function createInteractionCommandHandler(options = {}) {
             `**Custom Tracks:** ${result.customTrackCount}`,
           ]);
           refreshCommandsIfNeeded();
+          logInteractionDebug(
+            "config_import_completed",
+            "Imported configuration JSON.",
+            interaction,
+            {
+              subcommand,
+              trackCount: result.trackCount,
+              customTrackCount: result.customTrackCount,
+            }
+          );
           return;
         }
 
@@ -1366,6 +1686,14 @@ function createInteractionCommandHandler(options = {}) {
         }
 
         const action = interaction.options.getSubcommand(true);
+        logInteractionDebug(
+          "track_command_received",
+          "Processing track command.",
+          interaction,
+          {
+            action,
+          }
+        );
         if (action === "list") {
           const tracks = getApplicationTracks();
           const customTrackKeys = new Set(getCustomTracksSnapshot().map((track) => track.key));
@@ -1380,6 +1708,14 @@ function createInteractionCommandHandler(options = {}) {
             content: lines.length > 0 ? lines.join("\n") : "No tracks configured.",
             ephemeral: true,
           });
+          logInteractionDebug(
+            "track_list_completed",
+            "Returned track list.",
+            interaction,
+            {
+              trackCount: tracks.length,
+            }
+          );
           return;
         }
 
@@ -1412,6 +1748,16 @@ function createInteractionCommandHandler(options = {}) {
             `**Aliases:** ${aliasText}`,
           ]);
           refreshCommandsIfNeeded();
+          logInteractionDebug(
+            "track_add_completed",
+            "Created/updated track.",
+            interaction,
+            {
+              action,
+              trackKey: result.track.key,
+              created: Boolean(result.created),
+            }
+          );
           return;
         }
 
@@ -1451,6 +1797,15 @@ function createInteractionCommandHandler(options = {}) {
             `**Aliases:** ${aliasText}`,
           ]);
           refreshCommandsIfNeeded();
+          logInteractionDebug(
+            "track_edit_completed",
+            "Edited track.",
+            interaction,
+            {
+              action,
+              trackKey: result.track.key,
+            }
+          );
           return;
         }
 
@@ -1476,6 +1831,15 @@ function createInteractionCommandHandler(options = {}) {
             `**Track:** ${removed.label} (\`${removed.key}\`)`,
           ]);
           refreshCommandsIfNeeded();
+          logInteractionDebug(
+            "track_remove_completed",
+            "Removed track.",
+            interaction,
+            {
+              action,
+              trackKey: removed.key,
+            }
+          );
           return;
         }
 
@@ -1651,6 +2015,14 @@ function createInteractionCommandHandler(options = {}) {
             "Denied DM template updated. Placeholders supported: `{user}`, `{user_id}`, `{applicant_name}`, `{track}`, `{application_id}`, `{job_id}`, `{server}`, `{decision_source}`, `{reason}`, `{decided_at}`.",
           ephemeral: true,
         });
+        logInteractionDebug(
+          "setdenymsg_completed",
+          "Updated deny DM template.",
+          interaction,
+          {
+            templateLength: message.length,
+          }
+        );
         return;
       }
 
@@ -1711,6 +2083,16 @@ function createInteractionCommandHandler(options = {}) {
           content: lines.join("\n"),
           ephemeral: true,
         });
+        logInteractionDebug(
+          "setacceptmsg_completed",
+          "Updated accepted announcement settings.",
+          interaction,
+          {
+            hasChannelUpdate: Boolean(channel),
+            hasTemplateUpdate: Boolean(trimmedMessage),
+            activeChannelId: activeChannelId || null,
+          }
+        );
         return;
       }
 
@@ -1763,6 +2145,16 @@ function createInteractionCommandHandler(options = {}) {
           content: `Structured message posted in <#${interaction.channelId}>.`,
           ephemeral: true,
         });
+        logInteractionDebug(
+          "structured_message_posted",
+          "Posted structured message.",
+          interaction,
+          {
+            channelId: interaction.channelId,
+            lineCount: lines.length,
+            usedCodeBlock: useCodeBlock,
+          }
+        );
         return;
       }
 
@@ -1847,6 +2239,17 @@ function createInteractionCommandHandler(options = {}) {
           content: `Embedded message posted in <#${targetChannel.id}>.`,
           ephemeral: true,
         });
+        logInteractionDebug(
+          "embed_message_posted",
+          "Posted embedded message.",
+          interaction,
+          {
+            channelId: targetChannel.id,
+            includeTimestamp,
+            hasFooter: Boolean(footerText),
+            hasColor: color !== null,
+          }
+        );
         return;
       }
 
@@ -2018,6 +2421,22 @@ function createInteractionCommandHandler(options = {}) {
           content: `Embedded message updated in <#${targetChannel.id}>.`,
           ephemeral: true,
         });
+        logInteractionDebug(
+          "embed_message_updated",
+          "Updated embedded message.",
+          interaction,
+          {
+            channelId: targetChannel.id,
+            messageId,
+            updatedFields: {
+              title: titleInput !== null,
+              description: descriptionInput !== null,
+              color: colorInput !== null,
+              footer: footerInput !== null,
+              timestamp: timestampInput !== null,
+            },
+          }
+        );
         return;
       }
 
@@ -2059,6 +2478,11 @@ function createInteractionCommandHandler(options = {}) {
           ephemeral: true,
           components,
         });
+        logInteractionDebug(
+          "accepted_roles_gui_opened",
+          "Opened accepted-roles GUI.",
+          interaction
+        );
         return;
       }
 
@@ -2088,6 +2512,14 @@ function createInteractionCommandHandler(options = {}) {
         const selectedTrack = normalizeTrackKey(rawTrackInput);
         if (!selectedTrack) {
           refreshCommandsIfNeeded();
+          logInteractionDebug(
+            "accepted_roles_command_invalid_track",
+            "Accepted-roles command received an invalid track.",
+            interaction,
+            {
+              rawTrackInput,
+            }
+          );
           await interaction.reply({
             content: rawTrackInput
               ? `Unknown track \`${rawTrackInput}\`. Use \`/track list\` to view available tracks.`
@@ -2100,6 +2532,14 @@ function createInteractionCommandHandler(options = {}) {
         const selectedRoleIds = extractRoleIdsFromInteractionOptions(interaction).slice(0, 5);
         if (selectedRoleIds.length === 0) {
           refreshCommandsIfNeeded();
+          logInteractionDebug(
+            "accepted_roles_command_missing_roles",
+            "Accepted-roles command received no roles.",
+            interaction,
+            {
+              trackKey: selectedTrack,
+            }
+          );
           await interaction.reply({
             content:
               "Missing `role` option. Use `/setapprole track:<track> role:@Role` (up to `role_5`). If this keeps failing, restart the bot to refresh slash commands.",
@@ -2111,6 +2551,17 @@ function createInteractionCommandHandler(options = {}) {
         try {
           roleUpdate = setActiveApprovedRoles(selectedTrack, selectedRoleIds);
         } catch (err) {
+          logInteractionFailure(
+            "accepted_roles_command_update_failed",
+            "Failed updating accepted roles from command.",
+            interaction,
+            err,
+            {
+              trackKey: selectedTrack,
+              selectedRoleIds,
+              sourceCommand: interaction.commandName,
+            }
+          );
           await interaction.reply({
             content: err?.message || "Failed updating accepted roles.",
             ephemeral: true,
@@ -2160,6 +2611,17 @@ function createInteractionCommandHandler(options = {}) {
           `**Track:** ${trackLabel}`,
           `**Roles (${roleUpdate.roleIds.length}):** ${currentRoleMentions}`,
         ]);
+        logInteractionDebug(
+          "accepted_roles_command_updated",
+          "Accepted roles updated from command.",
+          interaction,
+          {
+            trackKey: selectedTrack,
+            roleCount: roleUpdate.roleIds.length,
+            roleIds: roleUpdate.roleIds,
+            sourceCommand: interaction.commandName,
+          }
+        );
         return;
       }
 
@@ -2182,6 +2644,14 @@ function createInteractionCommandHandler(options = {}) {
         }
 
         const action = interaction.options.getSubcommand(true);
+        logInteractionDebug(
+          "reaction_role_command_received",
+          "Processing reaction-role command.",
+          interaction,
+          {
+            action,
+          }
+        );
         if (action === "gui") {
           await interaction.reply({
             content: [
@@ -2195,6 +2665,14 @@ function createInteractionCommandHandler(options = {}) {
             ephemeral: true,
             components: buildReactionRoleGuiComponents(interaction.user.id),
           });
+          logInteractionDebug(
+            "reaction_role_gui_opened",
+            "Opened reaction-role GUI.",
+            interaction,
+            {
+              action,
+            }
+          );
           return;
         }
 
@@ -2252,6 +2730,19 @@ function createInteractionCommandHandler(options = {}) {
               actorId: interaction.user.id,
             });
           } catch (err) {
+            logInteractionFailure(
+              "reaction_role_create_failed",
+              "Failed creating reaction-role mapping.",
+              interaction,
+              err,
+              {
+                action,
+                channelId: targetChannel.id,
+                messageId,
+                roleId: role.id,
+                emoji,
+              }
+            );
             await interaction.reply({
               content: err.message || "Failed saving reaction role mapping.",
               ephemeral: true,
@@ -2311,6 +2802,19 @@ function createInteractionCommandHandler(options = {}) {
             `**Channel:** <#${targetChannel.id}>`,
             `**Message ID:** \`${messageId}\``,
           ]);
+          logInteractionDebug(
+            "reaction_role_create_completed",
+            "Created/updated reaction-role mapping.",
+            interaction,
+            {
+              action,
+              created: Boolean(result.created),
+              channelId: targetChannel.id,
+              messageId,
+              roleId: role.id,
+              emoji: result.binding.emojiDisplay,
+            }
+          );
           return;
         }
 
@@ -2351,6 +2855,18 @@ function createInteractionCommandHandler(options = {}) {
               emojiInput: emoji,
             });
           } catch (err) {
+            logInteractionFailure(
+              "reaction_role_remove_failed",
+              "Failed removing reaction-role mapping.",
+              interaction,
+              err,
+              {
+                action,
+                channelId: targetChannel.id,
+                messageId,
+                emoji,
+              }
+            );
             await interaction.reply({
               content: err.message || "Failed removing reaction role mapping.",
               ephemeral: true,
@@ -2382,6 +2898,18 @@ function createInteractionCommandHandler(options = {}) {
             `**Channel:** <#${targetChannel.id}>`,
             `**Message ID:** \`${messageId}\``,
           ]);
+          logInteractionDebug(
+            "reaction_role_remove_completed",
+            "Removed reaction-role mapping.",
+            interaction,
+            {
+              action,
+              channelId: targetChannel.id,
+              messageId,
+              roleId: removal.binding.roleId,
+              emoji: removal.binding.emojiDisplay,
+            }
+          );
           return;
         }
 
@@ -2437,6 +2965,17 @@ function createInteractionCommandHandler(options = {}) {
             ephemeral: true,
             components: buildReactionRoleGuiComponents(interaction.user.id),
           });
+          logInteractionDebug(
+            "reaction_role_list_completed",
+            "Listed reaction-role mappings.",
+            interaction,
+            {
+              action,
+              resultCount: bindings.length,
+              filteredChannelId: channelInput?.id || null,
+              filteredMessageId: messageId || null,
+            }
+          );
           return;
         }
 
@@ -2489,6 +3028,15 @@ function createInteractionCommandHandler(options = {}) {
           });
           return;
         }
+
+        logInteractionDebug(
+          "setchannel_command_received",
+          "Processing setchannel command.",
+          interaction,
+          {
+            options: summarizeCommandOptionsForDebug(interaction),
+          }
+        );
 
         const dynamicTrackInput = interaction.options.getString("track");
         const dynamicTrackChannelInput = interaction.options.getChannel("post_channel");
@@ -2739,6 +3287,18 @@ function createInteractionCommandHandler(options = {}) {
               : "not set"
           }`,
         ]);
+        logInteractionDebug(
+          "setchannel_command_completed",
+          "Updated channel configuration.",
+          interaction,
+          {
+            trackChannelIds: resolvedTrackChannelIds,
+            logChannelId: nextLogChannelId || null,
+            acceptMessageChannelId: nextAcceptAnnounceChannelId || null,
+            bugChannelId: nextBugChannelId || null,
+            suggestionsChannelId: nextSuggestionsChannelId || null,
+          }
+        );
         return;
       }
 
@@ -2755,6 +3315,16 @@ function createInteractionCommandHandler(options = {}) {
         const suppliedApplicationId = interaction.options.getString("application_id");
         const suppliedJobId = interaction.options.getString("job_id");
         const messageId = resolveMessageIdForCommand(interaction);
+        logInteractionDebug(
+          "reopen_command_received",
+          "Processing reopen command.",
+          interaction,
+          {
+            resolvedMessageId: messageId || null,
+            suppliedApplicationId: suppliedApplicationId || null,
+            suppliedJobId: suppliedJobId || null,
+          }
+        );
         if (!messageId) {
           await interaction.reply({
             content:
@@ -2794,6 +3364,16 @@ function createInteractionCommandHandler(options = {}) {
           `**Previous Status:** ${String(result.previousStatus || "unknown").toUpperCase()}`,
           `**Reason:** ${reason || "none"}`,
         ]);
+        logInteractionDebug(
+          "reopen_command_completed",
+          "Application reopened via command.",
+          interaction,
+          {
+            messageId,
+            applicationId: result.application?.applicationId || null,
+            previousStatus: result.previousStatus || null,
+          }
+        );
         return;
       }
 
@@ -2810,6 +3390,18 @@ function createInteractionCommandHandler(options = {}) {
       const suppliedJobId = interaction.options.getString("job_id");
       const suppliedReason = String(interaction.options.getString("reason") || "").trim();
       const messageId = resolveMessageIdForCommand(interaction);
+      logInteractionDebug(
+        "decision_command_received",
+        "Processing decision command.",
+        interaction,
+        {
+          decisionCommand: interaction.commandName,
+          resolvedMessageId: messageId || null,
+          suppliedApplicationId: suppliedApplicationId || null,
+          suppliedJobId: suppliedJobId || null,
+          hasReason: Boolean(suppliedReason),
+        }
+      );
       if (!messageId) {
         await interaction.reply({
           content:
@@ -2856,25 +3448,24 @@ function createInteractionCommandHandler(options = {}) {
           : `Application ${decision} by force command.`,
         ephemeral: true,
       });
+      logInteractionDebug(
+        "decision_command_completed",
+        "Application decision applied via command.",
+        interaction,
+        {
+          decision,
+          messageId,
+          applicationId: result.application?.applicationId || null,
+          jobId: result.application?.jobId || null,
+        }
+      );
     } catch (err) {
-      const interactionContext = {
-        commandName: interaction?.commandName || null,
-        userId: interaction?.user?.id || null,
-        channelId: interaction?.channelId || null,
-        guildId: interaction?.guildId || null,
-        deferred: Boolean(interaction?.deferred),
-        replied: Boolean(interaction?.replied),
-        error: err?.message || String(err),
-      };
-      if (logger) {
-        logger.error(
-          "interaction_command_failed",
-          "Interaction handler failed.",
-          interactionContext
-        );
-      } else {
-        console.error("Interaction handler failed:", err.message);
-      }
+      logInteractionFailure(
+        "interaction_command_failed",
+        "Interaction handler failed.",
+        interaction,
+        err
+      );
       if (!interaction.isRepliable()) {
         return;
       }
