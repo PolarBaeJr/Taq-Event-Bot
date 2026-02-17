@@ -53,6 +53,7 @@ test("buildSlashCommands includes unified /set command options", () => {
     (Array.isArray(modeOption?.choices) ? modeOption.choices : []).map((choice) => choice.value)
   );
   assert.ok(modeValues.has("channel"));
+  assert.ok(modeValues.has("default"));
   assert.ok(modeValues.has("approle"));
   assert.ok(modeValues.has("approlegui"));
   assert.ok(modeValues.has("denymsg"));

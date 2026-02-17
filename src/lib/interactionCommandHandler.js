@@ -1297,6 +1297,7 @@ function createInteractionCommandHandler(options = {}) {
             .trim()
             .toLowerCase()
         : "";
+      const isSetDefault = isSetUnified && setCommandMode === "default";
       const isSetChannel =
         interaction.commandName === "setchannel" ||
         (isSetUnified && setCommandMode === "channel");
@@ -1402,6 +1403,7 @@ function createInteractionCommandHandler(options = {}) {
       const canManageRolesConfig = hasManageRolesConfigPermission(memberPerms);
       const validSetModes = new Set([
         "channel",
+        "default",
         "approle",
         "approlegui",
         "denymsg",
@@ -1411,7 +1413,7 @@ function createInteractionCommandHandler(options = {}) {
       if (isSetUnified && !validSetModes.has(setCommandMode)) {
         await interaction.reply({
           content:
-            "Unknown `/set` mode. Use one of: `channel`, `approle`, `approlegui`, `denymsg`, `acceptmsg`.",
+            "Unknown `/set` mode. Use one of: `channel`, `default`, `approle`, `approlegui`, `denymsg`, `acceptmsg`.",
           ephemeral: true,
         });
         return;
@@ -3398,6 +3400,143 @@ function createInteractionCommandHandler(options = {}) {
         });
 
         setTimeout(() => process.exit(0), 500);
+        return;
+      }
+
+      if (isSetDefault) {
+        if (!canManageServer) {
+          await interaction.reply({
+            content:
+              "You need Manage Server permission (or Administrator) to run this command.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        if (!interaction.inGuild()) {
+          await interaction.reply({
+            content: "Run this command inside a server channel.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        const channelInput = interaction.options.getChannel("channel");
+        const fallbackCurrentChannel =
+          interaction.channel && interaction.channel.type === ChannelType.GuildText
+            ? interaction.channel
+            : null;
+        const defaultChannel = channelInput || fallbackCurrentChannel;
+        if (!defaultChannel || defaultChannel.type !== ChannelType.GuildText) {
+          await interaction.reply({
+            content:
+              "Provide `channel:#channel`, or run this command in a guild text channel.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        const selectedRoleIds = extractRoleIdsFromInteractionOptions(interaction).slice(0, 5);
+        if (selectedRoleIds.length > 0 && !canManageRolesConfig) {
+          await interaction.reply({
+            content:
+              "To apply default accepted roles, you need both Manage Server and Manage Roles (or Administrator).",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        const rawMessage = interaction.options.getString("message");
+        const trimmedMessage = typeof rawMessage === "string" ? rawMessage.trim() : "";
+        const trackKeys = getApplicationTrackKeys();
+        const roleMentions =
+          selectedRoleIds.length > 0
+            ? selectedRoleIds.map((roleId) => `<@&${roleId}>`).join(", ")
+            : "unchanged";
+
+        await interaction.deferReply({ ephemeral: true });
+
+        for (const trackKey of trackKeys) {
+          setActiveChannel(trackKey, defaultChannel.id);
+        }
+        setActiveLogsChannel(defaultChannel.id);
+        setActiveBotLogsChannel(defaultChannel.id);
+        setActiveAcceptAnnounceChannel(defaultChannel.id);
+        setActiveBugChannel(defaultChannel.id);
+        setActiveSuggestionsChannel(defaultChannel.id);
+
+        if (selectedRoleIds.length > 0) {
+          for (const trackKey of trackKeys) {
+            setActiveApprovedRoles(trackKey, selectedRoleIds);
+          }
+        }
+        if (trimmedMessage) {
+          setActiveAcceptAnnounceTemplate(trimmedMessage);
+        }
+
+        const pendingBefore = readState().postJobs.length;
+        const replayResult = await processQueuedPostJobs();
+        let replayLine = "No queued application jobs to replay.";
+        if (replayResult.busy) {
+          replayLine =
+            "Queued application replay is already running in another task; it will continue automatically.";
+        } else if (pendingBefore > 0) {
+          replayLine = `Queued application replay: posted ${replayResult.posted}/${pendingBefore} in row order. Remaining: ${replayResult.remaining}.`;
+          if (replayResult.failed > 0 && replayResult.failedJobId) {
+            replayLine += ` Failed jobs: ${replayResult.failed} (first: ${replayResult.failedJobId}: ${replayResult.failedError}).`;
+          }
+        }
+
+        let auditResult = "Permission audit passed.";
+        try {
+          await auditBotPermissions();
+        } catch (err) {
+          auditResult = `Permission audit failed: ${err.message}`;
+        }
+
+        await interaction.editReply({
+          content: [
+            `Server default channel applied: <#${defaultChannel.id}>.`,
+            `Track post channels updated: ${trackKeys.length}.`,
+            "Shared channels updated: application_log, log, accept_message, bug, suggestions.",
+            selectedRoleIds.length > 0
+              ? `Accepted roles applied to all tracks (${selectedRoleIds.length}): ${roleMentions}.`
+              : "Accepted roles unchanged (optional: provide `role`..`role_5`).",
+            trimmedMessage
+              ? "Accepted announcement template updated from `message`."
+              : "Accepted announcement template unchanged (optional: provide `message`).",
+            replayLine,
+            auditResult,
+          ].join("\n"),
+        });
+
+        await postConfigurationLog(interaction, "Server Default Configuration Updated", [
+          `**Base Channel:** <#${defaultChannel.id}>`,
+          `**Track Post Channels Updated:** ${trackKeys.length}`,
+          `**Application Log Channel:** <#${defaultChannel.id}>`,
+          `**Log Channel:** <#${defaultChannel.id}>`,
+          `**Accept Message Channel:** <#${defaultChannel.id}>`,
+          `**Bug Channel:** <#${defaultChannel.id}>`,
+          `**Suggestions Channel:** <#${defaultChannel.id}>`,
+          `**Accepted Roles:** ${
+            selectedRoleIds.length > 0
+              ? `${selectedRoleIds.length} role(s) for all tracks (${roleMentions})`
+              : "unchanged"
+          }`,
+          `**Accepted Template:** ${trimmedMessage ? "updated" : "unchanged"}`,
+        ]);
+        logInteractionDebug(
+          "setdefault_command_completed",
+          "Updated server default channel configuration.",
+          interaction,
+          {
+            defaultChannelId: defaultChannel.id,
+            trackCount: trackKeys.length,
+            roleCount: selectedRoleIds.length,
+            roleIds: selectedRoleIds,
+            acceptTemplateUpdated: Boolean(trimmedMessage),
+          }
+        );
         return;
       }
 

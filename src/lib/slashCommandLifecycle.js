@@ -266,6 +266,7 @@ function createSlashCommandLifecycle(options = {}) {
             .setDescription("What to configure")
             .addChoices(
               { name: "Channel", value: "channel" },
+              { name: "Default Setup", value: "default" },
               { name: "Accepted Roles", value: "approle" },
               { name: "Accepted Roles GUI", value: "approlegui" },
               { name: "Denied Message", value: "denymsg" },
@@ -297,7 +298,7 @@ function createSlashCommandLifecycle(options = {}) {
         .addChannelOption((option) =>
           option
             .setName("channel")
-            .setDescription("Channel (for mode:channel / mode:acceptmsg)")
+            .setDescription("Channel (for mode:channel / mode:acceptmsg / mode:default)")
             .setRequired(false)
         )
         .addRoleOption((option) =>
@@ -333,7 +334,7 @@ function createSlashCommandLifecycle(options = {}) {
         .addStringOption((option) =>
           option
             .setName("message")
-            .setDescription("Template/message (for mode:denymsg / mode:acceptmsg)")
+            .setDescription("Template/message (for mode:denymsg / mode:acceptmsg / mode:default)")
             .setRequired(false)
         ),
       new SlashCommandBuilder()

@@ -20,6 +20,15 @@ All notable changes to this project are documented in this file.
 - Startup config validation no longer fails hard when optional Discord ID env vars contain placeholder values; invalid optional IDs are now ignored with warnings.
 - Startup config path resolution no longer trims `cwd`, which fixes false missing-file errors for `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` in paths containing trailing spaces.
 
+## [1.3.18] - 2026-02-17
+
+### Added
+- New `/set mode:default` server-default setup mode.
+
+### Changed
+- `/set mode:default` can apply one base channel to all track post channels and shared channels (`application_log`, `log`, `accept_message`, `bug`, `suggestions`).
+- `/set mode:default` can optionally apply one accepted-role set across all tracks and optionally set the accepted-announcement template.
+
 ## [1.3.17] - 2026-02-17
 
 ### Changed

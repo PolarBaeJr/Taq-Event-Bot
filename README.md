@@ -9,14 +9,15 @@ Simple Node.js bot that:
 5. Supports decision overrides with `/accept` and `/deny` (with optional reason), and undo flow with `/reopen` (`/accept mode:force` bypasses missing-member block).
 6. Supports `/set mode:...` so you can configure channels/roles/templates in Discord (no code edit).
 7. `/set mode:channel` configures tester/builder/cmd post channels, application log channel, log channel, accept-message channel, bug channel, and suggestions channel.
-8. Posts applications, bug reports, and suggestions in embedded format.
-9. Creates a thread per application/feedback message for team discussion.
-10. Creates an `application-logs` channel and posts full close-history when an application is decided.
-11. Queues each application post as a persistent job (`job-000001`, etc.) and replays failed jobs in row order.
-12. Can auto-grant configured roles, send stale-pending reminders, post daily digests, and detect duplicate applications.
-13. Validates startup config/env strictly (required values, numeric ranges, Discord snowflake IDs).
-14. Emits structured JSON logs for interaction failures, Discord API send/reaction/thread failures, and queue retries.
-15. Includes automated test + CI pipeline (`npm run ci`, GitHub Actions).
+8. `/set mode:default` applies a server-level default channel to all channel targets in one command (and can optionally apply shared accepted roles).
+9. Posts applications, bug reports, and suggestions in embedded format.
+10. Creates a thread per application/feedback message for team discussion.
+11. Creates an `application-logs` channel and posts full close-history when an application is decided.
+12. Queues each application post as a persistent job (`job-000001`, etc.) and replays failed jobs in row order.
+13. Can auto-grant configured roles, send stale-pending reminders, post daily digests, and detect duplicate applications.
+14. Validates startup config/env strictly (required values, numeric ranges, Discord snowflake IDs).
+15. Emits structured JSON logs for interaction failures, Discord API send/reaction/thread failures, and queue retries.
+16. Includes automated test + CI pipeline (`npm run ci`, GitHub Actions).
 
 ## Release Notes
 
@@ -241,6 +242,12 @@ Recommended:
 /set mode:channel channel_target:accept_message channel:#welcome-team
 /set mode:channel channel_target:bug channel:#bug-reports
 /set mode:channel channel_target:suggestions channel:#team-suggestions
+```
+
+Server-level default baseline in one step:
+```text
+/set mode:default channel:#bot-default
+/set mode:default channel:#bot-default role:@TeamRole role_2:@HelperRole
 ```
 
 Send a bug report (creates a thread for discussion):
@@ -490,6 +497,9 @@ pm2 restart taq-event-bot --update-env
 - `/set mode:channel` requires `Manage Server` (or `Administrator`).
 - `/set mode:channel` requires `channel_target` and `channel`; for `channel_target:post`, also provide `track`.
 - `/set mode:channel` supports `channel_target:application_log|log|accept_message|bug|suggestions` and `channel_target:post track:<track>`.
+- `/set mode:default` requires `Manage Server` (or `Administrator`) and applies one server-level default channel to all track/shared channel targets.
+- `/set mode:default` accepts optional `role..role_5` to apply the same accepted roles to every track (requires Manage Roles).
+- `/set mode:default` accepts optional `message` to set the accepted-announcement template.
 - Application log channel messages are posted as embeds; decision-closure embeds use status colors (accepted=green, denied=red).
 - Non-application log channel messages are posted as red embeds.
 - `/bug` sends an embedded bug report into the configured bug channel and opens a discussion thread.
