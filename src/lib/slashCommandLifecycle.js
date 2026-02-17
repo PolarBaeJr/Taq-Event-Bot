@@ -667,6 +667,12 @@ function createSlashCommandLifecycle(options = {}) {
         )
         .addStringOption((option) =>
           option
+            .setName("applicant")
+            .setDescription("Optional applicant username/mention/ID override")
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
             .setName("mode")
             .setDescription("Accept mode (`force` accepts even if user is not in server)")
             .addChoices(

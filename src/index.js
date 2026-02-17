@@ -181,6 +181,7 @@ const STATUS_PENDING = "pending";
 const STATUS_ACCEPTED = "accepted";
 const STATUS_DENIED = "denied";
 const APPROVED_ROLE_STATUS_MEMBER_NOT_FOUND = "failed_member_not_found";
+const APPROVED_ROLE_STATUS_USER_NOT_RESOLVED = "failed_user_not_resolved";
 const DEBUG_MODE_REPORT = "report";
 const DEBUG_MODE_POST_TEST = "post_test";
 const DEBUG_MODE_ACCEPT_TEST = "accept_test";
@@ -1514,8 +1515,10 @@ function buildUnassignedRoleMessage({ limit } = {}) {
     .filter(
       (application) =>
         application.status === STATUS_ACCEPTED &&
-        String(application?.approvedRoleResult?.status || "") ===
-          APPROVED_ROLE_STATUS_MEMBER_NOT_FOUND
+        [
+          APPROVED_ROLE_STATUS_MEMBER_NOT_FOUND,
+          APPROVED_ROLE_STATUS_USER_NOT_RESOLVED,
+        ].includes(String(application?.approvedRoleResult?.status || ""))
     )
     .sort((left, right) => {
       const leftDecided = parseIsoTimeMs(left.decidedAt);
@@ -1536,7 +1539,7 @@ function buildUnassignedRoleMessage({ limit } = {}) {
   }
 
   const lines = [
-    "⚠️ **Unassigned Roles (Accepted but user not in server)**",
+    "⚠️ **Unassigned Roles (Accepted but roles not assigned)**",
     `Total: ${applications.length}`,
   ];
   const shown = applications.slice(0, maxItems);
@@ -2954,6 +2957,7 @@ const {
   revertAcceptedAnnouncementOnReopen,
   sendReopenCompensationDm,
   missingMemberRoleStatusValue: APPROVED_ROLE_STATUS_MEMBER_NOT_FOUND,
+  unresolvedUserRoleStatusValue: APPROVED_ROLE_STATUS_USER_NOT_RESOLVED,
   sendAcceptedApplicationAnnouncement,
   sendDeniedApplicationDm,
   postClosureLog,

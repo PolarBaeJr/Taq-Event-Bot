@@ -52,6 +52,9 @@ function createApplicationDecisionWorkflow(options = {}) {
   const missingMemberRoleStatusValue = String(
     options.missingMemberRoleStatusValue || "failed_member_not_found"
   );
+  const unresolvedUserRoleStatusValue = String(
+    options.unresolvedUserRoleStatusValue || "failed_user_not_resolved"
+  );
   const sendAcceptedApplicationAnnouncement =
     typeof options.sendAcceptedApplicationAnnouncement === "function"
       ? options.sendAcceptedApplicationAnnouncement
@@ -516,6 +519,9 @@ function createApplicationDecisionWorkflow(options = {}) {
         ? context.voteContext
         : null;
     const allowMissingMemberAccept = context?.allowMissingMemberAccept === true;
+    const applicantResolverHints = Array.isArray(context?.applicantResolverHints)
+      ? context.applicantResolverHints
+      : [];
     const normalizedDecisionReason = String(context?.reason || "").trim() || null;
     const decidedAt = new Date().toISOString();
     let decisionReason =
@@ -529,7 +535,41 @@ function createApplicationDecisionWorkflow(options = {}) {
     if (decision === statusAccepted) {
       const roleResult = await grantApprovedRoleOnAcceptance(application, {
         postMissingMemberThreadNotice: allowMissingMemberAccept,
+        resolverHints: applicantResolverHints,
       });
+
+      if (roleResult?.status === unresolvedUserRoleStatusValue) {
+        const blockReason =
+          String(roleResult.message || "").trim() ||
+          "Applicant Discord user could not be resolved.";
+        const alreadyWarned = Boolean(
+          application.lastAcceptanceBlock &&
+            application.lastAcceptanceBlock.status === unresolvedUserRoleStatusValue &&
+            String(application.lastAcceptanceBlock.reason || "") === blockReason
+        );
+
+        application.lastAcceptanceBlock = {
+          status: unresolvedUserRoleStatusValue,
+          userId: roleResult.userId || null,
+          reason: blockReason,
+          source: sourceLabel,
+          actorId: actorId || null,
+          warnedAt: decidedAt,
+        };
+        writeState(state);
+
+        if (!alreadyWarned) {
+          await postAcceptanceBlockedUpdate(application, blockReason);
+        }
+
+        return {
+          ok: false,
+          reason: "unresolved_applicant_user",
+          roleResult,
+          warningPosted: !alreadyWarned,
+          application,
+        };
+      }
 
       if (
         roleResult?.status === missingMemberRoleStatusValue &&
@@ -580,7 +620,10 @@ function createApplicationDecisionWorkflow(options = {}) {
       decisionReason = `${decisionReason}\n${roleResult.message}`;
       const acceptAnnounceResult = await sendAcceptedApplicationAnnouncement(
         application,
-        roleResult
+        roleResult,
+        {
+          resolverHints: applicantResolverHints,
+        }
       );
       application.acceptAnnounceResult = acceptAnnounceResult;
       decisionReason = `${decisionReason}\n${acceptAnnounceResult.message}`;
@@ -595,7 +638,9 @@ function createApplicationDecisionWorkflow(options = {}) {
         application.voteContext = voteContext;
       }
       const denyDmReason = application.decisionReason || decisionReason;
-      const denyDmResult = await sendDeniedApplicationDm(application, denyDmReason);
+      const denyDmResult = await sendDeniedApplicationDm(application, denyDmReason, {
+        resolverHints: applicantResolverHints,
+      });
       application.denyDmResult = denyDmResult;
       decisionReason = `${decisionReason}\n${denyDmResult.message}`;
     }

@@ -417,6 +417,7 @@ test("buildSlashCommands includes /accept mode option and /unassignedrole comman
     (Array.isArray(accept.options) ? accept.options : []).map((option) => option.name)
   );
   assert.ok(acceptOptionNames.has("mode"));
+  assert.ok(acceptOptionNames.has("applicant"));
 
   const unassignedRole = commands.find((command) => command.name === "unassignedrole");
   assert.ok(unassignedRole, "unassignedrole command should exist");

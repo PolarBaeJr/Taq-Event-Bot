@@ -102,6 +102,25 @@ function createApplicationDecisionUtils(options = {}) {
     return out;
   }
 
+  function normalizeResolverHints(value) {
+    const source = Array.isArray(value) ? value : [value];
+    const out = [];
+    const seen = new Set();
+    for (const item of source) {
+      const hint = String(item || "").trim();
+      if (!hint) {
+        continue;
+      }
+      const key = hint.toLowerCase();
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      out.push(hint);
+    }
+    return out;
+  }
+
   function parseSubmittedFieldLine(rawLine) {
     const line = String(rawLine || "").trim();
     if (!line) {
@@ -260,7 +279,11 @@ function createApplicationDecisionUtils(options = {}) {
     return null;
   }
 
-  async function resolveApplicantUserIdFromApplication(application, guild) {
+  async function resolveApplicantUserIdFromApplication(
+    application,
+    guild,
+    resolverHints = []
+  ) {
     if (!application || !guild) {
       return null;
     }
@@ -270,41 +293,54 @@ function createApplicationDecisionUtils(options = {}) {
       return existing;
     }
 
-    const rawDiscordValue = inferApplicantDiscordValueFromSubmittedFields(application);
-    const directId = extractDiscordUserId(rawDiscordValue);
-    if (isSnowflake(directId)) {
-      return directId;
-    }
-
-    const query = normalizeDiscordLookupQuery(rawDiscordValue);
-    if (!query) {
+    const candidateValues = normalizeResolverHints([
+      ...normalizeResolverHints(resolverHints),
+      inferApplicantDiscordValueFromSubmittedFields(application),
+    ]);
+    if (candidateValues.length === 0) {
       return null;
     }
 
-    const queryCandidates = Array.from(new Set([query, query.toLowerCase()]));
-    for (const candidate of queryCandidates) {
-      try {
-        const matches = await guild.members.fetch({ query: candidate, limit: 10 });
-        if (!matches || matches.size === 0) {
-          continue;
-        }
-        const chosen = pickBestGuildMemberMatch(matches, query);
-        if (chosen?.id) {
-          return chosen.id;
-        }
-        if (matches.size === 1) {
-          const only = matches.first();
-          if (only?.id) {
-            return only.id;
+    for (const rawCandidate of candidateValues) {
+      const directId = extractDiscordUserId(rawCandidate);
+      if (isSnowflake(directId)) {
+        return directId;
+      }
+
+      const query = normalizeDiscordLookupQuery(rawCandidate);
+      if (!query) {
+        continue;
+      }
+
+      const queryCandidates = Array.from(new Set([query, query.toLowerCase()]));
+      for (const candidate of queryCandidates) {
+        try {
+          const matches = await guild.members.fetch({ query: candidate, limit: 10 });
+          if (!matches || matches.size === 0) {
+            continue;
           }
+          const chosen = pickBestGuildMemberMatch(matches, query);
+          if (chosen?.id) {
+            return chosen.id;
+          }
+          if (matches.size === 1) {
+            const only = matches.first();
+            if (only?.id) {
+              return only.id;
+            }
+          }
+        } catch {
+          // keep trying next candidate and cache fallback
         }
-      } catch {
-        // keep trying next candidate and cache fallback
+      }
+
+      const cached = pickBestGuildMemberMatch(guild.members?.cache, query);
+      if (cached?.id) {
+        return cached.id;
       }
     }
 
-    const cached = pickBestGuildMemberMatch(guild.members?.cache, query);
-    return cached?.id || null;
+    return null;
   }
 
   async function postApplicantNotInDiscordThreadNotice(application) {
@@ -475,6 +511,7 @@ function createApplicationDecisionUtils(options = {}) {
   async function grantApprovedRoleOnAcceptance(application, behavior = {}) {
     const postMissingMemberThreadNotice =
       behavior?.postMissingMemberThreadNotice === true;
+    const resolverHints = normalizeResolverHints(behavior?.resolverHints);
     const trackKey = normalizeTrackKey(application.trackKey) || defaultTrackKey;
     const trackLabel = getTrackLabel(trackKey);
     const approvedRoleIds = getActiveApprovedRoleIds(trackKey);
@@ -511,14 +548,15 @@ function createApplicationDecisionUtils(options = {}) {
 
       const resolvedApplicantUserId = await resolveApplicantUserIdFromApplication(
         application,
-        guild
+        guild,
+        resolverHints
       );
       if (resolvedApplicantUserId) {
         application.applicantUserId = resolvedApplicantUserId;
       }
       if (!resolvedApplicantUserId) {
         return {
-          status: "skipped_no_user",
+          status: "failed_user_not_resolved",
           message:
             "No applicant Discord user could be resolved from the form data/submitted fields.",
           roleIds: approvedRoleIds,
@@ -828,7 +866,8 @@ function createApplicationDecisionUtils(options = {}) {
     }
   }
 
-  async function sendDeniedApplicationDm(application, decisionReason) {
+  async function sendDeniedApplicationDm(application, decisionReason, behavior = {}) {
+    const resolverHints = normalizeResolverHints(behavior?.resolverHints);
     const trackLabel = getTrackLabel(application.trackKey);
     let serverName = "Unknown Server";
     let sourceGuild = null;
@@ -846,7 +885,11 @@ function createApplicationDecisionUtils(options = {}) {
       ? String(application.applicantUserId)
       : null;
     if (!applicantUserId && sourceGuild) {
-      applicantUserId = await resolveApplicantUserIdFromApplication(application, sourceGuild);
+      applicantUserId = await resolveApplicantUserIdFromApplication(
+        application,
+        sourceGuild,
+        resolverHints
+      );
       if (applicantUserId) {
         application.applicantUserId = applicantUserId;
       }
@@ -893,7 +936,8 @@ function createApplicationDecisionUtils(options = {}) {
     }
   }
 
-  async function sendAcceptedApplicationAnnouncement(application, roleResult) {
+  async function sendAcceptedApplicationAnnouncement(application, roleResult, behavior = {}) {
+    const resolverHints = normalizeResolverHints(behavior?.resolverHints);
     const channelId = getActiveAcceptAnnounceChannelId();
     if (!channelId) {
       return {
@@ -922,7 +966,8 @@ function createApplicationDecisionUtils(options = {}) {
     if (!applicantUserId && sourceGuild) {
       applicantUserId = await resolveApplicantUserIdFromApplication(
         application,
-        sourceGuild
+        sourceGuild,
+        resolverHints
       );
       if (applicantUserId) {
         application.applicantUserId = applicantUserId;
@@ -1040,8 +1085,10 @@ function createApplicationDecisionUtils(options = {}) {
     application,
     previousStatus,
     actorId,
-    reopenReason = ""
+    reopenReason = "",
+    behavior = {}
   ) {
+    const resolverHints = normalizeResolverHints(behavior?.resolverHints);
     let serverName = "Unknown Server";
     let sourceGuild = null;
     try {
@@ -1058,7 +1105,11 @@ function createApplicationDecisionUtils(options = {}) {
       ? String(application.applicantUserId)
       : null;
     if (!applicantUserId && sourceGuild) {
-      applicantUserId = await resolveApplicantUserIdFromApplication(application, sourceGuild);
+      applicantUserId = await resolveApplicantUserIdFromApplication(
+        application,
+        sourceGuild,
+        resolverHints
+      );
       if (applicantUserId) {
         application.applicantUserId = applicantUserId;
       }

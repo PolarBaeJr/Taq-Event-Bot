@@ -17,6 +17,9 @@ const REACTION_ROLE_GUI_ACTION_MODAL_REMOVE = "modal_remove";
 const APPROLE_GUI_PREFIX = "approlegui";
 const APPROLE_GUI_ACTION_TRACK = "track";
 const APPROLE_GUI_ACTION_ROLES = "roles";
+const ACCEPT_RESOLVE_MODAL_PREFIX = "acceptresolve";
+const ACCEPT_RESOLVE_MODAL_FIELD_APPLICANT = "applicant_hint";
+const ACCEPT_RESOLVE_PROMPT_TTL_MS = 10 * 60 * 1000;
 const COMMAND_OPTION_TYPE_SUBCOMMAND = 1;
 const COMMAND_OPTION_TYPE_SUBCOMMAND_GROUP = 2;
 const COMMAND_OPTION_TYPE_STRING = 3;
@@ -163,6 +166,8 @@ function createInteractionCommandHandler(options = {}) {
     typeof options.refreshSlashCommandsForGuild === "function"
       ? options.refreshSlashCommandsForGuild
       : null;
+  const pendingAcceptResolvePrompts = new Map();
+  let acceptResolvePromptCounter = 0;
 
   function hasManageRolesConfigPermission(memberPerms) {
     if (!memberPerms) {
@@ -228,6 +233,61 @@ function createInteractionCommandHandler(options = {}) {
       userId: parts[2],
       trackKey: parts.slice(3).join(":") || null,
     };
+  }
+
+  function buildAcceptResolveModalCustomId(promptId) {
+    return `${ACCEPT_RESOLVE_MODAL_PREFIX}:${String(promptId || "")}`;
+  }
+
+  function parseAcceptResolveModalCustomId(customId) {
+    const raw = String(customId || "").trim();
+    if (!raw.startsWith(`${ACCEPT_RESOLVE_MODAL_PREFIX}:`)) {
+      return null;
+    }
+    const parts = raw.split(":");
+    if (parts.length < 2) {
+      return null;
+    }
+    const promptId = String(parts[1] || "").trim();
+    if (!promptId) {
+      return null;
+    }
+    return { promptId };
+  }
+
+  function nextAcceptResolvePromptId() {
+    acceptResolvePromptCounter = (acceptResolvePromptCounter + 1) % 1679616;
+    return `${Date.now().toString(36)}${acceptResolvePromptCounter.toString(36)}`;
+  }
+
+  function pruneExpiredAcceptResolvePrompts() {
+    const now = Date.now();
+    for (const [key, value] of pendingAcceptResolvePrompts.entries()) {
+      const createdAt = Number(value?.createdAt) || 0;
+      if (now - createdAt > ACCEPT_RESOLVE_PROMPT_TTL_MS) {
+        pendingAcceptResolvePrompts.delete(key);
+      }
+    }
+  }
+
+  function buildAcceptResolveModal(promptId) {
+    const modal = new ModalBuilder()
+      .setCustomId(buildAcceptResolveModalCustomId(promptId))
+      .setTitle("Resolve Applicant User");
+
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId(ACCEPT_RESOLVE_MODAL_FIELD_APPLICANT)
+          .setLabel("Applicant username / @mention / ID")
+          .setStyle(TextInputStyle.Short)
+          .setPlaceholder("e.g. @polarbaejr or 123456789012345678")
+          .setRequired(true)
+          .setMaxLength(120)
+      )
+    );
+
+    return modal;
   }
 
   function buildAppRoleTrackSelectOptions(selectedTrackKey = null) {
@@ -943,6 +1003,115 @@ function createInteractionCommandHandler(options = {}) {
       }
 
       if (interaction.isModalSubmit()) {
+        const acceptResolveContext = parseAcceptResolveModalCustomId(interaction.customId);
+        if (acceptResolveContext) {
+          pruneExpiredAcceptResolvePrompts();
+          const prompt = pendingAcceptResolvePrompts.get(acceptResolveContext.promptId);
+          if (!prompt) {
+            await interaction.reply({
+              content:
+                "This applicant-resolution prompt expired. Run `/accept` again to reopen the GUI prompt.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          if (prompt.userId !== interaction.user.id) {
+            await interaction.reply({
+              content: "This applicant-resolution prompt was opened by another user.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          if (!hasManageRolesConfigPermission(interaction.memberPermissions)) {
+            await interaction.reply({
+              content:
+                "You need both Manage Server and Manage Roles (or Administrator) to use /accept or /deny.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          const applicantHint = String(
+            interaction.fields.getTextInputValue(ACCEPT_RESOLVE_MODAL_FIELD_APPLICANT) || ""
+          ).trim();
+          if (!applicantHint) {
+            await interaction.reply({
+              content: "Please provide an applicant username, @mention, or ID.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          pendingAcceptResolvePrompts.delete(acceptResolveContext.promptId);
+
+          const modalResult = await finalizeApplication(
+            prompt.messageId,
+            statusAccepted,
+            "force_command",
+            interaction.user.id,
+            {
+              reason: prompt.reason || "",
+              allowMissingMemberAccept: prompt.acceptMode === "force",
+              applicantResolverHints: [applicantHint],
+            }
+          );
+
+          if (!modalResult.ok && modalResult.reason === "unknown_application") {
+            await interaction.reply({
+              content: "That application is no longer tracked.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          if (!modalResult.ok && modalResult.reason === "already_decided") {
+            await interaction.reply({
+              content: `Already decided as **${modalResult.status}**.`,
+              ephemeral: true,
+            });
+            return;
+          }
+
+          if (!modalResult.ok && modalResult.reason === "missing_member_not_in_guild") {
+            await interaction.reply({
+              content:
+                "Acceptance blocked: applicant is not in this server. The application is still pending. Use `/accept ... mode:force` if you want to accept anyway.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          if (!modalResult.ok && modalResult.reason === "unresolved_applicant_user") {
+            await interaction.reply({
+              content:
+                "Still could not resolve that applicant. Use a direct @mention or numeric Discord user ID.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          await interaction.reply({
+            content:
+              prompt.reason
+                ? `Application accepted after GUI username resolve (mode: ${prompt.acceptMode}). Reason saved: ${prompt.reason}`
+                : `Application accepted after GUI username resolve (mode: ${prompt.acceptMode}).`,
+            ephemeral: true,
+          });
+          logInteractionDebug(
+            "decision_command_modal_resolve_completed",
+            "Application decision applied after applicant-resolution modal.",
+            interaction,
+            {
+              decision: statusAccepted,
+              messageId: prompt.messageId,
+              acceptMode: prompt.acceptMode,
+            }
+          );
+          return;
+        }
+
         const guiContext = parseReactionRoleGuiCustomId(interaction.customId);
         if (!guiContext) {
           return;
@@ -4202,6 +4371,9 @@ function createInteractionCommandHandler(options = {}) {
       const suppliedApplicationId = interaction.options.getString("application_id");
       const suppliedJobId = interaction.options.getString("job_id");
       const suppliedReason = String(interaction.options.getString("reason") || "").trim();
+      const suppliedApplicantHint = String(
+        interaction.options.getString("applicant") || ""
+      ).trim();
       const acceptModeRaw = isAccept
         ? String(interaction.options.getString("mode") || "normal").trim().toLowerCase()
         : "normal";
@@ -4217,6 +4389,7 @@ function createInteractionCommandHandler(options = {}) {
           suppliedApplicationId: suppliedApplicationId || null,
           suppliedJobId: suppliedJobId || null,
           hasReason: Boolean(suppliedReason),
+          hasApplicantHint: Boolean(suppliedApplicantHint),
           acceptMode: isAccept ? acceptMode : null,
         }
       );
@@ -4240,6 +4413,7 @@ function createInteractionCommandHandler(options = {}) {
         {
           reason: suppliedReason,
           allowMissingMemberAccept: isAccept && acceptMode === "force",
+          applicantResolverHints: suppliedApplicantHint ? [suppliedApplicantHint] : [],
         }
       );
 
@@ -4267,6 +4441,20 @@ function createInteractionCommandHandler(options = {}) {
             "Acceptance blocked: applicant is not in this server. The application is still pending. Use `/accept ... mode:force` if you want to accept anyway.",
           ephemeral: true,
         });
+        return;
+      }
+
+      if (!result.ok && result.reason === "unresolved_applicant_user") {
+        pruneExpiredAcceptResolvePrompts();
+        const promptId = nextAcceptResolvePromptId();
+        pendingAcceptResolvePrompts.set(promptId, {
+          createdAt: Date.now(),
+          userId: interaction.user.id,
+          messageId,
+          reason: suppliedReason || "",
+          acceptMode,
+        });
+        await interaction.showModal(buildAcceptResolveModal(promptId));
         return;
       }
 

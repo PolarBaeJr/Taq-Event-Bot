@@ -492,10 +492,12 @@ pm2 restart taq-event-bot --update-env
 - `/accept` and `/deny` require both `Manage Server` and `Manage Roles`, or `Administrator`.
 - `/accept` and `/deny` can target by `message_id`, by `job_id`, or from inside the application thread, and support optional `reason`.
 - `/accept` supports `mode:normal` (default) and `mode:force`.
+- `/accept` supports optional `applicant` override (`username`, `@mention`, or user ID) when form `discord_ID` resolution is ambiguous.
 - If one `job_id` created multiple track posts, run `/accept` or `/deny` inside the target track thread/channel, or pass `message_id`.
 - Forced `/accept` and `/deny` also post the rendered accept/deny message template into that specific application thread.
 - Automatic vote acceptance and `/accept mode:normal` are blocked when applicant is not in the server; the bot posts a warning and keeps the application pending.
 - `/accept mode:force` can accept anyway when applicant is not in the server.
+- If `/accept` still cannot resolve the applicant user, the bot opens a GUI modal to request applicant username/mention/ID and retries acceptance.
 - If an accepted applicant is not in the server, the bot posts the configurable missing-user thread notice message (default: `user not in discord please dm`).
 - `/reopen` reopens a decided application back to pending and automatically attempts side-effect rollback: removes bot-granted accepted roles, deletes tracked acceptance announcements, and sends a reopen-compensation DM when a user can be resolved.
 - `/dashboard` shows per-track pending/accepted/denied counts, oldest pending age, and vote rule.

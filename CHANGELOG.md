@@ -20,6 +20,19 @@ All notable changes to this project are documented in this file.
 - Startup config validation no longer fails hard when optional Discord ID env vars contain placeholder values; invalid optional IDs are now ignored with warnings.
 - Startup config path resolution no longer trims `cwd`, which fixes false missing-file errors for `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` in paths containing trailing spaces.
 
+## [1.4.4] - 2026-02-17
+
+### Added
+- `/accept` now supports optional `applicant` override input (`username`, `@mention`, or user ID).
+- GUI modal prompt for unresolved applicant detection during `/accept`; when auto-detection fails, bot asks reviewer for applicant username/mention/ID and retries.
+
+### Changed
+- Acceptance and deny DM resolution paths now accept command-provided applicant hints.
+
+### Fixed
+- Accept flow now blocks unresolved applicant-user role assignment in normal mode instead of silently accepting with `No applicant Discord user...`.
+- `/unassignedrole` now also reports accepted applications with unresolved applicant identity (when force-accepted).
+
 ## [1.4.3] - 2026-02-17
 
 ### Changed
