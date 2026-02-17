@@ -183,7 +183,53 @@ function createApplicationFormUtils(options = {}) {
     if (!raw) {
       return null;
     }
-    return raw.replace(/^@/, "").trim() || null;
+    const withoutAt = raw.replace(/^@/, "").trim();
+    if (!withoutAt) {
+      return null;
+    }
+
+    // Legacy discriminator input like `username#1234` should still resolve by username.
+    const hashIndex = withoutAt.indexOf("#");
+    if (hashIndex > 0) {
+      const suffix = withoutAt.slice(hashIndex + 1).trim();
+      if (/^\d{1,6}$/.test(suffix)) {
+        const base = withoutAt.slice(0, hashIndex).trim();
+        return base || null;
+      }
+    }
+
+    return withoutAt;
+  }
+
+  function pickBestDiscordMemberMatch(members, query) {
+    if (!members || typeof members.find !== "function") {
+      return null;
+    }
+
+    const needle = String(query || "").trim().toLowerCase();
+    if (!needle) {
+      return typeof members.first === "function" ? members.first() || null : null;
+    }
+
+    const exact =
+      members.find((member) => member.user.username.toLowerCase() === needle) ||
+      members.find((member) => (member.user.globalName || "").toLowerCase() === needle) ||
+      members.find((member) => (member.displayName || "").toLowerCase() === needle);
+    if (exact) {
+      return exact;
+    }
+
+    const startsWith =
+      members.find((member) => member.user.username.toLowerCase().startsWith(needle)) ||
+      members.find((member) =>
+        (member.user.globalName || "").toLowerCase().startsWith(needle)
+      ) ||
+      members.find((member) => (member.displayName || "").toLowerCase().startsWith(needle));
+    if (startsWith) {
+      return startsWith;
+    }
+
+    return typeof members.first === "function" ? members.first() || null : null;
   }
 
   async function resolveApplicantDiscordUser(channelId, headers, row) {
@@ -208,17 +254,26 @@ function createApplicationFormUtils(options = {}) {
         return { rawValue, userId: null };
       }
 
-      const matches = await channel.guild.members.fetch({ query, limit: 10 });
-      if (!matches || matches.size === 0) {
-        return { rawValue, userId: null };
+      let chosen = null;
+      const queryCandidates = Array.from(
+        new Set([query, query.toLowerCase()].filter(Boolean))
+      );
+      for (const candidate of queryCandidates) {
+        const matches = await channel.guild.members.fetch({ query: candidate, limit: 10 });
+        if (!matches || matches.size === 0) {
+          continue;
+        }
+        chosen = pickBestDiscordMemberMatch(matches, query);
+        if (chosen) {
+          break;
+        }
       }
 
-      const needle = query.toLowerCase();
-      const exact =
-        matches.find((member) => member.user.username.toLowerCase() === needle) ||
-        matches.find((member) => (member.user.globalName || "").toLowerCase() === needle) ||
-        matches.find((member) => (member.displayName || "").toLowerCase() === needle);
-      const chosen = exact || matches.first();
+      // Fallback: if remote search returns nothing, try case-insensitive matching on cache.
+      if (!chosen) {
+        chosen = pickBestDiscordMemberMatch(channel.guild.members?.cache, query);
+      }
+
       return { rawValue, userId: chosen?.id || null };
     } catch {
       return { rawValue, userId: null };

@@ -20,6 +20,12 @@ All notable changes to this project are documented in this file.
 - Startup config validation no longer fails hard when optional Discord ID env vars contain placeholder values; invalid optional IDs are now ignored with warnings.
 - Startup config path resolution no longer trims `cwd`, which fixes false missing-file errors for `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` in paths containing trailing spaces.
 
+## [1.4.1] - 2026-02-17
+
+### Fixed
+- Improved applicant Discord username resolution to be less case-sensitive.
+- Added fallback matching for `@name` and legacy `name#1234` style inputs when resolving applicant user IDs from form data.
+
 ## [1.4.0] - 2026-02-17
 
 ### Changed
