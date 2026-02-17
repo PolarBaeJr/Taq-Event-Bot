@@ -30,7 +30,6 @@ function createDebugAndFeedbackUtils(options = {}) {
   const getTrackKeyForChannelId = typeof options.getTrackKeyForChannelId === "function"
     ? options.getTrackKeyForChannelId
     : () => null;
-  const defaultTrackKey = String(options.defaultTrackKey || "tester");
   const getActiveChannelId = typeof options.getActiveChannelId === "function"
     ? options.getActiveChannelId
     : () => null;
@@ -243,7 +242,10 @@ function createDebugAndFeedbackUtils(options = {}) {
       interaction.inGuild() && interaction.channel?.type === options.channelTypeGuildText;
     const mappedTrackFromChat = getTrackKeyForChannelId(interaction.channelId || "");
 
-    const selectedTrack = mappedTrackFromChat || requestedTrack || defaultTrackKey;
+    const selectedTrack = mappedTrackFromChat || requestedTrack;
+    if (!selectedTrack) {
+      throw new Error("No track specified.");
+    }
     let targetChannelId = null;
     let channelSourceLabel = "";
 
@@ -535,10 +537,18 @@ function createDebugAndFeedbackUtils(options = {}) {
       if (suppliedJobId) {
         const selectedTrack =
           getTrackKeyForChannelId(interaction.channelId || "") ||
-          normalizeTrackKey(interaction.options.getString("track")) ||
-          defaultTrackKey;
-        const selectedTrackLabel = getTrackLabel(selectedTrack);
+          normalizeTrackKey(interaction.options.getString("track"));
         const normalizedJobId = String(suppliedJobId).trim();
+        if (!selectedTrack) {
+          return {
+            ok: false,
+            simulated: true,
+            decision,
+            jobId: normalizedJobId,
+            error: "No track specified.",
+          };
+        }
+        const selectedTrackLabel = getTrackLabel(selectedTrack);
         const derivedApplicationId =
           normalizedJobId || `${getTrackApplicationIdPrefix(selectedTrack)}-SIMULATED`;
         const fallbackChannelId =

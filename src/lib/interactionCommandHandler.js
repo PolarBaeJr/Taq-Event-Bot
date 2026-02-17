@@ -628,7 +628,15 @@ function createInteractionCommandHandler(options = {}) {
             "\n"
           );
         } else if (mode === debugModePostTest) {
-          const result = await runDebugPostTest(interaction);
+          let result;
+          try {
+            result = await runDebugPostTest(interaction);
+          } catch (err) {
+            await interaction.editReply({
+              content: err?.message || "Debug post test failed.",
+            });
+            return;
+          }
           const lines = [
             "🧪 Debug Post Test Completed",
             `Requested by: ${userDisplayName(interaction.user)}`,
