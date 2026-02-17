@@ -19,6 +19,7 @@ async function main() {
       const channel = await client.channels.fetch(activeChannelId);
       if (channel && "guild" in channel && channel.guild) {
         await ensureLogsChannel(channel.guild);
+        await ensureBotLogsChannel(channel.guild);
       }
     }
   } catch (err) {

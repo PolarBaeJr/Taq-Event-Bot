@@ -8,7 +8,7 @@ Simple Node.js bot that:
 4. Uses per-track configurable vote thresholds (default `2/3`, minimum 1 vote) for decisions.
 5. Supports force override with `/accept` and `/deny` (with optional reason), and undo flow with `/reopen`.
 6. Supports `/setchannel` so you can configure track channels in Discord (no code edit).
-7. `/setchannel` configures tester/builder/cmd post channels, log channel, accept-message channel, bug channel, and suggestions channel.
+7. `/setchannel` configures tester/builder/cmd post channels, application log channel, log channel, accept-message channel, bug channel, and suggestions channel.
 8. Posts applications, bug reports, and suggestions in embedded format.
 9. Creates a thread per application/feedback message for team discussion.
 10. Creates an `application-logs` channel and posts full close-history when an application is decided.
@@ -74,8 +74,10 @@ Required keys:
 - `DISCORD_BUILDER_CHANNEL_ID` (optional builder fallback if you do not use `/setchannel`)
 - `DISCORD_CMD_CHANNEL_ID` (optional cmd fallback if you do not use `/setchannel`)
 - `DISCORD_CHANNEL_ID` (legacy tester fallback)
-- `DISCORD_LOGS_CHANNEL_NAME`
-- `DISCORD_LOGS_CHANNEL_ID` (optional fallback if you do not use `/setchannel`)
+- `DISCORD_LOGS_CHANNEL_NAME` (application logs default name)
+- `DISCORD_LOGS_CHANNEL_ID` (optional application logs fallback if you do not use `/setchannel application_log:#channel`)
+- `DISCORD_BOT_LOGS_CHANNEL_NAME` (optional bot-operation log channel name fallback)
+- `DISCORD_BOT_LOGS_CHANNEL_ID` (optional bot-operation log fallback if you do not use `/setchannel log:#channel`)
 - `DISCORD_BUG_CHANNEL_ID` (optional fallback if you do not use `/setchannel`)
 - `DISCORD_SUGGESTIONS_CHANNEL_ID` (optional fallback if you do not use `/setchannel`)
 - `ACCEPT_ANNOUNCE_CHANNEL_ID` (optional fallback if you do not use `/setaccept` or `/setchannel accept_message:#channel`)
@@ -231,7 +233,7 @@ Behavior:
 
 Recommended:
 ```text
-/setchannel tester_post:#tester-apps builder_post:#builder-apps cmd_post:#cmd-apps log:#application-log accept_message:#welcome-team bug:#bug-reports suggestions:#team-suggestions
+/setchannel tester_post:#tester-apps builder_post:#builder-apps cmd_post:#cmd-apps application_log:#application-log log:#bot-log accept_message:#welcome-team bug:#bug-reports suggestions:#team-suggestions
 ```
 
 Send a bug report (creates a thread for discussion):
@@ -433,15 +435,17 @@ pm2 restart taq-event-bot --update-env
 - After `/setchannel` succeeds, queued failed jobs are replayed immediately.
 - If you want to reprocess from the start, delete `.bot-state.json`.
 - Prefer `/setchannel` to set channel from Discord directly.
-- `/setchannel` updates per-track post channels (`tester_post`, `builder_post`, `cmd_post`), log channel, `accept_message`, `bug`, and `suggestions`.
+- `/setchannel` updates per-track post channels (`tester_post`, `builder_post`, `cmd_post`), `application_log`, `log`, `accept_message`, `bug`, and `suggestions`.
 - Track routing is inferred from your form response values using keywords like `tester`, `builder`, and `cmd`/`command`. If none is found, it defaults to `tester`.
 - Multi-select role responses are supported. One row can post to multiple track channels (one application post per selected track).
 - Empty/unanswered form questions are omitted from Discord application posts and stored history.
 - Polling deduplicates by response identity (timestamp + form identity fields), so row deletions/reordering in the sheet do not block new submissions.
 - Before posting, bot scans recent channel history and reuses an existing matching application post (same track + form-content fingerprint) to avoid reposting from another bot instance.
 - Multiple submissions from the same Discord ID are supported.
-- `DISCORD_LOGS_CHANNEL_NAME` controls default logs channel name (default `application-logs`).
-- `DISCORD_LOGS_CHANNEL_ID` overrides logs channel directly.
+- `DISCORD_LOGS_CHANNEL_NAME` controls default application logs channel name (default `application-logs`).
+- `DISCORD_LOGS_CHANNEL_ID` overrides application logs channel directly.
+- `DISCORD_BOT_LOGS_CHANNEL_NAME` controls default bot logs channel name (default `bot-logs`).
+- `DISCORD_BOT_LOGS_CHANNEL_ID` overrides bot operation logs channel directly.
 - Application posts are sent as embeds.
 - `/bug`, `/suggestions`, and `/suggestion` posts are sent as embeds.
 - Votes are counted only from non-bot users who can view the configured channel.
@@ -461,7 +465,7 @@ pm2 restart taq-event-bot --update-env
 - `/config export` DMs JSON config backup; `/config import` restores settings from JSON.
 - `/setchannel` requires `Manage Server` (or `Administrator`).
 - `/setchannel` can be run with no options to set tester channel to the current channel.
-- `/setchannel` supports `log:#channel`, `accept_message:#channel`, `bug:#channel`, and `suggestions:#channel`.
+- `/setchannel` supports `application_log:#channel`, `log:#channel`, `accept_message:#channel`, `bug:#channel`, and `suggestions:#channel` (`bot_log:#channel` remains a legacy alias for `log`).
 - `/bug` sends an embedded bug report into the configured bug channel and opens a discussion thread.
 - `/suggestions` (and `/suggestion`) sends an embedded idea into the configured suggestions channel and opens a discussion thread.
 - `/setapprole` requires both `Manage Server` and `Manage Roles`, or `Administrator`.

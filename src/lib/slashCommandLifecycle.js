@@ -32,7 +32,7 @@ function createSlashCommandLifecycle(options = {}) {
     ? options.requiredGuildPermissions
     : [];
   const setChannelOptionLimit = 25;
-  const setChannelReservedOptionCount = 6;
+  const setChannelReservedOptionCount = 8;
 
   function toSetChannelTrackOptionName(trackKey) {
     const raw = String(trackKey || "").trim().toLowerCase();
@@ -63,6 +63,8 @@ function createSlashCommandLifecycle(options = {}) {
     usedOptionNames.add("track");
     usedOptionNames.add("post_channel");
     usedOptionNames.add("log");
+    usedOptionNames.add("application_log");
+    usedOptionNames.add("bot_log");
     usedOptionNames.add("accept_message");
     usedOptionNames.add("bug");
     usedOptionNames.add("suggestions");
@@ -113,7 +115,7 @@ function createSlashCommandLifecycle(options = {}) {
     ];
     const setChannelCommand = new SlashCommandBuilder()
       .setName("setchannel")
-      .setDescription("Set app/log/bug/suggestions channels");
+      .setDescription("Set app/application-log/log/bug/suggestions channels");
 
     for (const optionDef of setChannelTrackOptions) {
       if (optionDef.legacyOptionName) {
@@ -137,7 +139,19 @@ function createSlashCommandLifecycle(options = {}) {
       .addChannelOption((option) =>
         option
           .setName("log")
-          .setDescription("Application log channel (defaults to first configured post channel)")
+          .setDescription("Bot operation log channel")
+          .setRequired(false)
+      )
+      .addChannelOption((option) =>
+        option
+          .setName("application_log")
+          .setDescription("Application decision/digest log channel")
+          .setRequired(false)
+      )
+      .addChannelOption((option) =>
+        option
+          .setName("bot_log")
+          .setDescription("Legacy alias for bot operation log channel")
           .setRequired(false)
       )
       .addChannelOption((option) =>

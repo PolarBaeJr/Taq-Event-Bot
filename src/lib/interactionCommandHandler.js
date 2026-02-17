@@ -84,12 +84,20 @@ function createInteractionCommandHandler(options = {}) {
   const isSnowflake = options.isSnowflake;
   const defaultTrackKey = options.defaultTrackKey;
   const getActiveLogsChannelId = options.getActiveLogsChannelId;
+  const getActiveBotLogsChannelId =
+    typeof options.getActiveBotLogsChannelId === "function"
+      ? options.getActiveBotLogsChannelId
+      : () => getActiveLogsChannelId();
   const getActiveBugChannelIdForSetChannel = options.getActiveBugChannelIdForSetChannel;
   const getActiveSuggestionsChannelIdForSetChannel =
     options.getActiveSuggestionsChannelIdForSetChannel;
   const getApplicationTrackKeys = options.getApplicationTrackKeys;
   const setActiveChannel = options.setActiveChannel;
   const setActiveLogsChannel = options.setActiveLogsChannel;
+  const setActiveBotLogsChannel =
+    typeof options.setActiveBotLogsChannel === "function"
+      ? options.setActiveBotLogsChannel
+      : () => {};
   const setActiveBugChannel = options.setActiveBugChannel;
   const setActiveSuggestionsChannel = options.setActiveSuggestionsChannel;
   const readState = options.readState;
@@ -375,6 +383,8 @@ function createInteractionCommandHandler(options = {}) {
     usedOptionNames.add("track");
     usedOptionNames.add("post_channel");
     usedOptionNames.add("log");
+    usedOptionNames.add("application_log");
+    usedOptionNames.add("bot_log");
     usedOptionNames.add("accept_message");
     usedOptionNames.add("bug");
     usedOptionNames.add("suggestions");
@@ -3158,6 +3168,8 @@ function createInteractionCommandHandler(options = {}) {
         const dynamicTrackInput = interaction.options.getString("track");
         const dynamicTrackChannelInput = interaction.options.getChannel("post_channel");
         const logChannelInput = interaction.options.getChannel("log");
+        const applicationLogChannelInput = interaction.options.getChannel("application_log");
+        const botLogChannelInput = interaction.options.getChannel("bot_log");
         const acceptMessageChannelInput = interaction.options.getChannel("accept_message");
         const bugChannelInput = interaction.options.getChannel("bug");
         const suggestionsChannelInput = interaction.options.getChannel("suggestions");
@@ -3213,6 +3225,8 @@ function createInteractionCommandHandler(options = {}) {
           );
           const hasNonTrackChannelOption = Boolean(
             logChannelInput ||
+              applicationLogChannelInput ||
+              botLogChannelInput ||
               acceptMessageChannelInput ||
               bugChannelInput ||
               suggestionsChannelInput
@@ -3252,25 +3266,42 @@ function createInteractionCommandHandler(options = {}) {
           return;
         }
 
-        let nextLogChannelId = getActiveLogsChannelId();
-        if (logChannelInput) {
-          if (logChannelInput.type !== ChannelType.GuildText) {
+        let nextApplicationLogChannelId = getActiveLogsChannelId();
+        if (applicationLogChannelInput) {
+          if (applicationLogChannelInput.type !== ChannelType.GuildText) {
             await interaction.reply({
-              content: "Please choose a guild text channel for `log`.",
+              content: "Please choose a guild text channel for `application_log`.",
               ephemeral: true,
             });
             return;
           }
-          nextLogChannelId = logChannelInput.id;
+          nextApplicationLogChannelId = applicationLogChannelInput.id;
         }
-        if (!nextLogChannelId) {
+        if (!nextApplicationLogChannelId) {
           for (const trackKey of getApplicationTrackKeys()) {
             const channelId = resolvedTrackChannelIds[trackKey];
             if (isSnowflake(channelId)) {
-              nextLogChannelId = channelId;
+              nextApplicationLogChannelId = channelId;
               break;
             }
           }
+        }
+
+        let nextBotLogChannelId = getActiveBotLogsChannelId();
+        const botLogInput = logChannelInput || botLogChannelInput;
+        const botLogOptionName = logChannelInput ? "log" : "bot_log";
+        if (botLogInput) {
+          if (botLogInput.type !== ChannelType.GuildText) {
+            await interaction.reply({
+              content: `Please choose a guild text channel for \`${botLogOptionName}\`.`,
+              ephemeral: true,
+            });
+            return;
+          }
+          nextBotLogChannelId = botLogInput.id;
+        }
+        if (!nextBotLogChannelId) {
+          nextBotLogChannelId = nextApplicationLogChannelId;
         }
 
         let nextAcceptAnnounceChannelId = getActiveAcceptAnnounceChannelId();
@@ -3316,8 +3347,11 @@ function createInteractionCommandHandler(options = {}) {
             setActiveChannel(trackKey, resolvedTrackChannelIds[trackKey]);
           }
         }
-        if (isSnowflake(nextLogChannelId)) {
-          setActiveLogsChannel(nextLogChannelId);
+        if (isSnowflake(nextApplicationLogChannelId)) {
+          setActiveLogsChannel(nextApplicationLogChannelId);
+        }
+        if (isSnowflake(nextBotLogChannelId)) {
+          setActiveBotLogsChannel(nextBotLogChannelId);
         }
         if (isSnowflake(nextAcceptAnnounceChannelId)) {
           setActiveAcceptAnnounceChannel(nextAcceptAnnounceChannelId);
@@ -3359,7 +3393,12 @@ function createInteractionCommandHandler(options = {}) {
           content: [
             ...trackChannelStatusLines,
             `Application log channel: ${
-              isSnowflake(nextLogChannelId) ? `<#${nextLogChannelId}>` : "not set"
+              isSnowflake(nextApplicationLogChannelId)
+                ? `<#${nextApplicationLogChannelId}>`
+                : "not set"
+            }`,
+            `Log channel: ${
+              isSnowflake(nextBotLogChannelId) ? `<#${nextBotLogChannelId}>` : "not set"
             }`,
             `Accept message channel: ${
               isSnowflake(nextAcceptAnnounceChannelId)
@@ -3387,8 +3426,13 @@ function createInteractionCommandHandler(options = {}) {
 
         await postConfigurationLog(interaction, "Application Channels Updated", [
           ...trackChannelLogLines,
+          `**Application Log Channel:** ${
+            isSnowflake(nextApplicationLogChannelId)
+              ? `<#${nextApplicationLogChannelId}>`
+              : "not set"
+          }`,
           `**Log Channel:** ${
-            isSnowflake(nextLogChannelId) ? `<#${nextLogChannelId}>` : "not set"
+            isSnowflake(nextBotLogChannelId) ? `<#${nextBotLogChannelId}>` : "not set"
           }`,
           `**Accept Message Channel:** ${
             isSnowflake(nextAcceptAnnounceChannelId)
@@ -3410,7 +3454,8 @@ function createInteractionCommandHandler(options = {}) {
           interaction,
           {
             trackChannelIds: resolvedTrackChannelIds,
-            logChannelId: nextLogChannelId || null,
+            applicationLogChannelId: nextApplicationLogChannelId || null,
+            botLogChannelId: nextBotLogChannelId || null,
             acceptMessageChannelId: nextAcceptAnnounceChannelId || null,
             bugChannelId: nextBugChannelId || null,
             suggestionsChannelId: nextSuggestionsChannelId || null,

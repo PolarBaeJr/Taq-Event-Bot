@@ -808,6 +808,7 @@ function defaultState() {
     settings: {
       channels: createEmptyTrackMap(),
       logChannelId: null,
+      botLogChannelId: null,
       bugChannelId: null,
       suggestionsChannelId: null,
       approvedRoles: createEmptyTrackRoleMap(),
@@ -975,6 +976,9 @@ function readState() {
         channels: normalizedChannels,
         logChannelId: isSnowflake(legacySettings.logChannelId)
           ? legacySettings.logChannelId
+          : null,
+        botLogChannelId: isSnowflake(legacySettings.botLogChannelId)
+          ? legacySettings.botLogChannelId
           : null,
         bugChannelId: isSnowflake(legacySettings.bugChannelId)
           ? legacySettings.bugChannelId
@@ -1156,6 +1160,8 @@ const {
   setActiveChannel,
   getActiveLogsChannelId,
   setActiveLogsChannel,
+  getActiveBotLogsChannelId,
+  setActiveBotLogsChannel,
   getActiveBugChannelId,
   setActiveBugChannel,
   getActiveSuggestionsChannelId,
@@ -1365,6 +1371,8 @@ function buildSettingsMessage() {
   const state = readState();
   const settings = ensureExtendedSettingsContainers(state);
   const activeSheetSource = getActiveSheetSourceFromSettings(settings);
+  const applicationLogsChannelId = getActiveLogsChannelId();
+  const botLogsChannelId = getActiveBotLogsChannelId();
   const lines = [
     "⚙️ **Current Settings**",
     `Reminders: ${
@@ -1379,6 +1387,8 @@ function buildSettingsMessage() {
     }`,
     `Reaction Roles: ${Array.isArray(settings.reactionRoles) ? settings.reactionRoles.length : 0}`,
     `Sheets Source: spreadsheet_id=${activeSheetSource.spreadsheetId} (${activeSheetSource.spreadsheetIdSource}) | sheet_name=${activeSheetSource.sheetName} (${activeSheetSource.sheetNameSource})`,
+    `Application Logs Channel: ${applicationLogsChannelId ? `<#${applicationLogsChannelId}>` : "not set"}`,
+    `Log Channel: ${botLogsChannelId ? `<#${botLogsChannelId}>` : "not set (falls back to application logs)"}`,
   ];
 
   for (const trackKey of getApplicationTrackKeys()) {
@@ -1416,6 +1426,7 @@ function exportAdminConfig() {
       customTracks: settings.customTracks,
       channels: settings.channels,
       logChannelId: settings.logChannelId || null,
+      botLogChannelId: settings.botLogChannelId || null,
       bugChannelId: settings.bugChannelId || null,
       suggestionsChannelId: settings.suggestionsChannelId || null,
       approvedRoles: settings.approvedRoles,
@@ -1511,6 +1522,12 @@ function importAdminConfig(rawJson) {
   if (Object.prototype.hasOwnProperty.call(settingsPayload, "logChannelId")) {
     settings.logChannelId = isSnowflake(settingsPayload.logChannelId)
       ? settingsPayload.logChannelId
+      : null;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(settingsPayload, "botLogChannelId")) {
+    settings.botLogChannelId = isSnowflake(settingsPayload.botLogChannelId)
+      ? settingsPayload.botLogChannelId
       : null;
   }
 
@@ -2033,11 +2050,14 @@ function makeMessageUrl(guildId, channelId, messageId) {
   return `https://discord.com/channels/${guildId}/${channelId}/${messageId}`;
 }
 
-async function ensureLogsChannel(guild) {
-  const configuredLogChannelId = getActiveLogsChannelId();
-  if (configuredLogChannelId) {
+async function ensureNamedLogsChannel(guild, {
+  configuredChannelId,
+  channelName,
+  createReason,
+} = {}) {
+  if (configuredChannelId) {
     try {
-      const configured = await guild.channels.fetch(configuredLogChannelId);
+      const configured = await guild.channels.fetch(configuredChannelId);
       if (configured && configured.type === ChannelType.GuildText) {
         return configured;
       }
@@ -2046,7 +2066,10 @@ async function ensureLogsChannel(guild) {
     }
   }
 
-  const targetName = config.logsChannelName.toLowerCase();
+  const targetName = String(channelName || "").trim().toLowerCase();
+  if (!targetName) {
+    return null;
+  }
   const existing = guild.channels.cache.find(
     (c) => c.type === ChannelType.GuildText && c.name.toLowerCase() === targetName
   );
@@ -2055,9 +2078,40 @@ async function ensureLogsChannel(guild) {
   }
 
   return guild.channels.create({
-    name: config.logsChannelName,
+    name: channelName,
     type: ChannelType.GuildText,
-    reason: "Application decision logs channel",
+    reason: createReason,
+  });
+}
+
+function getConfiguredBotLogsChannelId() {
+  const state = readState();
+  if (isSnowflake(state?.settings?.botLogChannelId)) {
+    return state.settings.botLogChannelId;
+  }
+  if (isSnowflake(config.botLogsChannelId)) {
+    return config.botLogsChannelId;
+  }
+  return null;
+}
+
+async function ensureLogsChannel(guild) {
+  return ensureNamedLogsChannel(guild, {
+    configuredChannelId: getActiveLogsChannelId(),
+    channelName: config.logsChannelName,
+    createReason: "Application logs channel",
+  });
+}
+
+async function ensureBotLogsChannel(guild) {
+  const configuredBotLogsChannelId = getConfiguredBotLogsChannelId();
+  if (!configuredBotLogsChannelId) {
+    return ensureLogsChannel(guild);
+  }
+  return ensureNamedLogsChannel(guild, {
+    configuredChannelId: configuredBotLogsChannelId,
+    channelName: config.botLogsChannelName,
+    createReason: "Bot operation logs channel",
   });
 }
 
@@ -2077,7 +2131,7 @@ async function postConfigurationLog(interaction, title, detailLines = []) {
   }
 
   try {
-    const logsChannel = await ensureLogsChannel(interaction.guild);
+    const logsChannel = await ensureBotLogsChannel(interaction.guild);
     if (!logsChannel || !logsChannel.isTextBased()) {
       return;
     }
@@ -2171,7 +2225,7 @@ async function logControlCommand(action, interaction) {
   }
 
   try {
-    const logsChannel = await ensureLogsChannel(interaction.guild);
+    const logsChannel = await ensureBotLogsChannel(interaction.guild);
     if (!logsChannel || !logsChannel.isTextBased()) {
       return;
     }
@@ -2417,6 +2471,7 @@ const {
   getTrackLabel,
   getActiveAcceptAnnounceChannelId,
   getActiveLogsChannelId,
+  getActiveBotLogsChannelId,
   getActiveBugChannelId,
   getActiveSuggestionsChannelId,
   hasAnyActivePostChannelConfigured,
@@ -2580,11 +2635,13 @@ const onInteractionCreate = createInteractionCommandHandler({
   isSnowflake,
   defaultTrackKey: DEFAULT_TRACK_KEY,
   getActiveLogsChannelId,
+  getActiveBotLogsChannelId,
   getActiveBugChannelIdForSetChannel: getActiveBugChannelId,
   getActiveSuggestionsChannelIdForSetChannel: getActiveSuggestionsChannelId,
   getApplicationTrackKeys,
   setActiveChannel,
   setActiveLogsChannel,
+  setActiveBotLogsChannel,
   setActiveBugChannel,
   setActiveSuggestionsChannel,
   readState,
@@ -2715,11 +2772,12 @@ client.on("interactionCreate", onInteractionCreate);
 client.on("guildCreate", async (guild) => {
   try {
     await ensureLogsChannel(guild);
+    await ensureBotLogsChannel(guild);
     const rest = new REST({ version: "10" }).setToken(config.botToken);
     const commands = buildSlashCommands();
     await registerSlashCommandsForGuild(rest, guild.id, commands);
   } catch (err) {
-    logger.error("guild_create_setup_failed", "Failed creating logs channel in guild.", {
+    logger.error("guild_create_setup_failed", "Failed creating startup channels in guild.", {
       guildId: guild.id,
       error: err.message,
     });
@@ -2742,6 +2800,7 @@ async function main() {
       const channel = await client.channels.fetch(activeChannelId);
       if (channel && "guild" in channel && channel.guild) {
         await ensureLogsChannel(channel.guild);
+        await ensureBotLogsChannel(channel.guild);
       }
     }
   } catch (err) {

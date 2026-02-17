@@ -7,6 +7,8 @@ function buildSettingsMessage() {
   const state = readState();
   const settings = ensureExtendedSettingsContainers(state);
   const activeSheetSource = getActiveSheetSourceFromSettings(settings);
+  const applicationLogsChannelId = getActiveLogsChannelId();
+  const botLogsChannelId = getActiveBotLogsChannelId();
   const lines = [
     "⚙️ **Current Settings**",
     `Reminders: ${
@@ -21,6 +23,8 @@ function buildSettingsMessage() {
     }`,
     `Reaction Roles: ${Array.isArray(settings.reactionRoles) ? settings.reactionRoles.length : 0}`,
     `Sheets Source: spreadsheet_id=${activeSheetSource.spreadsheetId} (${activeSheetSource.spreadsheetIdSource}) | sheet_name=${activeSheetSource.sheetName} (${activeSheetSource.sheetNameSource})`,
+    `Application Logs Channel: ${applicationLogsChannelId ? `<#${applicationLogsChannelId}>` : "not set"}`,
+    `Log Channel: ${botLogsChannelId ? `<#${botLogsChannelId}>` : "not set (falls back to application logs)"}`,
   ];
 
   for (const trackKey of getApplicationTrackKeys()) {

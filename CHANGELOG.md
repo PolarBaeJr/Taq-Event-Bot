@@ -20,6 +20,26 @@ All notable changes to this project are documented in this file.
 - Startup config validation no longer fails hard when optional Discord ID env vars contain placeholder values; invalid optional IDs are now ignored with warnings.
 - Startup config path resolution no longer trims `cwd`, which fixes false missing-file errors for `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` in paths containing trailing spaces.
 
+## [1.3.10] - 2026-02-17
+
+### Added
+- New `/setchannel application_log` option for application-only decision/digest logs.
+
+### Changed
+- `/setchannel log` is now the primary bot-operation/configuration logs channel.
+- `/setchannel bot_log` remains available as a legacy alias for `log`.
+- `/settings show` and `/debug report` now present application logs and general logs as separate values.
+
+## [1.3.9] - 2026-02-17
+
+### Added
+- New `bot_log` channel option in `/setchannel` to route bot operation/config logs separately from application lifecycle logs.
+- New env support for bot log routing: `DISCORD_BOT_LOGS_CHANNEL_ID` and `DISCORD_BOT_LOGS_CHANNEL_NAME`.
+
+### Changed
+- Bot control/configuration logs now post to the bot log channel, while application closure/digest logs continue using the application log channel.
+- `/debug report` and `/settings show` now display separate application log and bot log channel values.
+
 ## [1.3.8] - 2026-02-17
 
 ### Added

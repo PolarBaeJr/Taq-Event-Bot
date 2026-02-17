@@ -42,6 +42,8 @@ test("buildSlashCommands includes dynamic /setchannel options for custom tracks"
   assert.ok(optionNames.has("scripter_post"));
   assert.ok(optionNames.has("track"));
   assert.ok(optionNames.has("post_channel"));
+  assert.ok(optionNames.has("application_log"));
+  assert.ok(optionNames.has("bot_log"));
 });
 
 test("buildSlashCommands includes /reactionrole command with core subcommands", () => {

@@ -24,6 +24,9 @@ function createDebugAndFeedbackUtils(options = {}) {
   const getActiveLogsChannelId = typeof options.getActiveLogsChannelId === "function"
     ? options.getActiveLogsChannelId
     : () => null;
+  const getActiveBotLogsChannelId = typeof options.getActiveBotLogsChannelId === "function"
+    ? options.getActiveBotLogsChannelId
+    : () => getActiveLogsChannelId();
   const getActiveBugChannelId = typeof options.getActiveBugChannelId === "function"
     ? options.getActiveBugChannelId
     : () => null;
@@ -226,7 +229,8 @@ function createDebugAndFeedbackUtils(options = {}) {
       }`
     );
     lines.push(`Accept Announcement Channel ID: ${getActiveAcceptAnnounceChannelId() || "none"}`);
-    lines.push(`Logs Channel ID: ${getActiveLogsChannelId() || "none"}`);
+    lines.push(`Application Logs Channel ID: ${getActiveLogsChannelId() || "none"}`);
+    lines.push(`Logs Channel ID: ${getActiveBotLogsChannelId() || "none"}`);
     lines.push(`Bug Channel ID: ${getActiveBugChannelId() || "none"}`);
     lines.push(`Suggestions Channel ID: ${getActiveSuggestionsChannelId() || "none"}`);
     lines.push(

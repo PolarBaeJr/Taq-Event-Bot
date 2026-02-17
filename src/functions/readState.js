@@ -154,6 +154,9 @@ function readState() {
         logChannelId: isSnowflake(legacySettings.logChannelId)
           ? legacySettings.logChannelId
           : null,
+        botLogChannelId: isSnowflake(legacySettings.botLogChannelId)
+          ? legacySettings.botLogChannelId
+          : null,
         bugChannelId: isSnowflake(legacySettings.bugChannelId)
           ? legacySettings.bugChannelId
           : null,

@@ -175,6 +175,43 @@ function createChannelSettingsAccessors(options = {}) {
     writeState(state);
   }
 
+  function getConfiguredBotLogsChannelId(state) {
+    if (isSnowflake(state?.settings?.botLogChannelId)) {
+      return state.settings.botLogChannelId;
+    }
+    if (isSnowflake(config.botLogsChannelId)) {
+      return config.botLogsChannelId;
+    }
+    return null;
+  }
+
+  function getActiveBotLogsChannelId() {
+    const state = readState();
+    const configured = getConfiguredBotLogsChannelId(state);
+    if (configured) {
+      return configured;
+    }
+    if (isSnowflake(state?.settings?.logChannelId)) {
+      return state.settings.logChannelId;
+    }
+    if (isSnowflake(config.logsChannelId)) {
+      return config.logsChannelId;
+    }
+    return null;
+  }
+
+  function setActiveBotLogsChannel(channelId) {
+    if (!isSnowflake(channelId)) {
+      throw new Error("Invalid bot log channel id.");
+    }
+    const state = readState();
+    state.settings = state.settings && typeof state.settings === "object"
+      ? state.settings
+      : {};
+    state.settings.botLogChannelId = channelId;
+    writeState(state);
+  }
+
   function getActiveBugChannelId() {
     const state = readState();
     if (isSnowflake(state?.settings?.bugChannelId)) {
@@ -354,6 +391,8 @@ function createChannelSettingsAccessors(options = {}) {
     setActiveChannel,
     getActiveLogsChannelId,
     setActiveLogsChannel,
+    getActiveBotLogsChannelId,
+    setActiveBotLogsChannel,
     getActiveBugChannelId,
     setActiveBugChannel,
     getActiveSuggestionsChannelId,

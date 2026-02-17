@@ -84,6 +84,12 @@ function importAdminConfig(rawJson) {
       : null;
   }
 
+  if (Object.prototype.hasOwnProperty.call(settingsPayload, "botLogChannelId")) {
+    settings.botLogChannelId = isSnowflake(settingsPayload.botLogChannelId)
+      ? settingsPayload.botLogChannelId
+      : null;
+  }
+
   if (Object.prototype.hasOwnProperty.call(settingsPayload, "bugChannelId")) {
     settings.bugChannelId = isSnowflake(settingsPayload.bugChannelId)
       ? settingsPayload.bugChannelId

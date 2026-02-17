@@ -13,6 +13,7 @@ function exportAdminConfig() {
       customTracks: settings.customTracks,
       channels: settings.channels,
       logChannelId: settings.logChannelId || null,
+      botLogChannelId: settings.botLogChannelId || null,
       bugChannelId: settings.bugChannelId || null,
       suggestionsChannelId: settings.suggestionsChannelId || null,
       approvedRoles: settings.approvedRoles,

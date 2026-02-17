@@ -14,6 +14,7 @@ function defaultState() {
     settings: {
       channels: createEmptyTrackMap(),
       logChannelId: null,
+      botLogChannelId: null,
       bugChannelId: null,
       suggestionsChannelId: null,
       approvedRoles: createEmptyTrackRoleMap(),

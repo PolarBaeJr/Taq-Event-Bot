@@ -64,7 +64,7 @@ async function logControlCommand(action, interaction) {
   }
 
   try {
-    const logsChannel = await ensureLogsChannel(interaction.guild);
+    const logsChannel = await ensureBotLogsChannel(interaction.guild);
     if (!logsChannel || !logsChannel.isTextBased()) {
       return;
     }

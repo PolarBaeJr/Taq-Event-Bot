@@ -2,7 +2,7 @@
 
 This directory is auto-generated from `src/index.js` and contains one top-level function per file for easier reading.
 
-Generated functions: 82
+Generated functions: 85
 
 - `sendOperationalAlert.js`
 - `normalizeCell.js`
@@ -74,7 +74,10 @@ Generated functions: 82
 - `addReaction.js`
 - `createThread.js`
 - `makeMessageUrl.js`
+- `ensureNamedLogsChannel.js`
+- `getConfiguredBotLogsChannelId.js`
 - `ensureLogsChannel.js`
+- `ensureBotLogsChannel.js`
 - `userDisplayName.js`
 - `postConfigurationLog.js`
 - `appendControlLogToFile.js`
