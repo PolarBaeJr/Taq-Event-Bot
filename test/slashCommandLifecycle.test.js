@@ -106,6 +106,39 @@ test("buildSlashCommands includes /setapprolegui command", () => {
   assert.ok(commandNames.has("setapprolegui"));
 });
 
+test("buildSlashCommands includes /useapprole legacy command", () => {
+  const { buildSlashCommands } = createSlashCommandLifecycle({
+    config: {},
+    client: {
+      guilds: {
+        cache: new Map(),
+      },
+    },
+    REST: function REST() {},
+    Routes: {},
+    SlashCommandBuilder,
+    baseSetChannelTrackOptions: [],
+    debugModes: {
+      report: "report",
+      post_test: "post_test",
+      accept_test: "accept_test",
+      deny_test: "deny_test",
+    },
+    getApplicationTrackKeys: () => ["tester"],
+    getTrackLabel: () => "Tester",
+  });
+
+  const commands = buildSlashCommands();
+  const legacy = commands.find((command) => command.name === "useapprole");
+  assert.ok(legacy, "useapprole command should exist");
+
+  const subcommandNames = new Set(
+    (Array.isArray(legacy.options) ? legacy.options : []).map((option) => option.name)
+  );
+  assert.ok(subcommandNames.has("manage"));
+  assert.ok(subcommandNames.has("gui"));
+});
+
 test("buildSlashCommands includes /embedmsg command", () => {
   const { buildSlashCommands } = createSlashCommandLifecycle({
     config: {},

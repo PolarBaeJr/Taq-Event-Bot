@@ -272,6 +272,56 @@ function createSlashCommandLifecycle(options = {}) {
         .setName("setapprolegui")
         .setDescription("Open GUI to set accepted roles for a track"),
       new SlashCommandBuilder()
+        .setName("useapprole")
+        .setDescription("Legacy alias for accepted-role management")
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName("manage")
+            .setDescription("Set accepted roles for a track (overwrites previous roles)")
+            .addStringOption((option) =>
+              option
+                .setName("track")
+                .setDescription("Application track for these roles")
+                .setAutocomplete(true)
+                .setRequired(true)
+            )
+            .addRoleOption((option) =>
+              option
+                .setName("role")
+                .setDescription("First role to grant on acceptance")
+                .setRequired(true)
+            )
+            .addRoleOption((option) =>
+              option
+                .setName("role_2")
+                .setDescription("Second role to grant on acceptance")
+                .setRequired(false)
+            )
+            .addRoleOption((option) =>
+              option
+                .setName("role_3")
+                .setDescription("Third role to grant on acceptance")
+                .setRequired(false)
+            )
+            .addRoleOption((option) =>
+              option
+                .setName("role_4")
+                .setDescription("Fourth role to grant on acceptance")
+                .setRequired(false)
+            )
+            .addRoleOption((option) =>
+              option
+                .setName("role_5")
+                .setDescription("Fifth role to grant on acceptance")
+                .setRequired(false)
+            )
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName("gui")
+            .setDescription("Open GUI to set accepted roles for a track")
+        ),
+      new SlashCommandBuilder()
         .setName("reactionrole")
         .setDescription("Manage reaction-role mappings")
         .addSubcommand((subcommand) =>

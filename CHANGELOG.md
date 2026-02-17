@@ -20,6 +20,14 @@ All notable changes to this project are documented in this file.
 - Startup config validation no longer fails hard when optional Discord ID env vars contain placeholder values; invalid optional IDs are now ignored with warnings.
 - Startup config path resolution no longer trims `cwd`, which fixes false missing-file errors for `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` in paths containing trailing spaces.
 
+## [1.3.2] - 2026-02-17
+
+### Added
+- Legacy `/useapprole` slash-command compatibility with `manage` and `gui` subcommands.
+
+### Changed
+- Track autocomplete now also supports the legacy `/useapprole` flow.
+
 ## [1.3.1] - 2026-02-17
 
 ### Fixed

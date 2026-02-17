@@ -469,6 +469,17 @@ function createInteractionCommandHandler(options = {}) {
     }
   }
 
+  function safeGetSubcommand(interaction) {
+    if (!interaction?.options || typeof interaction.options.getSubcommand !== "function") {
+      return null;
+    }
+    try {
+      return interaction.options.getSubcommand(false);
+    } catch {
+      return null;
+    }
+  }
+
   function extractTrackOptionInput(interaction) {
     const namedCandidates = ["track", "track_key", "application_track", "team"];
     for (const optionName of namedCandidates) {
@@ -927,6 +938,7 @@ function createInteractionCommandHandler(options = {}) {
         const supportsTrackAutocomplete =
           focused?.name === "track" &&
           (interaction.commandName === "setapprole" ||
+            interaction.commandName === "useapprole" ||
             interaction.commandName === "setchannel" ||
             interaction.commandName === "debug" ||
             interaction.commandName === "track" ||
@@ -1015,8 +1027,15 @@ function createInteractionCommandHandler(options = {}) {
       const isDeny = interaction.commandName === "deny";
       const isReopen = interaction.commandName === "reopen";
       const isSetChannel = interaction.commandName === "setchannel";
-      const isSetAppRole = interaction.commandName === "setapprole";
-      const isSetAppRoleGui = interaction.commandName === "setapprolegui";
+      const isUseAppRole = interaction.commandName === "useapprole";
+      const useAppRoleSubcommand = isUseAppRole ? safeGetSubcommand(interaction) : null;
+      const isSetAppRole =
+        interaction.commandName === "setapprole" ||
+        (isUseAppRole &&
+          (useAppRoleSubcommand === "manage" || useAppRoleSubcommand === null));
+      const isSetAppRoleGui =
+        interaction.commandName === "setapprolegui" ||
+        (isUseAppRole && useAppRoleSubcommand === "gui");
       const isReactionRole = interaction.commandName === "reactionrole";
       const isTrackCommand = interaction.commandName === "track";
       const isDashboard = interaction.commandName === "dashboard";
