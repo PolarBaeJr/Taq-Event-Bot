@@ -816,7 +816,7 @@ function createInteractionCommandHandler(options = {}) {
         const selectedTrack = normalizeTrackKey(guiContext.trackKey);
         if (!selectedTrack) {
           await interaction.update({
-            content: "Track context expired or invalid. Re-open `/setapprolegui`.",
+            content: "Track context expired or invalid. Re-open `/set mode:approlegui`.",
             components: buildAppRoleGuiComponents(interaction.user.id),
           });
           return;
@@ -1201,6 +1201,7 @@ function createInteractionCommandHandler(options = {}) {
         const supportsTrackAutocomplete =
           focused?.name === "track" &&
           (interaction.commandName === "setapprole" ||
+            interaction.commandName === "set" ||
             interaction.commandName === "useapprole" ||
             interaction.commandName === "setchannel" ||
             interaction.commandName === "debug" ||
@@ -1290,16 +1291,26 @@ function createInteractionCommandHandler(options = {}) {
       const isAccept = interaction.commandName === "accept";
       const isDeny = interaction.commandName === "deny";
       const isReopen = interaction.commandName === "reopen";
-      const isSetChannel = interaction.commandName === "setchannel";
+      const isSetUnified = interaction.commandName === "set";
+      const setCommandMode = isSetUnified
+        ? String(safeGetStringOptionFromInteraction(interaction, "mode") || "")
+            .trim()
+            .toLowerCase()
+        : "";
+      const isSetChannel =
+        interaction.commandName === "setchannel" ||
+        (isSetUnified && setCommandMode === "channel");
       const isRepostApps = interaction.commandName === "repostapps";
       const isUseAppRole = interaction.commandName === "useapprole";
       const useAppRoleSubcommand = isUseAppRole ? safeGetSubcommand(interaction) : null;
       const isSetAppRole =
         interaction.commandName === "setapprole" ||
+        (isSetUnified && setCommandMode === "approle") ||
         (isUseAppRole &&
           (useAppRoleSubcommand === "manage" || useAppRoleSubcommand === null));
       const isSetAppRoleGui =
         interaction.commandName === "setapprolegui" ||
+        (isSetUnified && setCommandMode === "approlegui") ||
         (isUseAppRole && useAppRoleSubcommand === "gui");
       const isReactionRole = interaction.commandName === "reactionrole";
       const isTrackCommand = interaction.commandName === "track";
@@ -1308,10 +1319,13 @@ function createInteractionCommandHandler(options = {}) {
       const isUnassignedRole = interaction.commandName === "unassignedrole";
       const isSettings = interaction.commandName === "settings";
       const isConfig = interaction.commandName === "config";
-      const isSetDenyMsg = interaction.commandName === "setdenymsg";
+      const isSetDenyMsg =
+        interaction.commandName === "setdenymsg" ||
+        (isSetUnified && setCommandMode === "denymsg");
       const isSetAcceptMsg =
         interaction.commandName === "setacceptmsg" ||
-        interaction.commandName === "setaccept";
+        interaction.commandName === "setaccept" ||
+        (isSetUnified && setCommandMode === "acceptmsg");
       const isStructuredMsg = interaction.commandName === "structuredmsg";
       const isEmbedMsg = interaction.commandName === "embedmsg";
       const isEmbedEdit = interaction.commandName === "embededit";
@@ -1326,6 +1340,7 @@ function createInteractionCommandHandler(options = {}) {
         !isAccept &&
         !isDeny &&
         !isReopen &&
+        !isSetUnified &&
         !isSetChannel &&
         !isRepostApps &&
         !isSetAppRole &&
@@ -1385,6 +1400,22 @@ function createInteractionCommandHandler(options = {}) {
         (memberPerms.has(PermissionsBitField.Flags.ManageGuild) &&
           memberPerms.has(PermissionsBitField.Flags.ManageRoles));
       const canManageRolesConfig = hasManageRolesConfigPermission(memberPerms);
+      const validSetModes = new Set([
+        "channel",
+        "approle",
+        "approlegui",
+        "denymsg",
+        "acceptmsg",
+      ]);
+
+      if (isSetUnified && !validSetModes.has(setCommandMode)) {
+        await interaction.reply({
+          content:
+            "Unknown `/set` mode. Use one of: `channel`, `approle`, `approlegui`, `denymsg`, `acceptmsg`.",
+          ephemeral: true,
+        });
+        return;
+      }
 
       if (isUnassignedRole) {
         if (!canManageServer) {
@@ -1413,7 +1444,7 @@ function createInteractionCommandHandler(options = {}) {
           heading: "🐞 **Bug Report**",
           channelId: getActiveBugChannelId(),
           emptyChannelMessage:
-            "Bug channel is not configured. Run `/setchannel bug:#channel` first.",
+            "Bug channel is not configured. Run `/set mode:channel channel_target:bug channel:#channel` first.",
         });
         return;
       }
@@ -1425,7 +1456,7 @@ function createInteractionCommandHandler(options = {}) {
           heading: "💡 **Suggestion**",
           channelId: getActiveSuggestionsChannelId(),
           emptyChannelMessage:
-            "Suggestions channel is not configured. Run `/setchannel suggestions:#channel` first.",
+            "Suggestions channel is not configured. Run `/set mode:channel channel_target:suggestions channel:#channel` first.",
         });
         return;
       }
@@ -2404,7 +2435,7 @@ function createInteractionCommandHandler(options = {}) {
         if (!channel && !trimmedMessage) {
           await interaction.reply({
             content:
-              "Provide `channel`, `message`, or both. Example: `/setaccept message:Welcome to {track} team...`",
+              "Provide `channel`, `message`, or both. Example: `/set mode:acceptmsg message:Welcome to {track} team...`",
             ephemeral: true,
           });
           return;
@@ -2885,7 +2916,7 @@ function createInteractionCommandHandler(options = {}) {
           await interaction.reply({
             content: rawTrackInput
               ? `Unknown track \`${rawTrackInput}\`. Use \`/track list\` to view available tracks.`
-              : "Missing `track` option. Use `/setapprole track:<track> role:@Role`.",
+              : "Missing `track` option. Use `/set mode:approle track:<track> role:@Role`.",
             ephemeral: true,
           });
           return;
@@ -2904,7 +2935,7 @@ function createInteractionCommandHandler(options = {}) {
           );
           await interaction.reply({
             content:
-              "Missing `role` option. Use `/setapprole track:<track> role:@Role` (up to `role_5`). If this keeps failing, restart the bot to refresh slash commands.",
+              "Missing `role` option. Use `/set mode:approle track:<track> role:@Role` (up to `role_5`). If this keeps failing, restart the bot to refresh slash commands.",
             ephemeral: true,
           });
           return;
@@ -3396,18 +3427,76 @@ function createInteractionCommandHandler(options = {}) {
           "Processing setchannel command.",
           interaction,
           {
+            sourceCommand: interaction.commandName,
+            setMode: isSetUnified ? setCommandMode : null,
             options: summarizeCommandOptionsForDebug(interaction),
           }
         );
 
-        const dynamicTrackInput = interaction.options.getString("track");
-        const dynamicTrackChannelInput = interaction.options.getChannel("post_channel");
-        const logChannelInput = interaction.options.getChannel("log");
-        const applicationLogChannelInput = interaction.options.getChannel("application_log");
-        const botLogChannelInput = interaction.options.getChannel("bot_log");
-        const acceptMessageChannelInput = interaction.options.getChannel("accept_message");
-        const bugChannelInput = interaction.options.getChannel("bug");
-        const suggestionsChannelInput = interaction.options.getChannel("suggestions");
+        let dynamicTrackInput = interaction.options.getString("track");
+        let dynamicTrackChannelInput = interaction.options.getChannel("post_channel");
+        let logChannelInput = interaction.options.getChannel("log");
+        let applicationLogChannelInput = interaction.options.getChannel("application_log");
+        let botLogChannelInput = interaction.options.getChannel("bot_log");
+        let acceptMessageChannelInput = interaction.options.getChannel("accept_message");
+        let bugChannelInput = interaction.options.getChannel("bug");
+        let suggestionsChannelInput = interaction.options.getChannel("suggestions");
+
+        if (isSetUnified && setCommandMode === "channel") {
+          const channelTarget = String(
+            interaction.options.getString("channel_target") || ""
+          )
+            .trim()
+            .toLowerCase();
+          const genericChannelInput = interaction.options.getChannel("channel");
+          if (!channelTarget || !genericChannelInput) {
+            await interaction.reply({
+              content:
+                "For `/set mode:channel`, provide `channel_target` and `channel`. Example: `/set mode:channel channel_target:post track:tester channel:#tester-apps`.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          if (channelTarget === "post") {
+            if (!dynamicTrackInput) {
+              await interaction.reply({
+                content:
+                  "For `/set mode:channel channel_target:post`, provide `track` and `channel`.",
+                ephemeral: true,
+              });
+              return;
+            }
+            dynamicTrackChannelInput = genericChannelInput;
+          } else if (channelTarget === "application_log") {
+            dynamicTrackInput = null;
+            dynamicTrackChannelInput = null;
+            applicationLogChannelInput = genericChannelInput;
+          } else if (channelTarget === "log") {
+            dynamicTrackInput = null;
+            dynamicTrackChannelInput = null;
+            logChannelInput = genericChannelInput;
+          } else if (channelTarget === "accept_message") {
+            dynamicTrackInput = null;
+            dynamicTrackChannelInput = null;
+            acceptMessageChannelInput = genericChannelInput;
+          } else if (channelTarget === "bug") {
+            dynamicTrackInput = null;
+            dynamicTrackChannelInput = null;
+            bugChannelInput = genericChannelInput;
+          } else if (channelTarget === "suggestions") {
+            dynamicTrackInput = null;
+            dynamicTrackChannelInput = null;
+            suggestionsChannelInput = genericChannelInput;
+          } else {
+            await interaction.reply({
+              content:
+                "Unknown `channel_target`. Use one of: `post`, `application_log`, `log`, `accept_message`, `bug`, `suggestions`.",
+              ephemeral: true,
+            });
+            return;
+          }
+        }
 
         if (Boolean(dynamicTrackInput) !== Boolean(dynamicTrackChannelInput)) {
           await interaction.reply({
@@ -3467,12 +3556,12 @@ function createInteractionCommandHandler(options = {}) {
               suggestionsChannelInput
           );
           const shouldAutoSetDefaultTrackFromCurrent =
-            !hasExistingTrackChannel || !hasNonTrackChannelOption;
+            !isSetUnified && (!hasExistingTrackChannel || !hasNonTrackChannelOption);
           if (shouldAutoSetDefaultTrackFromCurrent) {
             if (!interaction.channel || interaction.channel.type !== ChannelType.GuildText) {
               await interaction.reply({
                 content:
-                  "Please run `/setchannel` in a guild text channel or provide track channel options.",
+                  "Please run `/set mode:channel` in a guild text channel or provide `track` + `channel`.",
                 ephemeral: true,
               });
               return;

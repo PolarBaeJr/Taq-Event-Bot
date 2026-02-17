@@ -4,7 +4,7 @@ const { SlashCommandBuilder } = require("discord.js");
 
 const { createSlashCommandLifecycle } = require("../src/lib/slashCommandLifecycle");
 
-test("buildSlashCommands includes dynamic /setchannel options for custom tracks", () => {
+test("buildSlashCommands includes unified /set command options", () => {
   const { buildSlashCommands } = createSlashCommandLifecycle({
     config: {},
     client: {
@@ -33,17 +33,38 @@ test("buildSlashCommands includes dynamic /setchannel options for custom tracks"
   });
 
   const commands = buildSlashCommands();
-  const setChannel = commands.find((command) => command.name === "setchannel");
-  assert.ok(setChannel, "setchannel command should exist");
-
+  const setCommand = commands.find((command) => command.name === "set");
+  assert.ok(setCommand, "set command should exist");
   const optionNames = new Set(
-    (Array.isArray(setChannel.options) ? setChannel.options : []).map((option) => option.name)
+    (Array.isArray(setCommand.options) ? setCommand.options : []).map((option) => option.name)
   );
-  assert.ok(optionNames.has("scripter_post"));
+  assert.ok(optionNames.has("mode"));
+  assert.ok(optionNames.has("channel_target"));
   assert.ok(optionNames.has("track"));
-  assert.ok(optionNames.has("post_channel"));
-  assert.ok(optionNames.has("application_log"));
-  assert.ok(optionNames.has("bot_log"));
+  assert.ok(optionNames.has("channel"));
+  assert.ok(optionNames.has("role"));
+  assert.ok(optionNames.has("role_5"));
+  assert.ok(optionNames.has("message"));
+
+  const modeOption = (Array.isArray(setCommand.options) ? setCommand.options : []).find(
+    (option) => option.name === "mode"
+  );
+  const modeValues = new Set(
+    (Array.isArray(modeOption?.choices) ? modeOption.choices : []).map((choice) => choice.value)
+  );
+  assert.ok(modeValues.has("channel"));
+  assert.ok(modeValues.has("approle"));
+  assert.ok(modeValues.has("approlegui"));
+  assert.ok(modeValues.has("denymsg"));
+  assert.ok(modeValues.has("acceptmsg"));
+
+  const commandNames = new Set(commands.map((command) => command.name));
+  assert.equal(commandNames.has("setchannel"), false);
+  assert.equal(commandNames.has("setapprole"), false);
+  assert.equal(commandNames.has("setapprolegui"), false);
+  assert.equal(commandNames.has("setdenymsg"), false);
+  assert.equal(commandNames.has("setaccept"), false);
+  assert.equal(commandNames.has("setacceptmsg"), false);
 });
 
 test("buildSlashCommands includes /reactionrole command with core subcommands", () => {
@@ -81,34 +102,7 @@ test("buildSlashCommands includes /reactionrole command with core subcommands", 
   assert.ok(subcommandNames.has("gui"));
 });
 
-test("buildSlashCommands includes /setapprolegui command", () => {
-  const { buildSlashCommands } = createSlashCommandLifecycle({
-    config: {},
-    client: {
-      guilds: {
-        cache: new Map(),
-      },
-    },
-    REST: function REST() {},
-    Routes: {},
-    SlashCommandBuilder,
-    baseSetChannelTrackOptions: [],
-    debugModes: {
-      report: "report",
-      post_test: "post_test",
-      accept_test: "accept_test",
-      deny_test: "deny_test",
-    },
-    getApplicationTrackKeys: () => ["tester"],
-    getTrackLabel: () => "Tester",
-  });
-
-  const commands = buildSlashCommands();
-  const commandNames = new Set(commands.map((command) => command.name));
-  assert.ok(commandNames.has("setapprolegui"));
-});
-
-test("buildSlashCommands includes /useapprole legacy command", () => {
+test("buildSlashCommands keeps /useapprole legacy command", () => {
   const { buildSlashCommands } = createSlashCommandLifecycle({
     config: {},
     client: {

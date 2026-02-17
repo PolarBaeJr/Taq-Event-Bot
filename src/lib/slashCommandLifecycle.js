@@ -257,50 +257,85 @@ function createSlashCommandLifecycle(options = {}) {
             .setDescription("Optional reason to store in logs/DM templates")
             .setRequired(false)
         ),
-      setChannelCommand,
       new SlashCommandBuilder()
-        .setName("setapprole")
-        .setDescription("Set accepted roles for a track (overwrites previous roles)")
+        .setName("set")
+        .setDescription("Set channel/role/template configuration")
+        .addStringOption((option) =>
+          option
+            .setName("mode")
+            .setDescription("What to configure")
+            .addChoices(
+              { name: "Channel", value: "channel" },
+              { name: "Accepted Roles", value: "approle" },
+              { name: "Accepted Roles GUI", value: "approlegui" },
+              { name: "Denied Message", value: "denymsg" },
+              { name: "Accepted Message", value: "acceptmsg" }
+            )
+            .setRequired(true)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("channel_target")
+            .setDescription("Channel target (for mode:channel)")
+            .addChoices(
+              { name: "Post Channel (track)", value: "post" },
+              { name: "Application Log", value: "application_log" },
+              { name: "Bot Log", value: "log" },
+              { name: "Accept Message", value: "accept_message" },
+              { name: "Bug", value: "bug" },
+              { name: "Suggestions", value: "suggestions" }
+            )
+            .setRequired(false)
+        )
         .addStringOption((option) =>
           option
             .setName("track")
-            .setDescription("Application track for these roles")
+            .setDescription("Track key/alias (for mode:channel post / mode:approle)")
             .setAutocomplete(true)
-            .setRequired(true)
+            .setRequired(false)
+        )
+        .addChannelOption((option) =>
+          option
+            .setName("channel")
+            .setDescription("Channel (for mode:channel / mode:acceptmsg)")
+            .setRequired(false)
         )
         .addRoleOption((option) =>
           option
             .setName("role")
-            .setDescription("First role to grant on acceptance")
-            .setRequired(true)
+            .setDescription("First role (for mode:approle)")
+            .setRequired(false)
         )
         .addRoleOption((option) =>
           option
             .setName("role_2")
-            .setDescription("Second role to grant on acceptance")
+            .setDescription("Second role (for mode:approle)")
             .setRequired(false)
         )
         .addRoleOption((option) =>
           option
             .setName("role_3")
-            .setDescription("Third role to grant on acceptance")
+            .setDescription("Third role (for mode:approle)")
             .setRequired(false)
         )
         .addRoleOption((option) =>
           option
             .setName("role_4")
-            .setDescription("Fourth role to grant on acceptance")
+            .setDescription("Fourth role (for mode:approle)")
             .setRequired(false)
         )
         .addRoleOption((option) =>
           option
             .setName("role_5")
-            .setDescription("Fifth role to grant on acceptance")
+            .setDescription("Fifth role (for mode:approle)")
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("message")
+            .setDescription("Template/message (for mode:denymsg / mode:acceptmsg)")
             .setRequired(false)
         ),
-      new SlashCommandBuilder()
-        .setName("setapprolegui")
-        .setDescription("Open GUI to set accepted roles for a track"),
       new SlashCommandBuilder()
         .setName("useapprole")
         .setDescription("Legacy alias for accepted-role management")
@@ -701,45 +736,6 @@ function createSlashCommandLifecycle(options = {}) {
             )
         ),
       new SlashCommandBuilder()
-        .setName("setdenymsg")
-        .setDescription("Set the DM message sent to users when an application is denied")
-        .addStringOption((option) =>
-          option
-            .setName("message")
-            .setDescription("Template with placeholders like {track}, {application_id}, {server}")
-            .setRequired(true)
-        ),
-      new SlashCommandBuilder()
-        .setName("setacceptmsg")
-        .setDescription("Set accepted announcement channel/template")
-        .addChannelOption((option) =>
-          option
-            .setName("channel")
-            .setDescription("Channel where accepted announcements should be posted")
-            .setRequired(false)
-        )
-        .addStringOption((option) =>
-          option
-            .setName("message")
-            .setDescription("Template (e.g. welcome to {track} team...)")
-            .setRequired(false)
-        ),
-      new SlashCommandBuilder()
-        .setName("setaccept")
-        .setDescription("Set accepted announcement channel/template")
-        .addChannelOption((option) =>
-          option
-            .setName("channel")
-            .setDescription("Channel where accepted announcements should be posted")
-            .setRequired(false)
-        )
-        .addStringOption((option) =>
-          option
-            .setName("message")
-            .setDescription("Template (e.g. welcome to {track} team...)")
-            .setRequired(false)
-        ),
-      new SlashCommandBuilder()
         .setName("structuredmsg")
         .setDescription("Post a structured bot message in the current channel")
         .addStringOption((option) =>
@@ -1071,7 +1067,7 @@ function createSlashCommandLifecycle(options = {}) {
       isSnowflake(channelId)
     );
     if (configuredEntries.length === 0) {
-      console.log("Permission audit skipped: no active channel set. Use /setchannel.");
+      console.log("Permission audit skipped: no active channel set. Use /set mode:channel.");
       return;
     }
 

@@ -20,6 +20,17 @@ All notable changes to this project are documented in this file.
 - Startup config validation no longer fails hard when optional Discord ID env vars contain placeholder values; invalid optional IDs are now ignored with warnings.
 - Startup config path resolution no longer trims `cwd`, which fixes false missing-file errors for `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` in paths containing trailing spaces.
 
+## [1.3.17] - 2026-02-17
+
+### Changed
+- Consolidated set-based slash commands into a single `/set` command with `mode` routing:
+  - `mode:channel`
+  - `mode:approle`
+  - `mode:approlegui`
+  - `mode:denymsg`
+  - `mode:acceptmsg`
+- Updated command guidance and runtime warning text to reference `/set` modes.
+
 ## [1.3.16] - 2026-02-17
 
 ### Changed

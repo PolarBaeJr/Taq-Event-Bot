@@ -358,7 +358,7 @@ function createDebugAndFeedbackUtils(options = {}) {
     if (!targetChannelId) {
       const trackLabel = getTrackLabel(selectedTrack);
       throw new Error(
-        `No active channel configured for ${trackLabel}. Run /setchannel first.`
+        `No active channel configured for ${trackLabel}. Run /set mode:channel first.`
       );
     }
     const trackLabel = getTrackLabel(selectedTrack);
@@ -490,7 +490,7 @@ function createDebugAndFeedbackUtils(options = {}) {
 
     if (!targetChannel || !targetChannel.isTextBased()) {
       await interaction.reply({
-        content: `The configured ${commandLabel} channel is invalid. Run /setchannel to fix it.`,
+        content: `The configured ${commandLabel} channel is invalid. Run /set mode:channel to fix it.`,
         ephemeral: true,
       });
       return;
@@ -560,7 +560,7 @@ function createDebugAndFeedbackUtils(options = {}) {
       return {
         outcome: "warning",
         message:
-          "Role test warning: no valid guild channel context available. Run the command in a server text channel or configure /setchannel.",
+          "Role test warning: no valid guild channel context available. Run the command in a server text channel or configure /set mode:channel.",
         roleResult: null,
       };
     }

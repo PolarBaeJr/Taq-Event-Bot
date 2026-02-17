@@ -3304,7 +3304,7 @@ async function main() {
     if (!activeChannelId) {
       logger.info(
         "startup_no_active_channels",
-        "No active application channels configured yet. Use /setchannel."
+        "No active application channels configured yet. Use /set mode:channel."
       );
     } else {
       const channel = await client.channels.fetch(activeChannelId);

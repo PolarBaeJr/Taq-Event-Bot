@@ -276,7 +276,7 @@ function createPollingPipeline(options = {}) {
       throw new Error(
         `Missing post channels for: ${missingTrackKeys
           .map((trackKey) => getTrackLabel(trackKey))
-          .join(", ")}. Run /setchannel.`
+          .join(", ")}. Run /set mode:channel.`
       );
     }
 
@@ -760,7 +760,7 @@ function createPollingPipeline(options = {}) {
         const queuedJobs = Array.isArray(state.postJobs) ? state.postJobs.length : 0;
         logInfo(
           "queue_paused_no_channels",
-          `Posting paused: no application post channels configured. queued=${queuedJobs}. Use /setchannel.`,
+          `Posting paused: no application post channels configured. queued=${queuedJobs}. Use /set mode:channel.`,
           {
             queuedJobs,
           }
