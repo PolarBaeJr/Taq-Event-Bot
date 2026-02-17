@@ -20,6 +20,16 @@ All notable changes to this project are documented in this file.
 - Startup config validation no longer fails hard when optional Discord ID env vars contain placeholder values; invalid optional IDs are now ignored with warnings.
 - Startup config path resolution no longer trims `cwd`, which fixes false missing-file errors for `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` in paths containing trailing spaces.
 
+## [1.3.5] - 2026-02-17
+
+### Changed
+- Queue processing now continues through other queued jobs when one job fails, instead of stopping at the first failure.
+- Failed queue jobs are re-queued and retried in later runs without blocking healthy tracks/jobs in the same cycle.
+
+### Fixed
+- `/setchannel` replay summary messaging now reports failure counts as failed jobs instead of "blocked" wording.
+- Added regression coverage for non-blocking queue processing after a failed job.
+
 ## [1.3.4] - 2026-02-17
 
 ### Added

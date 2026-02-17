@@ -591,9 +591,18 @@ function createPollingPipeline(options = {}) {
       let failed = 0;
       let failedJobId = null;
       let failedError = null;
+      const failedJobIds = [];
+      const jobsToAttempt = queuedBefore;
 
-      while (state.postJobs.length > 0) {
-        const job = state.postJobs[0];
+      for (
+        let attempted = 0;
+        attempted < jobsToAttempt && state.postJobs.length > 0;
+        attempted += 1
+      ) {
+        const job = state.postJobs.shift();
+        if (!job || typeof job !== "object") {
+          continue;
+        }
         const inferredTrackKeys = inferApplicationTracks(
           Array.isArray(job.headers) ? job.headers : [],
           Array.isArray(job.row) ? job.row : []
@@ -612,7 +621,6 @@ function createPollingPipeline(options = {}) {
 
         try {
           await postApplicationForJob(state, job);
-          state.postJobs.shift();
           posted += 1;
           writeState(state);
           logInfo(
@@ -627,8 +635,14 @@ function createPollingPipeline(options = {}) {
         } catch (err) {
           job.lastError = err.message;
           failed += 1;
-          failedJobId = job.jobId;
-          failedError = err.message;
+          failedJobIds.push(job.jobId);
+          if (!failedJobId) {
+            failedJobId = job.jobId;
+          }
+          if (!failedError) {
+            failedError = err.message;
+          }
+          state.postJobs.push(job);
           writeState(state);
           logError(
             "queue_job_failed",
@@ -639,10 +653,15 @@ function createPollingPipeline(options = {}) {
               trackKeys: job.trackKeys,
               error: err.message,
               attempts: job.attempts,
+              requeued: true,
             }
           );
-          break;
         }
+      }
+
+      if (state.postJobs.length > 1) {
+        sortPostJobsInPlace(state.postJobs);
+        writeState(state);
       }
 
       return {
@@ -653,6 +672,7 @@ function createPollingPipeline(options = {}) {
         busy: false,
         failedJobId,
         failedError,
+        failedJobIds,
       };
     } finally {
       isProcessingPostJobs = false;
@@ -759,10 +779,13 @@ function createPollingPipeline(options = {}) {
         `remaining=${queueResult.remaining}`,
       ];
       if (queueResult.failed > 0 && queueResult.failedJobId) {
-        details.push(`blocked=${queueResult.failedJobId}`);
+        details.push(`first_failed=${queueResult.failedJobId}`);
       }
       if (queueResult.failed > 0 && queueResult.failedError) {
         details.push(`error=${String(queueResult.failedError).slice(0, 180)}`);
+      }
+      if (Array.isArray(queueResult.failedJobIds) && queueResult.failedJobIds.length > 1) {
+        details.push(`failed_jobs=${queueResult.failedJobIds.slice(0, 5).join("|")}`);
       }
       logInfo("queue_run_summary", `Job run summary: ${details.join(", ")}`, queueResult);
     }

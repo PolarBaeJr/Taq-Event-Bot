@@ -3221,7 +3221,7 @@ function createInteractionCommandHandler(options = {}) {
         } else if (pendingBefore > 0) {
           replayLine = `Queued application replay: posted ${replayResult.posted}/${pendingBefore} in row order. Remaining: ${replayResult.remaining}.`;
           if (replayResult.failed > 0 && replayResult.failedJobId) {
-            replayLine += ` Blocked at ${replayResult.failedJobId}: ${replayResult.failedError}`;
+            replayLine += ` Failed jobs: ${replayResult.failed} (first: ${replayResult.failedJobId}: ${replayResult.failedError}).`;
           }
         }
 
