@@ -2899,6 +2899,7 @@ const {
 const {
   postClosureLog,
   grantApprovedRoleOnAcceptance,
+  revertApprovedRolesOnReopen,
   sendDeniedApplicationDm,
   sendAcceptedApplicationAnnouncement,
 } = createApplicationDecisionUtils({
@@ -2947,6 +2948,7 @@ const {
   computeVoteThreshold,
   getTrackVoterRoleIds,
   grantApprovedRoleOnAcceptance,
+  revertApprovedRolesOnReopen,
   missingMemberRoleStatusValue: APPROVED_ROLE_STATUS_MEMBER_NOT_FOUND,
   sendAcceptedApplicationAnnouncement,
   sendDeniedApplicationDm,

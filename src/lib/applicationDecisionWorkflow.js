@@ -37,6 +37,10 @@ function createApplicationDecisionWorkflow(options = {}) {
     typeof options.grantApprovedRoleOnAcceptance === "function"
       ? options.grantApprovedRoleOnAcceptance
       : async () => ({ message: "No role action recorded." });
+  const revertApprovedRolesOnReopen =
+    typeof options.revertApprovedRolesOnReopen === "function"
+      ? options.revertApprovedRolesOnReopen
+      : async () => ({ message: "No role-revert action recorded." });
   const missingMemberRoleStatusValue = String(
     options.missingMemberRoleStatusValue || "failed_member_not_found"
   );
@@ -326,7 +330,13 @@ function createApplicationDecisionWorkflow(options = {}) {
     }
   }
 
-  async function postReopenUpdate(application, previousStatus, actorId, reopenReason) {
+  async function postReopenUpdate(
+    application,
+    previousStatus,
+    actorId,
+    reopenReason,
+    reopenRoleRevertResult
+  ) {
     const summaryLines = [
       "♻️ **Application Reopened**",
       `Previous Decision: ${String(previousStatus || "").toUpperCase()}`,
@@ -335,9 +345,12 @@ function createApplicationDecisionWorkflow(options = {}) {
     if (reopenReason) {
       summaryLines.push(`Reason: ${reopenReason}`);
     }
-    summaryLines.push(
-      "Note: prior side effects (roles, DMs, announcements) are not automatically reverted."
-    );
+    if (String(previousStatus || "").toLowerCase() === statusAccepted) {
+      summaryLines.push(
+        `Role Revert: ${reopenRoleRevertResult?.message || "No role revert action recorded."}`
+      );
+    }
+    summaryLines.push("Note: prior DM/announcement side effects are not automatically reverted.");
     const summary = summaryLines.join("\n");
 
     try {
@@ -390,6 +403,10 @@ function createApplicationDecisionWorkflow(options = {}) {
     }
 
     const previousStatus = application.status;
+    let reopenRoleRevertResult = null;
+    if (previousStatus === statusAccepted) {
+      reopenRoleRevertResult = await revertApprovedRolesOnReopen(application, actorId);
+    }
     application.lastDecision = {
       status: application.status,
       decidedAt: application.decidedAt || null,
@@ -412,18 +429,21 @@ function createApplicationDecisionWorkflow(options = {}) {
     application.reopenReason = String(reopenReason || "").trim() || null;
     application.lastReminderAt = null;
     application.reminderCount = 0;
+    application.reopenRoleRevertResult = reopenRoleRevertResult;
     writeState(state);
 
     await postReopenUpdate(
       application,
       previousStatus,
       actorId,
-      application.reopenReason
+      application.reopenReason,
+      reopenRoleRevertResult
     );
 
     return {
       ok: true,
       previousStatus,
+      reopenRoleRevertResult,
       application,
     };
   }

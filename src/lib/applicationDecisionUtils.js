@@ -83,6 +83,25 @@ function createApplicationDecisionUtils(options = {}) {
     return `${text.slice(0, Math.max(0, maxLength - 20))}\n...[truncated]`;
   }
 
+  function isSnowflake(value) {
+    return /^\d{17,20}$/.test(String(value || "").trim());
+  }
+
+  function normalizeRoleIdList(value) {
+    const source = Array.isArray(value) ? value : [value];
+    const out = [];
+    const seen = new Set();
+    for (const item of source) {
+      const roleId = String(item || "").trim();
+      if (!isSnowflake(roleId) || seen.has(roleId)) {
+        continue;
+      }
+      seen.add(roleId);
+      out.push(roleId);
+    }
+    return out;
+  }
+
   async function postApplicantNotInDiscordThreadNotice(application) {
     if (!application?.threadId) {
       return false;
@@ -423,6 +442,177 @@ function createApplicationDecisionUtils(options = {}) {
     }
   }
 
+  async function revertApprovedRolesOnReopen(application, actorId) {
+    const grantedRoleIds = normalizeRoleIdList(application?.approvedRoleResult?.grantedRoleIds);
+    if (grantedRoleIds.length === 0) {
+      return {
+        status: "skipped_no_granted_roles",
+        message: "No previously granted roles to revert.",
+        roleIds: [],
+        userId: isSnowflake(application?.applicantUserId) ? application.applicantUserId : null,
+      };
+    }
+
+    const userId = isSnowflake(application?.approvedRoleResult?.userId)
+      ? application.approvedRoleResult.userId
+      : isSnowflake(application?.applicantUserId)
+        ? application.applicantUserId
+        : null;
+    if (!userId) {
+      return {
+        status: "skipped_no_user",
+        message: "No applicant Discord user could be resolved for role revert.",
+        roleIds: grantedRoleIds,
+        userId: null,
+      };
+    }
+
+    try {
+      const channel = await client.channels.fetch(application.channelId);
+      if (!channel || !("guild" in channel) || !channel.guild) {
+        return {
+          status: "failed_no_guild",
+          message: "Could not resolve guild for role revert.",
+          roleIds: grantedRoleIds,
+          userId,
+        };
+      }
+
+      const guild = channel.guild;
+      const me = await guild.members.fetchMe();
+      if (!manageRolesPermission || !me.permissions.has(manageRolesPermission)) {
+        return {
+          status: "failed_missing_permission",
+          message: "Bot is missing Manage Roles permission for role revert.",
+          roleIds: grantedRoleIds,
+          userId,
+        };
+      }
+
+      let member = null;
+      try {
+        member = await guild.members.fetch(userId);
+      } catch {
+        member = null;
+      }
+      if (!member) {
+        return {
+          status: "failed_member_not_found",
+          message: `Applicant user <@${userId}> is not in this server; could not revert granted roles.`,
+          roleIds: grantedRoleIds,
+          userId,
+        };
+      }
+
+      const removedRoleIds = [];
+      const notPresentRoleIds = [];
+      const failedRoleEntries = [];
+
+      for (const roleId of grantedRoleIds) {
+        let role = null;
+        try {
+          role = await guild.roles.fetch(roleId);
+        } catch (err) {
+          failedRoleEntries.push({
+            roleId,
+            reason: `fetch failed (${err.message})`,
+          });
+          continue;
+        }
+
+        if (!role) {
+          failedRoleEntries.push({
+            roleId,
+            reason: "role not found in guild",
+          });
+          continue;
+        }
+
+        if (role.managed) {
+          failedRoleEntries.push({
+            roleId,
+            reason: "managed/integration role",
+          });
+          continue;
+        }
+
+        if (me.roles.highest.comparePositionTo(role) <= 0) {
+          failedRoleEntries.push({
+            roleId,
+            reason: "bot role hierarchy is too low",
+          });
+          continue;
+        }
+
+        if (!member.roles.cache.has(roleId)) {
+          notPresentRoleIds.push(roleId);
+          continue;
+        }
+
+        try {
+          await member.roles.remove(
+            roleId,
+            `Application reopened (${getApplicationDisplayId(application)}) by ${actorId || "unknown"}`
+          );
+          removedRoleIds.push(roleId);
+        } catch (err) {
+          failedRoleEntries.push({
+            roleId,
+            reason: `remove failed (${err.message})`,
+          });
+        }
+      }
+
+      const summaryParts = [];
+      if (removedRoleIds.length > 0) {
+        summaryParts.push(
+          `removed: ${removedRoleIds.map((id) => `<@&${id}>`).join(", ")}`
+        );
+      }
+      if (notPresentRoleIds.length > 0) {
+        summaryParts.push(
+          `already missing: ${notPresentRoleIds.map((id) => `<@&${id}>`).join(", ")}`
+        );
+      }
+      if (failedRoleEntries.length > 0) {
+        summaryParts.push(
+          `failed: ${failedRoleEntries
+            .map((entry) => `<@&${entry.roleId}> (${entry.reason})`)
+            .join(", ")}`
+        );
+      }
+
+      let status = "failed_all";
+      if (removedRoleIds.length > 0 && failedRoleEntries.length === 0) {
+        status = "reverted";
+      } else if (removedRoleIds.length > 0 && failedRoleEntries.length > 0) {
+        status = "reverted_partial";
+      } else if (notPresentRoleIds.length > 0 && failedRoleEntries.length === 0) {
+        status = "skipped_not_present";
+      }
+
+      return {
+        status,
+        message:
+          summaryParts.length > 0
+            ? `Role revert for <@${member.id}>: ${summaryParts.join(" | ")}`
+            : `No role changes were made for <@${member.id}>.`,
+        roleIds: grantedRoleIds,
+        removedRoleIds,
+        notPresentRoleIds,
+        failedRoleEntries,
+        userId: member.id,
+      };
+    } catch (err) {
+      return {
+        status: "failed_error",
+        message: `Role revert failed: ${err.message}`,
+        roleIds: grantedRoleIds,
+        userId,
+      };
+    }
+  }
+
   async function sendDeniedApplicationDm(application, decisionReason) {
     if (!application.applicantUserId) {
       return {
@@ -535,6 +725,7 @@ function createApplicationDecisionUtils(options = {}) {
   return {
     postClosureLog,
     grantApprovedRoleOnAcceptance,
+    revertApprovedRolesOnReopen,
     sendDeniedApplicationDm,
     sendAcceptedApplicationAnnouncement,
   };

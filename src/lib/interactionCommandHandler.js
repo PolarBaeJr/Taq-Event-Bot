@@ -4135,14 +4135,26 @@ function createInteractionCommandHandler(options = {}) {
           return;
         }
 
+        const reopenReplyLines = [
+          `Application reopened (previous status: ${String(result.previousStatus || "").toUpperCase()}).`,
+        ];
+        if (
+          String(result.previousStatus || "").toLowerCase() === statusAccepted &&
+          result.reopenRoleRevertResult?.message
+        ) {
+          reopenReplyLines.push(`Role revert: ${result.reopenRoleRevertResult.message}`);
+        }
         await interaction.reply({
-          content: `Application reopened (previous status: ${String(result.previousStatus || "").toUpperCase()}).`,
+          content: reopenReplyLines.join("\n"),
           ephemeral: true,
         });
 
         await postConfigurationLog(interaction, "Application Reopened", [
           `**Application:** ${result.application?.applicationId || result.application?.messageId || messageId}`,
           `**Previous Status:** ${String(result.previousStatus || "unknown").toUpperCase()}`,
+          `**Role Revert:** ${
+            result.reopenRoleRevertResult?.message || "no role-revert action recorded"
+          }`,
           `**Reason:** ${reason || "none"}`,
         ]);
         logInteractionDebug(

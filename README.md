@@ -497,7 +497,7 @@ pm2 restart taq-event-bot --update-env
 - Automatic vote acceptance and `/accept mode:normal` are blocked when applicant is not in the server; the bot posts a warning and keeps the application pending.
 - `/accept mode:force` can accept anyway when applicant is not in the server.
 - If an accepted applicant is not in the server, the bot posts the configurable missing-user thread notice message (default: `user not in discord please dm`).
-- `/reopen` reopens a decided application back to pending (it does not auto-revert prior side effects).
+- `/reopen` reopens a decided application back to pending; when reopening an accepted application it also attempts to remove roles previously granted by bot acceptance (DM/announcement side effects are not reverted).
 - `/dashboard` shows per-track pending/accepted/denied counts, oldest pending age, and vote rule.
 - `/uptime` shows how long the current bot process has been running.
 - `/unassignedrole` lists accepted applications where role assignment failed because the applicant is not in server.
