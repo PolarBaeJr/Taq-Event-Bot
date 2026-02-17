@@ -1593,7 +1593,9 @@ function createInteractionCommandHandler(options = {}) {
         }
 
         const settingsAction = String(
-          interaction.options.getString("action", true) || ""
+          safeGetSubcommand(interaction) ||
+            safeGetStringOptionFromInteraction(interaction, "action") ||
+            ""
         )
           .trim()
           .toLowerCase();
@@ -1628,7 +1630,7 @@ function createInteractionCommandHandler(options = {}) {
           const minimumVotes = interaction.options.getInteger("minimum_votes");
           if (track === null || numerator === null || denominator === null) {
             await interaction.reply({
-              content: "For `action:vote`, provide `track`, `numerator`, and `denominator`.",
+              content: "For `/settings vote`, provide `track`, `numerator`, and `denominator`.",
               ephemeral: true,
             });
             return;
@@ -1718,7 +1720,7 @@ function createInteractionCommandHandler(options = {}) {
           const mentions = interaction.options.getString("mentions");
           if (track === null || mentions === null) {
             await interaction.reply({
-              content: "For `action:reviewers`, provide `track` and `mentions`.",
+              content: "For `/settings reviewers`, provide `track` and `mentions`.",
               ephemeral: true,
             });
             return;
@@ -1766,7 +1768,7 @@ function createInteractionCommandHandler(options = {}) {
           const roles = interaction.options.getString("roles");
           if (track === null || roles === null) {
             await interaction.reply({
-              content: "For `action:voters`, provide `track` and `roles`.",
+              content: "For `/settings voters`, provide `track` and `roles`.",
               ephemeral: true,
             });
             return;
@@ -1895,7 +1897,7 @@ function createInteractionCommandHandler(options = {}) {
           const message = interaction.options.getString("message");
           if (message === null) {
             await interaction.reply({
-              content: "For `action:missingusermsg`, provide `message`.",
+              content: "For `/settings missingusermsg`, provide `message`.",
               ephemeral: true,
             });
             return;
@@ -1963,7 +1965,7 @@ function createInteractionCommandHandler(options = {}) {
           const rawJson = interaction.options.getString("json");
           if (rawJson === null) {
             await interaction.reply({
-              content: "For `action:import`, provide `json`.",
+              content: "For `/settings import`, provide `json`.",
               ephemeral: true,
             });
             return;
@@ -1986,7 +1988,7 @@ function createInteractionCommandHandler(options = {}) {
           await postConfigurationLog(interaction, "Config Imported", [
             `**Tracks:** ${result.trackCount}`,
             `**Custom Tracks:** ${result.customTrackCount}`,
-            "**Source:** /settings action:import",
+            "**Source:** /settings import",
           ]);
           refreshCommandsIfNeeded();
           logInteractionDebug(
@@ -2003,7 +2005,8 @@ function createInteractionCommandHandler(options = {}) {
         }
 
         await interaction.reply({
-          content: `Unknown settings action: ${settingsAction}`,
+          content:
+            "Unknown `/settings` action. Use one of: `show`, `vote`, `reminders`, `reviewers`, `voters`, `digest`, `sheets`, `missingusermsg`, `export`, `import`.",
           ephemeral: true,
         });
         return;

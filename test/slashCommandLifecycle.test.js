@@ -180,7 +180,7 @@ test("buildSlashCommands keeps /useapprole legacy command", () => {
   assert.ok(subcommandNames.has("gui"));
 });
 
-test("buildSlashCommands includes single /settings command with action option", () => {
+test("buildSlashCommands includes /settings subcommands", () => {
   const { buildSlashCommands } = createSlashCommandLifecycle({
     config: {},
     client: {
@@ -206,25 +206,54 @@ test("buildSlashCommands includes single /settings command with action option", 
   const settings = commands.find((command) => command.name === "settings");
   assert.ok(settings, "settings command should exist");
 
-  const optionNames = new Set(
+  const subcommandNames = new Set(
     (Array.isArray(settings.options) ? settings.options : []).map((option) => option.name)
   );
-  assert.ok(optionNames.has("action"));
-  assert.ok(optionNames.has("track"));
-  assert.ok(optionNames.has("numerator"));
-  assert.ok(optionNames.has("denominator"));
-  assert.ok(optionNames.has("minimum_votes"));
-  assert.ok(optionNames.has("enabled"));
-  assert.ok(optionNames.has("threshold_hours"));
-  assert.ok(optionNames.has("repeat_hours"));
-  assert.ok(optionNames.has("mentions"));
-  assert.ok(optionNames.has("roles"));
-  assert.ok(optionNames.has("hour_utc"));
-  assert.ok(optionNames.has("spreadsheet_id"));
-  assert.ok(optionNames.has("sheet_name"));
-  assert.ok(optionNames.has("reset"));
-  assert.ok(optionNames.has("message"));
-  assert.ok(optionNames.has("json"));
+  assert.ok(subcommandNames.has("show"));
+  assert.ok(subcommandNames.has("vote"));
+  assert.ok(subcommandNames.has("reminders"));
+  assert.ok(subcommandNames.has("reviewers"));
+  assert.ok(subcommandNames.has("voters"));
+  assert.ok(subcommandNames.has("digest"));
+  assert.ok(subcommandNames.has("sheets"));
+  assert.ok(subcommandNames.has("missingusermsg"));
+  assert.ok(subcommandNames.has("export"));
+  assert.ok(subcommandNames.has("import"));
+
+  const voteSubcommand = (Array.isArray(settings.options) ? settings.options : []).find(
+    (option) => option.name === "vote"
+  );
+  const voteOptionNames = new Set(
+    (Array.isArray(voteSubcommand?.options) ? voteSubcommand.options : []).map(
+      (option) => option.name
+    )
+  );
+  assert.ok(voteOptionNames.has("track"));
+  assert.ok(voteOptionNames.has("numerator"));
+  assert.ok(voteOptionNames.has("denominator"));
+  assert.ok(voteOptionNames.has("minimum_votes"));
+
+  const remindersSubcommand = (Array.isArray(settings.options) ? settings.options : []).find(
+    (option) => option.name === "reminders"
+  );
+  const remindersOptionNames = new Set(
+    (Array.isArray(remindersSubcommand?.options) ? remindersSubcommand.options : []).map(
+      (option) => option.name
+    )
+  );
+  assert.ok(remindersOptionNames.has("enabled"));
+  assert.ok(remindersOptionNames.has("threshold_hours"));
+  assert.ok(remindersOptionNames.has("repeat_hours"));
+
+  const importSubcommand = (Array.isArray(settings.options) ? settings.options : []).find(
+    (option) => option.name === "import"
+  );
+  const importOptionNames = new Set(
+    (Array.isArray(importSubcommand?.options) ? importSubcommand.options : []).map(
+      (option) => option.name
+    )
+  );
+  assert.ok(importOptionNames.has("json"));
 });
 
 test("buildSlashCommands includes /embedmsg command", () => {

@@ -20,6 +20,12 @@ All notable changes to this project are documented in this file.
 - Startup config validation no longer fails hard when optional Discord ID env vars contain placeholder values; invalid optional IDs are now ignored with warnings.
 - Startup config path resolution no longer trims `cwd`, which fixes false missing-file errors for `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` in paths containing trailing spaces.
 
+## [1.3.22] - 2026-02-17
+
+### Changed
+- `/settings` now uses subcommands (`show`, `vote`, `reminders`, `reviewers`, `voters`, `digest`, `sheets`, `missingusermsg`, `export`, `import`) so Discord only shows options relevant to the selected action.
+- Updated interaction handling to support `/settings` subcommands with fallback compatibility for older action-style payloads during refresh.
+
 ## [1.3.21] - 2026-02-17
 
 ### Fixed
