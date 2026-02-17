@@ -41,6 +41,14 @@ function createApplicationDecisionWorkflow(options = {}) {
     typeof options.revertApprovedRolesOnReopen === "function"
       ? options.revertApprovedRolesOnReopen
       : async () => ({ message: "No role-revert action recorded." });
+  const revertAcceptedAnnouncementOnReopen =
+    typeof options.revertAcceptedAnnouncementOnReopen === "function"
+      ? options.revertAcceptedAnnouncementOnReopen
+      : async () => ({ message: "No announcement-revert action recorded." });
+  const sendReopenCompensationDm =
+    typeof options.sendReopenCompensationDm === "function"
+      ? options.sendReopenCompensationDm
+      : async () => ({ message: "No reopen-compensation DM action recorded." });
   const missingMemberRoleStatusValue = String(
     options.missingMemberRoleStatusValue || "failed_member_not_found"
   );
@@ -335,7 +343,9 @@ function createApplicationDecisionWorkflow(options = {}) {
     previousStatus,
     actorId,
     reopenReason,
-    reopenRoleRevertResult
+    reopenRoleRevertResult,
+    reopenAnnouncementRevertResult,
+    reopenDmCompensationResult
   ) {
     const summaryLines = [
       "♻️ **Application Reopened**",
@@ -349,8 +359,23 @@ function createApplicationDecisionWorkflow(options = {}) {
       summaryLines.push(
         `Role Revert: ${reopenRoleRevertResult?.message || "No role revert action recorded."}`
       );
+      summaryLines.push(
+        `Announcement Revert: ${
+          reopenAnnouncementRevertResult?.message ||
+          "No announcement-revert action recorded."
+        }`
+      );
     }
-    summaryLines.push("Note: prior DM/announcement side effects are not automatically reverted.");
+    if (
+      String(previousStatus || "").toLowerCase() === statusAccepted ||
+      String(previousStatus || "").toLowerCase() === statusDenied
+    ) {
+      summaryLines.push(
+        `DM Revert: ${
+          reopenDmCompensationResult?.message || "No reopen-compensation DM action recorded."
+        }`
+      );
+    }
     const summary = summaryLines.join("\n");
 
     try {
@@ -404,8 +429,27 @@ function createApplicationDecisionWorkflow(options = {}) {
 
     const previousStatus = application.status;
     let reopenRoleRevertResult = null;
+    let reopenAnnouncementRevertResult = null;
+    let reopenDmCompensationResult = null;
     if (previousStatus === statusAccepted) {
       reopenRoleRevertResult = await revertApprovedRolesOnReopen(application, actorId);
+      reopenAnnouncementRevertResult = await revertAcceptedAnnouncementOnReopen(
+        application,
+        actorId
+      );
+      reopenDmCompensationResult = await sendReopenCompensationDm(
+        application,
+        previousStatus,
+        actorId,
+        reopenReason
+      );
+    } else if (previousStatus === statusDenied) {
+      reopenDmCompensationResult = await sendReopenCompensationDm(
+        application,
+        previousStatus,
+        actorId,
+        reopenReason
+      );
     }
     application.lastDecision = {
       status: application.status,
@@ -430,6 +474,8 @@ function createApplicationDecisionWorkflow(options = {}) {
     application.lastReminderAt = null;
     application.reminderCount = 0;
     application.reopenRoleRevertResult = reopenRoleRevertResult;
+    application.reopenAnnouncementRevertResult = reopenAnnouncementRevertResult;
+    application.reopenDmCompensationResult = reopenDmCompensationResult;
     writeState(state);
 
     await postReopenUpdate(
@@ -437,13 +483,17 @@ function createApplicationDecisionWorkflow(options = {}) {
       previousStatus,
       actorId,
       application.reopenReason,
-      reopenRoleRevertResult
+      reopenRoleRevertResult,
+      reopenAnnouncementRevertResult,
+      reopenDmCompensationResult
     );
 
     return {
       ok: true,
       previousStatus,
       reopenRoleRevertResult,
+      reopenAnnouncementRevertResult,
+      reopenDmCompensationResult,
       application,
     };
   }

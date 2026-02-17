@@ -4143,6 +4143,19 @@ function createInteractionCommandHandler(options = {}) {
           result.reopenRoleRevertResult?.message
         ) {
           reopenReplyLines.push(`Role revert: ${result.reopenRoleRevertResult.message}`);
+          reopenReplyLines.push(
+            `Announcement revert: ${
+              result.reopenAnnouncementRevertResult?.message ||
+              "no announcement-revert action recorded"
+            }`
+          );
+        }
+        if (
+          (String(result.previousStatus || "").toLowerCase() === statusAccepted ||
+            String(result.previousStatus || "").toLowerCase() === statusDenied) &&
+          result.reopenDmCompensationResult?.message
+        ) {
+          reopenReplyLines.push(`DM revert: ${result.reopenDmCompensationResult.message}`);
         }
         await interaction.reply({
           content: reopenReplyLines.join("\n"),
@@ -4154,6 +4167,13 @@ function createInteractionCommandHandler(options = {}) {
           `**Previous Status:** ${String(result.previousStatus || "unknown").toUpperCase()}`,
           `**Role Revert:** ${
             result.reopenRoleRevertResult?.message || "no role-revert action recorded"
+          }`,
+          `**Announcement Revert:** ${
+            result.reopenAnnouncementRevertResult?.message ||
+            "no announcement-revert action recorded"
+          }`,
+          `**DM Revert:** ${
+            result.reopenDmCompensationResult?.message || "no DM-revert action recorded"
           }`,
           `**Reason:** ${reason || "none"}`,
         ]);

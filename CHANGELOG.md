@@ -20,6 +20,19 @@ All notable changes to this project are documented in this file.
 - Startup config validation no longer fails hard when optional Discord ID env vars contain placeholder values; invalid optional IDs are now ignored with warnings.
 - Startup config path resolution no longer trims `cwd`, which fixes false missing-file errors for `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` in paths containing trailing spaces.
 
+## [1.4.3] - 2026-02-17
+
+### Changed
+- `/reopen` now attempts full side-effect rollback:
+  - remove previously granted acceptance roles,
+  - delete tracked acceptance announcement message,
+  - send reopen-compensation DM to applicant when resolvable.
+- Reopen command/thread summaries now include role, announcement, and DM rollback results.
+
+### Fixed
+- Acceptance role-assignment resolution now retries applicant lookup from submitted form fields (including case-insensitive username matching) when `applicantUserId` was missing.
+- Denied/reopen DM flows now use the same fallback applicant resolution path.
+
 ## [1.4.2] - 2026-02-17
 
 ### Changed

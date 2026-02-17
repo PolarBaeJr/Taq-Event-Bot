@@ -102,6 +102,211 @@ function createApplicationDecisionUtils(options = {}) {
     return out;
   }
 
+  function parseSubmittedFieldLine(rawLine) {
+    const line = String(rawLine || "").trim();
+    if (!line) {
+      return null;
+    }
+
+    const match = line.match(/^\*{0,2}\s*([^:]+?)\s*\*{0,2}\s*:\s*(.+)$/);
+    if (!match) {
+      return null;
+    }
+
+    const key = String(match[1] || "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
+    const value = String(match[2] || "").trim();
+    if (!key || !value) {
+      return null;
+    }
+    return { key, value };
+  }
+
+  function extractSubmittedFieldValue(submittedFields, hintSets) {
+    if (!Array.isArray(submittedFields)) {
+      return "";
+    }
+
+    const normalizedHintSets = (Array.isArray(hintSets) ? hintSets : [])
+      .map((set) => (Array.isArray(set) ? set : [set]))
+      .map((set) =>
+        set
+          .map((token) => String(token || "").trim().toLowerCase())
+          .filter(Boolean)
+      )
+      .filter((set) => set.length > 0);
+    if (normalizedHintSets.length === 0) {
+      return "";
+    }
+
+    for (const rawLine of submittedFields) {
+      const parsed = parseSubmittedFieldLine(rawLine);
+      if (!parsed) {
+        continue;
+      }
+
+      for (const hintSet of normalizedHintSets) {
+        if (hintSet.every((token) => parsed.key.includes(token))) {
+          return parsed.value;
+        }
+      }
+    }
+
+    return "";
+  }
+
+  function inferApplicantDiscordValueFromSubmittedFields(application) {
+    const submittedFields = Array.isArray(application?.submittedFields)
+      ? application.submittedFields
+      : [];
+    if (submittedFields.length === 0) {
+      return "";
+    }
+
+    const discordId = extractSubmittedFieldValue(submittedFields, [
+      ["discord", "id"],
+      ["user", "id"],
+      ["member", "id"],
+    ]);
+    if (discordId) {
+      return discordId;
+    }
+
+    const discordUsername = extractSubmittedFieldValue(submittedFields, [
+      ["discord", "user", "name"],
+      ["discord", "username"],
+      ["discord", "name"],
+      ["discord"],
+    ]);
+    if (discordUsername) {
+      return discordUsername;
+    }
+
+    return "";
+  }
+
+  function extractDiscordUserId(value) {
+    const raw = String(value || "").trim();
+    if (!raw) {
+      return null;
+    }
+
+    const mentionMatch = raw.match(/^<@!?(\d{17,20})>$/);
+    if (mentionMatch) {
+      return mentionMatch[1];
+    }
+
+    const snowflakeMatch = raw.match(/\b(\d{17,20})\b/);
+    if (snowflakeMatch) {
+      return snowflakeMatch[1];
+    }
+
+    return null;
+  }
+
+  function normalizeDiscordLookupQuery(value) {
+    const raw = String(value || "").trim();
+    if (!raw) {
+      return null;
+    }
+
+    const withoutAt = raw.replace(/^@/, "").trim();
+    if (!withoutAt) {
+      return null;
+    }
+
+    const hashIndex = withoutAt.indexOf("#");
+    if (hashIndex > 0) {
+      const suffix = withoutAt.slice(hashIndex + 1).trim();
+      if (/^\d{1,6}$/.test(suffix)) {
+        const base = withoutAt.slice(0, hashIndex).trim();
+        return base || null;
+      }
+    }
+
+    return withoutAt;
+  }
+
+  function pickBestGuildMemberMatch(members, query) {
+    if (!members || typeof members.find !== "function") {
+      return null;
+    }
+
+    const needle = String(query || "").trim().toLowerCase();
+    if (!needle) {
+      return typeof members.first === "function" ? members.first() || null : null;
+    }
+
+    const exact =
+      members.find((member) => member.user.username.toLowerCase() === needle) ||
+      members.find((member) => (member.user.globalName || "").toLowerCase() === needle) ||
+      members.find((member) => (member.displayName || "").toLowerCase() === needle);
+    if (exact) {
+      return exact;
+    }
+
+    const startsWith =
+      members.find((member) => member.user.username.toLowerCase().startsWith(needle)) ||
+      members.find((member) =>
+        (member.user.globalName || "").toLowerCase().startsWith(needle)
+      ) ||
+      members.find((member) => (member.displayName || "").toLowerCase().startsWith(needle));
+    if (startsWith) {
+      return startsWith;
+    }
+
+    return null;
+  }
+
+  async function resolveApplicantUserIdFromApplication(application, guild) {
+    if (!application || !guild) {
+      return null;
+    }
+
+    const existing = String(application.applicantUserId || "").trim();
+    if (isSnowflake(existing)) {
+      return existing;
+    }
+
+    const rawDiscordValue = inferApplicantDiscordValueFromSubmittedFields(application);
+    const directId = extractDiscordUserId(rawDiscordValue);
+    if (isSnowflake(directId)) {
+      return directId;
+    }
+
+    const query = normalizeDiscordLookupQuery(rawDiscordValue);
+    if (!query) {
+      return null;
+    }
+
+    const queryCandidates = Array.from(new Set([query, query.toLowerCase()]));
+    for (const candidate of queryCandidates) {
+      try {
+        const matches = await guild.members.fetch({ query: candidate, limit: 10 });
+        if (!matches || matches.size === 0) {
+          continue;
+        }
+        const chosen = pickBestGuildMemberMatch(matches, query);
+        if (chosen?.id) {
+          return chosen.id;
+        }
+        if (matches.size === 1) {
+          const only = matches.first();
+          if (only?.id) {
+            return only.id;
+          }
+        }
+      } catch {
+        // keep trying next candidate and cache fallback
+      }
+    }
+
+    const cached = pickBestGuildMemberMatch(guild.members?.cache, query);
+    return cached?.id || null;
+  }
+
   async function postApplicantNotInDiscordThreadNotice(application) {
     if (!application?.threadId) {
       return false;
@@ -282,15 +487,6 @@ function createApplicationDecisionUtils(options = {}) {
       };
     }
 
-    if (!application.applicantUserId) {
-      return {
-        status: "skipped_no_user",
-        message: "No applicant Discord user could be resolved from the form data.",
-        roleIds: approvedRoleIds,
-        userId: null,
-      };
-    }
-
     try {
       const channel = await client.channels.fetch(application.channelId);
       if (!channel || !("guild" in channel) || !channel.guild) {
@@ -313,9 +509,26 @@ function createApplicationDecisionUtils(options = {}) {
         };
       }
 
+      const resolvedApplicantUserId = await resolveApplicantUserIdFromApplication(
+        application,
+        guild
+      );
+      if (resolvedApplicantUserId) {
+        application.applicantUserId = resolvedApplicantUserId;
+      }
+      if (!resolvedApplicantUserId) {
+        return {
+          status: "skipped_no_user",
+          message:
+            "No applicant Discord user could be resolved from the form data/submitted fields.",
+          roleIds: approvedRoleIds,
+          userId: null,
+        };
+      }
+
       let member = null;
       try {
-        member = await guild.members.fetch(application.applicantUserId);
+        member = await guild.members.fetch(resolvedApplicantUserId);
       } catch {
         member = null;
       }
@@ -327,9 +540,9 @@ function createApplicationDecisionUtils(options = {}) {
         }
         return {
           status: "failed_member_not_found",
-          message: `Applicant user <@${application.applicantUserId}> is not in this server.${noticePosted ? " Posted configured not-in-server notice in the application thread." : ""}`,
+          message: `Applicant user <@${resolvedApplicantUserId}> is not in this server.${noticePosted ? " Posted configured not-in-server notice in the application thread." : ""}`,
           roleIds: approvedRoleIds,
-          userId: application.applicantUserId,
+          userId: resolvedApplicantUserId,
         };
       }
 
@@ -437,7 +650,9 @@ function createApplicationDecisionUtils(options = {}) {
         status: "failed_error",
         message: `Role assignment failed: ${err.message}`,
         roleIds: approvedRoleIds,
-        userId: application.applicantUserId,
+        userId: isSnowflake(application.applicantUserId)
+          ? application.applicantUserId
+          : null,
       };
     }
   }
@@ -614,28 +829,40 @@ function createApplicationDecisionUtils(options = {}) {
   }
 
   async function sendDeniedApplicationDm(application, decisionReason) {
-    if (!application.applicantUserId) {
-      return {
-        status: "skipped_no_user",
-        message: "No applicant Discord user could be resolved from discord_ID.",
-        userId: null,
-      };
-    }
-
     const trackLabel = getTrackLabel(application.trackKey);
     let serverName = "Unknown Server";
+    let sourceGuild = null;
     try {
       const channel = await client.channels.fetch(application.channelId);
       if (channel && "guild" in channel && channel.guild?.name) {
         serverName = channel.guild.name;
+        sourceGuild = channel.guild;
       }
     } catch {
       // ignore and keep fallback server name
     }
 
+    let applicantUserId = isSnowflake(application.applicantUserId)
+      ? String(application.applicantUserId)
+      : null;
+    if (!applicantUserId && sourceGuild) {
+      applicantUserId = await resolveApplicantUserIdFromApplication(application, sourceGuild);
+      if (applicantUserId) {
+        application.applicantUserId = applicantUserId;
+      }
+    }
+    if (!applicantUserId) {
+      return {
+        status: "skipped_no_user",
+        message:
+          "No applicant Discord user could be resolved from discord_ID/submitted fields.",
+        userId: null,
+      };
+    }
+
     const replacements = {
-      user: `<@${application.applicantUserId}>`,
-      user_id: application.applicantUserId,
+      user: `<@${applicantUserId}>`,
+      user_id: applicantUserId,
       applicant_name: application.applicantName || "Applicant",
       track: trackLabel,
       application_id: getApplicationDisplayId(application),
@@ -650,18 +877,18 @@ function createApplicationDecisionUtils(options = {}) {
     const content = rendered || defaultDenyDmTemplate;
 
     try {
-      const user = await client.users.fetch(application.applicantUserId);
+      const user = await client.users.fetch(applicantUserId);
       await sendDebugDm(user, content);
       return {
         status: "sent",
-        message: `Denied DM sent to <@${application.applicantUserId}>.`,
-        userId: application.applicantUserId,
+        message: `Denied DM sent to <@${applicantUserId}>.`,
+        userId: applicantUserId,
       };
     } catch (err) {
       return {
         status: "failed_error",
-        message: `Failed sending denied DM to <@${application.applicantUserId}>: ${err.message}`,
-        userId: application.applicantUserId,
+        message: `Failed sending denied DM to <@${applicantUserId}>: ${err.message}`,
+        userId: applicantUserId,
       };
     }
   }
@@ -678,18 +905,33 @@ function createApplicationDecisionUtils(options = {}) {
 
     const trackLabel = getTrackLabel(application.trackKey);
     let serverName = "Unknown Server";
+    let sourceGuild = null;
     try {
       const sourceChannel = await client.channels.fetch(application.channelId);
       if (sourceChannel && "guild" in sourceChannel && sourceChannel.guild?.name) {
         serverName = sourceChannel.guild.name;
+        sourceGuild = sourceChannel.guild;
       }
     } catch {
       // ignore and keep fallback
     }
 
+    let applicantUserId = isSnowflake(application.applicantUserId)
+      ? String(application.applicantUserId)
+      : null;
+    if (!applicantUserId && sourceGuild) {
+      applicantUserId = await resolveApplicantUserIdFromApplication(
+        application,
+        sourceGuild
+      );
+      if (applicantUserId) {
+        application.applicantUserId = applicantUserId;
+      }
+    }
+
     const replacements = {
-      user: application.applicantUserId ? `<@${application.applicantUserId}>` : "",
-      user_id: application.applicantUserId || "",
+      user: applicantUserId ? `<@${applicantUserId}>` : "",
+      user_id: applicantUserId || "",
       applicant_name: application.applicantName || "Applicant",
       track: trackLabel,
       application_id: getApplicationDisplayId(application),
@@ -704,20 +946,158 @@ function createApplicationDecisionUtils(options = {}) {
     const content = rendered || defaultAcceptAnnounceTemplate;
 
     try {
-      await sendChannelMessage(channelId, content, {
+      const sentMessage = await sendChannelMessage(channelId, content, {
         parse: [],
-        users: application.applicantUserId ? [application.applicantUserId] : [],
+        users: applicantUserId ? [applicantUserId] : [],
       });
       return {
         status: "sent",
         message: `Acceptance announcement posted in <#${channelId}>.`,
         channelId,
+        messageId: sentMessage?.id || null,
       };
     } catch (err) {
       return {
         status: "failed_error",
         message: `Failed posting acceptance announcement in <#${channelId}>: ${err.message}`,
         channelId,
+        messageId: null,
+      };
+    }
+  }
+
+  async function revertAcceptedAnnouncementOnReopen(application, actorId) {
+    const channelId = String(application?.acceptAnnounceResult?.channelId || "").trim();
+    const messageId = String(application?.acceptAnnounceResult?.messageId || "").trim();
+    if (String(application?.acceptAnnounceResult?.status || "") !== "sent") {
+      return {
+        status: "skipped_no_sent_announcement",
+        message: "No sent acceptance announcement to revert.",
+        channelId: isSnowflake(channelId) ? channelId : null,
+        messageId: isSnowflake(messageId) ? messageId : null,
+      };
+    }
+    if (!isSnowflake(channelId) || !isSnowflake(messageId)) {
+      return {
+        status: "skipped_missing_message_reference",
+        message:
+          "Acceptance announcement reference is missing message ID; cannot auto-delete legacy announcement.",
+        channelId: isSnowflake(channelId) ? channelId : null,
+        messageId: null,
+      };
+    }
+
+    try {
+      const channel = await client.channels.fetch(channelId);
+      if (!channel || !channel.isTextBased()) {
+        return {
+          status: "failed_channel_unavailable",
+          message: `Could not access accept-announcement channel <#${channelId}> for cleanup.`,
+          channelId,
+          messageId,
+        };
+      }
+
+      const message = await channel.messages.fetch(messageId);
+      if (!message) {
+        return {
+          status: "already_deleted",
+          message: `Acceptance announcement was already deleted in <#${channelId}>.`,
+          channelId,
+          messageId,
+        };
+      }
+
+      await message.delete(
+        `Application reopened (${getApplicationDisplayId(application)}) by ${actorId || "unknown"}`
+      );
+      return {
+        status: "reverted",
+        message: `Deleted acceptance announcement in <#${channelId}>.`,
+        channelId,
+        messageId,
+      };
+    } catch (err) {
+      const raw = String(err?.message || "");
+      if (/unknown message/i.test(raw)) {
+        return {
+          status: "already_deleted",
+          message: `Acceptance announcement was already deleted in <#${channelId}>.`,
+          channelId,
+          messageId,
+        };
+      }
+      return {
+        status: "failed_error",
+        message: `Failed deleting acceptance announcement in <#${channelId}>: ${raw}`,
+        channelId,
+        messageId,
+      };
+    }
+  }
+
+  async function sendReopenCompensationDm(
+    application,
+    previousStatus,
+    actorId,
+    reopenReason = ""
+  ) {
+    let serverName = "Unknown Server";
+    let sourceGuild = null;
+    try {
+      const channel = await client.channels.fetch(application.channelId);
+      if (channel && "guild" in channel && channel.guild?.name) {
+        serverName = channel.guild.name;
+        sourceGuild = channel.guild;
+      }
+    } catch {
+      // ignore and keep fallback server name
+    }
+
+    let applicantUserId = isSnowflake(application.applicantUserId)
+      ? String(application.applicantUserId)
+      : null;
+    if (!applicantUserId && sourceGuild) {
+      applicantUserId = await resolveApplicantUserIdFromApplication(application, sourceGuild);
+      if (applicantUserId) {
+        application.applicantUserId = applicantUserId;
+      }
+    }
+    if (!applicantUserId) {
+      return {
+        status: "skipped_no_user",
+        message: "No applicant Discord user could be resolved for reopen compensation DM.",
+        userId: null,
+      };
+    }
+
+    const previousLabel = String(previousStatus || "unknown").toUpperCase();
+    const lines = [
+      "Your application decision was reopened and is now pending review.",
+      `Previous decision: ${previousLabel}`,
+      `Track: ${getTrackLabel(application.trackKey)}`,
+      `Application ID: ${getApplicationDisplayId(application)}`,
+      `Server: ${serverName}`,
+      `Reopened by: ${actorId ? `<@${actorId}>` : "Unknown"}`,
+    ];
+    const normalizedReason = String(reopenReason || "").trim();
+    if (normalizedReason) {
+      lines.push(`Reopen reason: ${normalizedReason}`);
+    }
+
+    try {
+      const user = await client.users.fetch(applicantUserId);
+      await sendDebugDm(user, lines.join("\n"));
+      return {
+        status: "sent",
+        message: `Reopen compensation DM sent to <@${applicantUserId}>.`,
+        userId: applicantUserId,
+      };
+    } catch (err) {
+      return {
+        status: "failed_error",
+        message: `Failed sending reopen compensation DM to <@${applicantUserId}>: ${err.message}`,
+        userId: applicantUserId,
       };
     }
   }
@@ -726,6 +1106,8 @@ function createApplicationDecisionUtils(options = {}) {
     postClosureLog,
     grantApprovedRoleOnAcceptance,
     revertApprovedRolesOnReopen,
+    revertAcceptedAnnouncementOnReopen,
+    sendReopenCompensationDm,
     sendDeniedApplicationDm,
     sendAcceptedApplicationAnnouncement,
   };
