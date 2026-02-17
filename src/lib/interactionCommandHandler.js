@@ -17,6 +17,10 @@ const REACTION_ROLE_GUI_ACTION_MODAL_REMOVE = "modal_remove";
 const APPROLE_GUI_PREFIX = "approlegui";
 const APPROLE_GUI_ACTION_TRACK = "track";
 const APPROLE_GUI_ACTION_ROLES = "roles";
+const COMMAND_OPTION_TYPE_SUBCOMMAND = 1;
+const COMMAND_OPTION_TYPE_SUBCOMMAND_GROUP = 2;
+const COMMAND_OPTION_TYPE_STRING = 3;
+const COMMAND_OPTION_TYPE_ROLE = 8;
 
 function createInteractionCommandHandler(options = {}) {
   const PermissionsBitField = options.PermissionsBitField;
@@ -47,7 +51,27 @@ function createInteractionCommandHandler(options = {}) {
   const setActiveAcceptAnnounceTemplate = options.setActiveAcceptAnnounceTemplate;
   const getActiveAcceptAnnounceChannelId = options.getActiveAcceptAnnounceChannelId;
   const sendChannelMessage = options.sendChannelMessage;
-  const parseRoleIdList = options.parseRoleIdList;
+  const parseRoleIdList =
+    typeof options.parseRoleIdList === "function"
+      ? options.parseRoleIdList
+      : (value) => {
+          const source = Array.isArray(value)
+            ? value
+            : typeof value === "string"
+              ? value.split(/[,\s]+/)
+              : [value];
+          const out = [];
+          const seen = new Set();
+          for (const item of source) {
+            const roleId = String(item || "").trim();
+            if (!/^\d{17,20}$/.test(roleId) || seen.has(roleId)) {
+              continue;
+            }
+            seen.add(roleId);
+            out.push(roleId);
+          }
+          return out;
+        };
   const setActiveApprovedRoles = options.setActiveApprovedRoles;
   const getActiveApprovedRoleIds =
     typeof options.getActiveApprovedRoleIds === "function"
@@ -391,6 +415,108 @@ function createInteractionCommandHandler(options = {}) {
     return Number.isInteger(value) ? value : null;
   }
 
+  function flattenCommandOptions(optionsData) {
+    const out = [];
+    const queue = Array.isArray(optionsData) ? [...optionsData] : [];
+
+    while (queue.length > 0) {
+      const option = queue.shift();
+      if (!option || typeof option !== "object") {
+        continue;
+      }
+
+      const nested = Array.isArray(option.options) ? option.options : [];
+      if (
+        (option.type === COMMAND_OPTION_TYPE_SUBCOMMAND ||
+          option.type === COMMAND_OPTION_TYPE_SUBCOMMAND_GROUP) &&
+        nested.length > 0
+      ) {
+        queue.push(...nested);
+        continue;
+      }
+
+      if (nested.length > 0 && option.value === undefined) {
+        queue.push(...nested);
+        continue;
+      }
+
+      out.push(option);
+    }
+
+    return out;
+  }
+
+  function safeGetStringOptionFromInteraction(interaction, optionName) {
+    if (!interaction?.options || typeof interaction.options.getString !== "function") {
+      return null;
+    }
+    try {
+      return interaction.options.getString(optionName, false);
+    } catch {
+      return null;
+    }
+  }
+
+  function safeGetRoleOptionIdFromInteraction(interaction, optionName) {
+    if (!interaction?.options || typeof interaction.options.getRole !== "function") {
+      return null;
+    }
+    try {
+      const role = interaction.options.getRole(optionName, false);
+      return role?.id || null;
+    } catch {
+      return null;
+    }
+  }
+
+  function extractTrackOptionInput(interaction) {
+    const namedCandidates = ["track", "track_key", "application_track", "team"];
+    for (const optionName of namedCandidates) {
+      const value = safeGetStringOptionFromInteraction(interaction, optionName);
+      if (typeof value === "string" && value.trim()) {
+        return value.trim();
+      }
+    }
+
+    const flattenedOptions = flattenCommandOptions(interaction?.options?.data);
+    const stringOptions = flattenedOptions.filter(
+      (option) =>
+        option?.type === COMMAND_OPTION_TYPE_STRING && typeof option?.value === "string"
+    );
+    if (stringOptions.length === 0) {
+      return "";
+    }
+
+    const preferred = stringOptions.find((option) =>
+      /(track|team)/i.test(String(option?.name || ""))
+    );
+    const source = preferred || stringOptions[0];
+    return String(source?.value || "").trim();
+  }
+
+  function extractRoleIdsFromInteractionOptions(interaction) {
+    const namedRoleOptionIds = [
+      "role",
+      "role_1",
+      "role_2",
+      "role_3",
+      "role_4",
+      "role_5",
+      "accepted_role",
+      "approved_role",
+    ]
+      .map((optionName) => safeGetRoleOptionIdFromInteraction(interaction, optionName))
+      .filter(Boolean);
+
+    const flattenedOptions = flattenCommandOptions(interaction?.options?.data);
+    const discoveredRoleIds = flattenedOptions
+      .filter((option) => option?.type === COMMAND_OPTION_TYPE_ROLE)
+      .map((option) => String(option?.value || "").trim())
+      .filter(Boolean);
+
+    return parseRoleIdList([...namedRoleOptionIds, ...discoveredRoleIds]);
+  }
+
   return async function onInteractionCreate(interaction) {
     try {
       const refreshCommandsIfNeeded = () => {
@@ -512,7 +638,16 @@ function createInteractionCommandHandler(options = {}) {
         }
 
         const selectedRoleIds = parseRoleIdList(interaction.values || []);
-        const roleUpdate = setActiveApprovedRoles(selectedTrack, selectedRoleIds);
+        let roleUpdate;
+        try {
+          roleUpdate = setActiveApprovedRoles(selectedTrack, selectedRoleIds);
+        } catch (err) {
+          await interaction.reply({
+            content: err?.message || "Failed updating accepted roles.",
+            ephemeral: true,
+          });
+          return;
+        }
         const currentRoleMentions =
           roleUpdate.roleIds.length > 0
             ? roleUpdate.roleIds.map((id) => `<@&${id}>`).join(", ")
@@ -1930,37 +2065,39 @@ function createInteractionCommandHandler(options = {}) {
           return;
         }
 
-        const primaryRole = interaction.options.getRole("role", true);
-        if (!primaryRole) {
-          await interaction.reply({
-            content: "Role not found.",
-            ephemeral: true,
-          });
-          return;
-        }
-
-        const selectedTrack = normalizeTrackKey(
-          interaction.options.getString("track", true)
-        );
+        const rawTrackInput = extractTrackOptionInput(interaction);
+        const selectedTrack = normalizeTrackKey(rawTrackInput);
         if (!selectedTrack) {
+          refreshCommandsIfNeeded();
           await interaction.reply({
-            content: "Please provide a valid track. Use `/track list` to view available tracks.",
+            content: rawTrackInput
+              ? `Unknown track \`${rawTrackInput}\`. Use \`/track list\` to view available tracks.`
+              : "Missing `track` option. Use `/setapprole track:<track> role:@Role`.",
             ephemeral: true,
           });
           return;
         }
         const trackLabel = getTrackLabel(selectedTrack);
-        const optionalRoles = [
-          interaction.options.getRole("role_2"),
-          interaction.options.getRole("role_3"),
-          interaction.options.getRole("role_4"),
-          interaction.options.getRole("role_5"),
-        ].filter(Boolean);
-        const selectedRoleIds = parseRoleIdList([
-          primaryRole.id,
-          ...optionalRoles.map((role) => role.id),
-        ]);
-        const roleUpdate = setActiveApprovedRoles(selectedTrack, selectedRoleIds);
+        const selectedRoleIds = extractRoleIdsFromInteractionOptions(interaction).slice(0, 5);
+        if (selectedRoleIds.length === 0) {
+          refreshCommandsIfNeeded();
+          await interaction.reply({
+            content:
+              "Missing `role` option. Use `/setapprole track:<track> role:@Role` (up to `role_5`). If this keeps failing, restart the bot to refresh slash commands.",
+            ephemeral: true,
+          });
+          return;
+        }
+        let roleUpdate;
+        try {
+          roleUpdate = setActiveApprovedRoles(selectedTrack, selectedRoleIds);
+        } catch (err) {
+          await interaction.reply({
+            content: err?.message || "Failed updating accepted roles.",
+            ephemeral: true,
+          });
+          return;
+        }
 
         let warning = "";
         try {
