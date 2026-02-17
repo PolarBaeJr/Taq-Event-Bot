@@ -270,37 +270,100 @@ function createSlashCommandLifecycle(options = {}) {
       return new SlashCommandBuilder()
         .setName("set")
         .setDescription("Set channel/role/template configuration")
-        .addSubcommand((subcommand) =>
-          subcommand
+        .addSubcommandGroup((group) =>
+          group
             .setName("channel")
             .setDescription("Set application/log/feedback channels")
-            .addStringOption((option) =>
-              option
-                .setName("channel_target")
-                .setDescription("Channel target")
-                .addChoices(
-                  { name: "Post Channel (track)", value: "post" },
-                  { name: "Post Channel (legacy channel_post)", value: "channel_post" },
-                  { name: "Application Log", value: "application_log" },
-                  { name: "Bot Log", value: "log" },
-                  { name: "Accept Message", value: "accept_message" },
-                  { name: "Bug", value: "bug" },
-                  { name: "Suggestions", value: "suggestions" }
+            .addSubcommand((subcommand) =>
+              subcommand
+                .setName("post")
+                .setDescription("Set application post channel for one track")
+                .addStringOption((option) =>
+                  option
+                    .setName("track")
+                    .setDescription("Track key/alias")
+                    .setAutocomplete(true)
+                    .setRequired(true)
                 )
-                .setRequired(true)
+                .addChannelOption((option) =>
+                  option
+                    .setName("channel")
+                    .setDescription("Channel to assign")
+                    .setRequired(true)
+                )
             )
-            .addStringOption((option) =>
-              option
-                .setName("track")
-                .setDescription("Track key/alias (required for channel_target:post)")
-                .setAutocomplete(true)
-                .setRequired(false)
+            .addSubcommand((subcommand) =>
+              subcommand
+                .setName("channel_post")
+                .setDescription("Legacy alias of `post`")
+                .addStringOption((option) =>
+                  option
+                    .setName("track")
+                    .setDescription("Track key/alias")
+                    .setAutocomplete(true)
+                    .setRequired(true)
+                )
+                .addChannelOption((option) =>
+                  option
+                    .setName("channel")
+                    .setDescription("Channel to assign")
+                    .setRequired(true)
+                )
             )
-            .addChannelOption((option) =>
-              option
-                .setName("channel")
-                .setDescription("Channel to assign")
-                .setRequired(true)
+            .addSubcommand((subcommand) =>
+              subcommand
+                .setName("application_log")
+                .setDescription("Set application decision/digest log channel")
+                .addChannelOption((option) =>
+                  option
+                    .setName("channel")
+                    .setDescription("Channel to assign")
+                    .setRequired(true)
+                )
+            )
+            .addSubcommand((subcommand) =>
+              subcommand
+                .setName("log")
+                .setDescription("Set bot operation log channel")
+                .addChannelOption((option) =>
+                  option
+                    .setName("channel")
+                    .setDescription("Channel to assign")
+                    .setRequired(true)
+                )
+            )
+            .addSubcommand((subcommand) =>
+              subcommand
+                .setName("accept_message")
+                .setDescription("Set accepted-announcement channel")
+                .addChannelOption((option) =>
+                  option
+                    .setName("channel")
+                    .setDescription("Channel to assign")
+                    .setRequired(true)
+                )
+            )
+            .addSubcommand((subcommand) =>
+              subcommand
+                .setName("bug")
+                .setDescription("Set bug report channel")
+                .addChannelOption((option) =>
+                  option
+                    .setName("channel")
+                    .setDescription("Channel to assign")
+                    .setRequired(true)
+                )
+            )
+            .addSubcommand((subcommand) =>
+              subcommand
+                .setName("suggestions")
+                .setDescription("Set suggestions channel")
+                .addChannelOption((option) =>
+                  option
+                    .setName("channel")
+                    .setDescription("Channel to assign")
+                    .setRequired(true)
+                )
             )
         )
         .addSubcommand((subcommand) =>

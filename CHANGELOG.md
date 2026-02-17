@@ -20,6 +20,16 @@ All notable changes to this project are documented in this file.
 - Startup config validation no longer fails hard when optional Discord ID env vars contain placeholder values; invalid optional IDs are now ignored with warnings.
 - Startup config path resolution no longer trims `cwd`, which fixes false missing-file errors for `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` in paths containing trailing spaces.
 
+## [1.3.24] - 2026-02-17
+
+### Changed
+- `/set channel` now uses a subcommand group with target-specific subcommands: `post`, `channel_post`, `application_log`, `log`, `accept_message`, `bug`, `suggestions`.
+- `/set channel` option visibility is now target-specific in Discord (for example `track` only appears on `post`/`channel_post`).
+- Updated `/set channel` guidance text and docs to use the new grouped syntax.
+
+### Compatibility
+- Interaction handling still accepts legacy `/set channel` payloads that send `channel_target`.
+
 ## [1.3.23] - 2026-02-17
 
 ### Changed

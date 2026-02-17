@@ -4,7 +4,7 @@ const { SlashCommandBuilder } = require("discord.js");
 
 const { createSlashCommandLifecycle } = require("../src/lib/slashCommandLifecycle");
 
-test("buildSlashCommands includes unified /set command subcommands", () => {
+test("buildSlashCommands includes unified /set command structure", () => {
   const { buildSlashCommands } = createSlashCommandLifecycle({
     config: {},
     client: {
@@ -45,28 +45,43 @@ test("buildSlashCommands includes unified /set command subcommands", () => {
   assert.ok(subcommandNames.has("denymsg"));
   assert.ok(subcommandNames.has("acceptmsg"));
 
-  const channelSubcommand = (Array.isArray(setCommand.options) ? setCommand.options : []).find(
+  const channelGroup = (Array.isArray(setCommand.options) ? setCommand.options : []).find(
     (option) => option.name === "channel"
   );
-  const channelOptionNames = new Set(
-    (Array.isArray(channelSubcommand?.options) ? channelSubcommand.options : []).map(
+  const channelSubcommandNames = new Set(
+    (Array.isArray(channelGroup?.options) ? channelGroup.options : []).map(
       (option) => option.name
     )
   );
-  assert.ok(channelOptionNames.has("channel_target"));
-  assert.ok(channelOptionNames.has("track"));
-  assert.ok(channelOptionNames.has("channel"));
-  const channelTargetOption = (Array.isArray(channelSubcommand?.options)
-    ? channelSubcommand.options
-    : []
-  ).find((option) => option.name === "channel_target");
-  const channelTargetValues = new Set(
-    (Array.isArray(channelTargetOption?.choices) ? channelTargetOption.choices : []).map(
-      (choice) => choice.value
+  assert.ok(channelSubcommandNames.has("post"));
+  assert.ok(channelSubcommandNames.has("channel_post"));
+  assert.ok(channelSubcommandNames.has("application_log"));
+  assert.ok(channelSubcommandNames.has("log"));
+  assert.ok(channelSubcommandNames.has("accept_message"));
+  assert.ok(channelSubcommandNames.has("bug"));
+  assert.ok(channelSubcommandNames.has("suggestions"));
+
+  const postSubcommand = (Array.isArray(channelGroup?.options) ? channelGroup.options : []).find(
+    (option) => option.name === "post"
+  );
+  const postOptionNames = new Set(
+    (Array.isArray(postSubcommand?.options) ? postSubcommand.options : []).map(
+      (option) => option.name
     )
   );
-  assert.ok(channelTargetValues.has("post"));
-  assert.ok(channelTargetValues.has("channel_post"));
+  assert.ok(postOptionNames.has("track"));
+  assert.ok(postOptionNames.has("channel"));
+
+  const appLogSubcommand = (Array.isArray(channelGroup?.options) ? channelGroup.options : []).find(
+    (option) => option.name === "application_log"
+  );
+  const appLogOptionNames = new Set(
+    (Array.isArray(appLogSubcommand?.options) ? appLogSubcommand.options : []).map(
+      (option) => option.name
+    )
+  );
+  assert.ok(appLogOptionNames.has("channel"));
+  assert.equal(appLogOptionNames.size, 1);
 
   const defaultSubcommand = (Array.isArray(setCommand.options) ? setCommand.options : []).find(
     (option) => option.name === "default"

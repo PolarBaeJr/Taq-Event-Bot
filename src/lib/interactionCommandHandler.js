@@ -515,6 +515,17 @@ function createInteractionCommandHandler(options = {}) {
     }
   }
 
+  function safeGetSubcommandGroup(interaction) {
+    if (!interaction?.options || typeof interaction.options.getSubcommandGroup !== "function") {
+      return null;
+    }
+    try {
+      return interaction.options.getSubcommandGroup(false);
+    } catch {
+      return null;
+    }
+  }
+
   function extractTrackOptionInput(interaction) {
     const namedCandidates = ["track", "track_key", "application_track", "team"];
     for (const optionName of namedCandidates) {
@@ -629,11 +640,13 @@ function createInteractionCommandHandler(options = {}) {
       interaction && interaction.type !== undefined && interaction.type !== null
         ? Number(interaction.type)
         : null;
+    const subcommandGroup = safeGetSubcommandGroup(interaction);
     const subcommand = safeGetSubcommand(interaction);
     return {
       interactionId: interaction?.id || null,
       interactionType: Number.isFinite(type) ? type : null,
       commandName: interaction?.commandName || null,
+      subcommandGroup: subcommandGroup || null,
       subcommand: subcommand || null,
       customId: interaction?.customId || null,
       userId: interaction?.user?.id || null,
@@ -1292,16 +1305,27 @@ function createInteractionCommandHandler(options = {}) {
       const isDeny = interaction.commandName === "deny";
       const isReopen = interaction.commandName === "reopen";
       const isSetUnified = interaction.commandName === "set";
+      const setSubcommandGroup = isSetUnified ? safeGetSubcommandGroup(interaction) : null;
       const setSubcommand = isSetUnified ? safeGetSubcommand(interaction) : null;
       const setCommandMode = isSetUnified
-        ? String(setSubcommand || safeGetStringOptionFromInteraction(interaction, "mode") || "")
+        ? String(
+            (setSubcommandGroup === "channel" ? "channel" : setSubcommand) ||
+              safeGetStringOptionFromInteraction(interaction, "mode") ||
+              ""
+          )
             .trim()
             .toLowerCase()
         : "";
+      const setChannelMode =
+        isSetUnified && setSubcommandGroup === "channel"
+          ? String(setSubcommand || "")
+              .trim()
+              .toLowerCase()
+          : "";
       const isSetDefault = isSetUnified && setCommandMode === "default";
       const isSetChannel =
         interaction.commandName === "setchannel" ||
-        (isSetUnified && setCommandMode === "channel");
+        (isSetUnified && (setCommandMode === "channel" || Boolean(setChannelMode)));
       const isRepostApps = interaction.commandName === "repostapps";
       const isUseAppRole = interaction.commandName === "useapprole";
       const useAppRoleSubcommand = isUseAppRole ? safeGetSubcommand(interaction) : null;
@@ -1467,7 +1491,7 @@ function createInteractionCommandHandler(options = {}) {
           heading: "🐞 **Bug Report**",
           channelId: getActiveBugChannelId(),
           emptyChannelMessage:
-            "Bug channel is not configured. Run `/set channel channel_target:bug channel:#channel` first.",
+            "Bug channel is not configured. Run `/set channel bug channel:#channel` first.",
         });
         return;
       }
@@ -1479,7 +1503,7 @@ function createInteractionCommandHandler(options = {}) {
           heading: "💡 **Suggestion**",
           channelId: getActiveSuggestionsChannelId(),
           emptyChannelMessage:
-            "Suggestions channel is not configured. Run `/set channel channel_target:suggestions channel:#channel` first.",
+            "Suggestions channel is not configured. Run `/set channel suggestions channel:#channel` first.",
         });
         return;
       }
@@ -3643,6 +3667,9 @@ function createInteractionCommandHandler(options = {}) {
           {
             sourceCommand: interaction.commandName,
             setMode: isSetUnified ? setCommandMode : null,
+            setGroup: isSetUnified ? setSubcommandGroup : null,
+            setSubcommand: isSetUnified ? setSubcommand : null,
+            setChannelTarget: isSetUnified ? setChannelMode || null : null,
             options: summarizeCommandOptionsForDebug(interaction),
           }
         );
@@ -3656,7 +3683,58 @@ function createInteractionCommandHandler(options = {}) {
         let bugChannelInput = interaction.options.getChannel("bug");
         let suggestionsChannelInput = interaction.options.getChannel("suggestions");
 
-        if (isSetUnified && setCommandMode === "channel") {
+        if (isSetUnified && setChannelMode) {
+          const genericChannelInput = interaction.options.getChannel("channel");
+          if (!genericChannelInput) {
+            await interaction.reply({
+              content:
+                "For `/set channel <target>`, provide `channel`. Example: `/set channel post track:tester channel:#tester-apps`.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          const isPostChannelTarget =
+            setChannelMode === "post" || setChannelMode === "channel_post";
+          if (isPostChannelTarget) {
+            if (!dynamicTrackInput) {
+              await interaction.reply({
+                content:
+                  "For `/set channel post` (or `channel_post`), provide `track` and `channel`.",
+                ephemeral: true,
+              });
+              return;
+            }
+            dynamicTrackChannelInput = genericChannelInput;
+          } else if (setChannelMode === "application_log") {
+            dynamicTrackInput = null;
+            dynamicTrackChannelInput = null;
+            applicationLogChannelInput = genericChannelInput;
+          } else if (setChannelMode === "log") {
+            dynamicTrackInput = null;
+            dynamicTrackChannelInput = null;
+            logChannelInput = genericChannelInput;
+          } else if (setChannelMode === "accept_message") {
+            dynamicTrackInput = null;
+            dynamicTrackChannelInput = null;
+            acceptMessageChannelInput = genericChannelInput;
+          } else if (setChannelMode === "bug") {
+            dynamicTrackInput = null;
+            dynamicTrackChannelInput = null;
+            bugChannelInput = genericChannelInput;
+          } else if (setChannelMode === "suggestions") {
+            dynamicTrackInput = null;
+            dynamicTrackChannelInput = null;
+            suggestionsChannelInput = genericChannelInput;
+          } else {
+            await interaction.reply({
+              content:
+                "Unknown `/set channel` target. Use one of: `post`, `channel_post`, `application_log`, `log`, `accept_message`, `bug`, `suggestions`.",
+              ephemeral: true,
+            });
+            return;
+          }
+        } else if (isSetUnified && setCommandMode === "channel") {
           const channelTarget = String(
             interaction.options.getString("channel_target") || ""
           )
@@ -3666,7 +3744,7 @@ function createInteractionCommandHandler(options = {}) {
           if (!channelTarget || !genericChannelInput) {
             await interaction.reply({
               content:
-                "For `/set channel`, provide `channel_target` and `channel`. Example: `/set channel channel_target:post track:tester channel:#tester-apps`.",
+                "For `/set channel`, use `/set channel post track:<track> channel:#channel` or `/set channel <application_log|log|accept_message|bug|suggestions> channel:#channel`.",
               ephemeral: true,
             });
             return;
@@ -3678,7 +3756,7 @@ function createInteractionCommandHandler(options = {}) {
             if (!dynamicTrackInput) {
               await interaction.reply({
                 content:
-                  "For `/set channel channel_target:post` (or `channel_post`), provide `track` and `channel`.",
+                  "For `/set channel post` (or `channel_post`), provide `track` and `channel`.",
                 ephemeral: true,
               });
               return;
@@ -3716,7 +3794,8 @@ function createInteractionCommandHandler(options = {}) {
 
         if (Boolean(dynamicTrackInput) !== Boolean(dynamicTrackChannelInput)) {
           await interaction.reply({
-            content: "Provide both `track` and `post_channel` together.",
+            content:
+              "Provide both `track` and a post channel together (for grouped command, use `/set channel post track:<track> channel:#channel`).",
             ephemeral: true,
           });
           return;

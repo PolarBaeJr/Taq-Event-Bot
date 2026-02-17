@@ -76,12 +76,12 @@ Required keys:
 - `DISCORD_CMD_CHANNEL_ID` (optional cmd fallback if you do not use `/set channel`)
 - `DISCORD_CHANNEL_ID` (legacy tester fallback)
 - `DISCORD_LOGS_CHANNEL_NAME` (application logs default name)
-- `DISCORD_LOGS_CHANNEL_ID` (optional application logs fallback if you do not use `/set channel channel_target:application_log`)
+- `DISCORD_LOGS_CHANNEL_ID` (optional application logs fallback if you do not use `/set channel application_log`)
 - `DISCORD_BOT_LOGS_CHANNEL_NAME` (optional bot-operation log channel name fallback)
-- `DISCORD_BOT_LOGS_CHANNEL_ID` (optional bot-operation log fallback if you do not use `/set channel channel_target:log`)
+- `DISCORD_BOT_LOGS_CHANNEL_ID` (optional bot-operation log fallback if you do not use `/set channel log`)
 - `DISCORD_BUG_CHANNEL_ID` (optional fallback if you do not use `/set channel`)
 - `DISCORD_SUGGESTIONS_CHANNEL_ID` (optional fallback if you do not use `/set channel`)
-- `ACCEPT_ANNOUNCE_CHANNEL_ID` (optional fallback if you do not use `/set acceptmsg` or `/set channel channel_target:accept_message`)
+- `ACCEPT_ANNOUNCE_CHANNEL_ID` (optional fallback if you do not use `/set acceptmsg` or `/set channel accept_message`)
 - `ACCEPT_ANNOUNCE_TEMPLATE` (optional; message sent to configured channel when accepted)
 - `DENY_DM_TEMPLATE` (optional; DM template sent to `discord_ID` when denied)
 - `DISCORD_THREAD_AUTO_ARCHIVE_MINUTES`
@@ -229,19 +229,19 @@ Behavior:
 
 8. In Discord, set channels:
 ```text
-/set channel channel_target:post track:tester channel:#tester-apps
+/set channel post track:tester channel:#tester-apps
 ```
 
 Recommended:
 ```text
-/set channel channel_target:post track:tester channel:#tester-apps
-/set channel channel_target:post track:builder channel:#builder-apps
-/set channel channel_target:post track:cmd channel:#cmd-apps
-/set channel channel_target:application_log channel:#application-log
-/set channel channel_target:log channel:#bot-log
-/set channel channel_target:accept_message channel:#welcome-team
-/set channel channel_target:bug channel:#bug-reports
-/set channel channel_target:suggestions channel:#team-suggestions
+/set channel post track:tester channel:#tester-apps
+/set channel post track:builder channel:#builder-apps
+/set channel post track:cmd channel:#cmd-apps
+/set channel application_log channel:#application-log
+/set channel log channel:#bot-log
+/set channel accept_message channel:#welcome-team
+/set channel bug channel:#bug-reports
+/set channel suggestions channel:#team-suggestions
 ```
 
 Server-level default baseline in one step:
@@ -505,9 +505,9 @@ pm2 restart taq-event-bot --update-env
 - `/settings` controls vote rules, vote-eligible role filters, stale reminders, reviewer assignment, daily digests, and active Google Sheet source overrides.
 - `/config export` DMs JSON config backup; `/config import` restores settings from JSON.
 - `/set channel` requires `Manage Server` (or `Administrator`).
-- `/set channel` requires `channel_target` and `channel`; for `channel_target:post`, also provide `track`.
-- `/set channel` supports `channel_target:application_log|log|accept_message|bug|suggestions` and `channel_target:post track:<track>`.
-- `channel_target:channel_post` is also accepted as a legacy alias of `post`.
+- `/set channel` uses subcommands: `post`, `channel_post` (legacy alias), `application_log`, `log`, `accept_message`, `bug`, `suggestions`.
+- `/set channel post` and `/set channel channel_post` require `track` and `channel`.
+- Other `/set channel <target>` subcommands require only `channel`.
 - `/set default` requires `Manage Server` (or `Administrator`) and applies one server-level default channel to all track/shared channel targets.
 - `/set default` accepts optional `role..role_5` to apply the same accepted roles to every track (requires Manage Roles).
 - `/set default` accepts optional `message` to set the accepted-announcement template.
