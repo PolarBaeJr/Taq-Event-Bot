@@ -266,45 +266,310 @@ function createSlashCommandLifecycle(options = {}) {
         );
     }
 
-    function buildReactionRoleAliasCommand() {
+    function buildSetCommand() {
       return new SlashCommandBuilder()
-        .setName("rr")
-        .setDescription("Reaction-role shortcut command")
-        .addStringOption((option) =>
-          option
-            .setName("mode")
-            .setDescription("Reaction-role action")
-            .addChoices(
-              { name: "Create", value: "create" },
-              { name: "Remove", value: "remove" },
-              { name: "List", value: "list" },
-              { name: "GUI", value: "gui" }
-            )
-            .setRequired(true)
-        )
-        .addStringOption((option) =>
-          option
-            .setName("message_id")
-            .setDescription("Message ID (create/remove/list)")
-            .setRequired(false)
-        )
-        .addStringOption((option) =>
-          option
-            .setName("emoji")
-            .setDescription("Emoji (create/remove)")
-            .setRequired(false)
-        )
-        .addRoleOption((option) =>
-          option
-            .setName("role")
-            .setDescription("Role to grant (create)")
-            .setRequired(false)
-        )
-        .addChannelOption((option) =>
-          option
+        .setName("set")
+        .setDescription("Set channel/role/template configuration")
+        .addSubcommand((subcommand) =>
+          subcommand
             .setName("channel")
-            .setDescription("Target channel (optional)")
-            .setRequired(false)
+            .setDescription("Set application/log/feedback channels")
+            .addStringOption((option) =>
+              option
+                .setName("channel_target")
+                .setDescription("Channel target")
+                .addChoices(
+                  { name: "Post Channel (track)", value: "post" },
+                  { name: "Application Log", value: "application_log" },
+                  { name: "Bot Log", value: "log" },
+                  { name: "Accept Message", value: "accept_message" },
+                  { name: "Bug", value: "bug" },
+                  { name: "Suggestions", value: "suggestions" }
+                )
+                .setRequired(true)
+            )
+            .addStringOption((option) =>
+              option
+                .setName("track")
+                .setDescription("Track key/alias (required for channel_target:post)")
+                .setAutocomplete(true)
+                .setRequired(false)
+            )
+            .addChannelOption((option) =>
+              option
+                .setName("channel")
+                .setDescription("Channel to assign")
+                .setRequired(true)
+            )
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName("default")
+            .setDescription("Apply server-level default channel + optional roles/template")
+            .addChannelOption((option) =>
+              option
+                .setName("channel")
+                .setDescription("Base channel (defaults to current channel)")
+                .setRequired(false)
+            )
+            .addRoleOption((option) =>
+              option
+                .setName("role")
+                .setDescription("First default accepted role (optional)")
+                .setRequired(false)
+            )
+            .addRoleOption((option) =>
+              option
+                .setName("role_2")
+                .setDescription("Second default accepted role (optional)")
+                .setRequired(false)
+            )
+            .addRoleOption((option) =>
+              option
+                .setName("role_3")
+                .setDescription("Third default accepted role (optional)")
+                .setRequired(false)
+            )
+            .addRoleOption((option) =>
+              option
+                .setName("role_4")
+                .setDescription("Fourth default accepted role (optional)")
+                .setRequired(false)
+            )
+            .addRoleOption((option) =>
+              option
+                .setName("role_5")
+                .setDescription("Fifth default accepted role (optional)")
+                .setRequired(false)
+            )
+            .addStringOption((option) =>
+              option
+                .setName("message")
+                .setDescription("Accepted announcement template (optional)")
+                .setRequired(false)
+            )
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName("approle")
+            .setDescription("Set accepted roles for a track")
+            .addStringOption((option) =>
+              option
+                .setName("track")
+                .setDescription("Track key/alias")
+                .setAutocomplete(true)
+                .setRequired(true)
+            )
+            .addRoleOption((option) =>
+              option
+                .setName("role")
+                .setDescription("First accepted role")
+                .setRequired(true)
+            )
+            .addRoleOption((option) =>
+              option
+                .setName("role_2")
+                .setDescription("Second accepted role")
+                .setRequired(false)
+            )
+            .addRoleOption((option) =>
+              option
+                .setName("role_3")
+                .setDescription("Third accepted role")
+                .setRequired(false)
+            )
+            .addRoleOption((option) =>
+              option
+                .setName("role_4")
+                .setDescription("Fourth accepted role")
+                .setRequired(false)
+            )
+            .addRoleOption((option) =>
+              option
+                .setName("role_5")
+                .setDescription("Fifth accepted role")
+                .setRequired(false)
+            )
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName("approlegui")
+            .setDescription("Open GUI to set accepted roles for a track")
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName("denymsg")
+            .setDescription("Set denied DM message template")
+            .addStringOption((option) =>
+              option
+                .setName("message")
+                .setDescription("Denied DM template")
+                .setRequired(true)
+            )
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName("acceptmsg")
+            .setDescription("Set accepted announcement channel/template")
+            .addChannelOption((option) =>
+              option
+                .setName("channel")
+                .setDescription("Accepted-announcement channel")
+                .setRequired(false)
+            )
+            .addStringOption((option) =>
+              option
+                .setName("message")
+                .setDescription("Accepted announcement template")
+                .setRequired(false)
+            )
+        );
+    }
+
+    function buildMessageCommand() {
+      return new SlashCommandBuilder()
+        .setName("message")
+        .setDescription("Post or edit bot messages")
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName("structured")
+            .setDescription("Post a structured bot message")
+            .addStringOption((option) =>
+              option
+                .setName("title")
+                .setDescription("Message title")
+                .setRequired(true)
+            )
+            .addStringOption((option) =>
+              option
+                .setName("line_1")
+                .setDescription("First content line")
+                .setRequired(true)
+            )
+            .addStringOption((option) =>
+              option
+                .setName("line_2")
+                .setDescription("Second content line")
+                .setRequired(false)
+            )
+            .addStringOption((option) =>
+              option
+                .setName("line_3")
+                .setDescription("Third content line")
+                .setRequired(false)
+            )
+            .addStringOption((option) =>
+              option
+                .setName("line_4")
+                .setDescription("Fourth content line")
+                .setRequired(false)
+            )
+            .addStringOption((option) =>
+              option
+                .setName("line_5")
+                .setDescription("Fifth content line")
+                .setRequired(false)
+            )
+            .addBooleanOption((option) =>
+              option
+                .setName("code_block")
+                .setDescription("Wrap content lines in a code block")
+                .setRequired(false)
+            )
+            .addChannelOption((option) =>
+              option
+                .setName("channel")
+                .setDescription("Target channel (defaults to current)")
+                .setRequired(false)
+            )
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName("embed")
+            .setDescription("Post an embedded bot message")
+            .addStringOption((option) =>
+              option
+                .setName("title")
+                .setDescription("Embed title")
+                .setRequired(true)
+            )
+            .addStringOption((option) =>
+              option
+                .setName("description")
+                .setDescription("Embed description/body")
+                .setRequired(true)
+            )
+            .addStringOption((option) =>
+              option
+                .setName("color")
+                .setDescription("Optional hex color (e.g. #57F287)")
+                .setRequired(false)
+            )
+            .addStringOption((option) =>
+              option
+                .setName("footer")
+                .setDescription("Optional footer text")
+                .setRequired(false)
+            )
+            .addBooleanOption((option) =>
+              option
+                .setName("timestamp")
+                .setDescription("Include current timestamp on embed")
+                .setRequired(false)
+            )
+            .addChannelOption((option) =>
+              option
+                .setName("channel")
+                .setDescription("Target channel (defaults to current)")
+                .setRequired(false)
+            )
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName("edit")
+            .setDescription("Edit an embedded bot message posted by this bot")
+            .addStringOption((option) =>
+              option
+                .setName("message_id")
+                .setDescription("Target bot message ID")
+                .setRequired(true)
+            )
+            .addChannelOption((option) =>
+              option
+                .setName("channel")
+                .setDescription("Target channel (defaults to current)")
+                .setRequired(false)
+            )
+            .addStringOption((option) =>
+              option
+                .setName("title")
+                .setDescription("New embed title")
+                .setRequired(false)
+            )
+            .addStringOption((option) =>
+              option
+                .setName("description")
+                .setDescription("New embed description/body")
+                .setRequired(false)
+            )
+            .addStringOption((option) =>
+              option
+                .setName("color")
+                .setDescription("Hex color (#57F287) or `clear`")
+                .setRequired(false)
+            )
+            .addStringOption((option) =>
+              option
+                .setName("footer")
+                .setDescription("Footer text or `clear`")
+                .setRequired(false)
+            )
+            .addBooleanOption((option) =>
+              option
+                .setName("timestamp")
+                .setDescription("Set timestamp on/off")
+                .setRequired(false)
+            )
         );
     }
 
@@ -379,178 +644,8 @@ function createSlashCommandLifecycle(options = {}) {
             .setDescription("Optional reason to store in logs/DM templates")
             .setRequired(false)
         ),
-      new SlashCommandBuilder()
-        .setName("set")
-        .setDescription("Set channel/role/template configuration")
-        .addStringOption((option) =>
-          option
-            .setName("mode")
-            .setDescription("What to configure")
-            .addChoices(
-              { name: "Channel", value: "channel" },
-              { name: "Default Setup", value: "default" },
-              { name: "Accepted Roles", value: "approle" },
-              { name: "Accepted Roles GUI", value: "approlegui" },
-              { name: "Denied Message", value: "denymsg" },
-              { name: "Accepted Message", value: "acceptmsg" }
-            )
-            .setRequired(true)
-        )
-        .addStringOption((option) =>
-          option
-            .setName("channel_target")
-            .setDescription("Channel target (for mode:channel)")
-            .addChoices(
-              { name: "Post Channel (track)", value: "post" },
-              { name: "Application Log", value: "application_log" },
-              { name: "Bot Log", value: "log" },
-              { name: "Accept Message", value: "accept_message" },
-              { name: "Bug", value: "bug" },
-              { name: "Suggestions", value: "suggestions" }
-            )
-            .setRequired(false)
-        )
-        .addStringOption((option) =>
-          option
-            .setName("track")
-            .setDescription("Track key/alias (for mode:channel post / mode:approle)")
-            .setAutocomplete(true)
-            .setRequired(false)
-        )
-        .addChannelOption((option) =>
-          option
-            .setName("channel")
-            .setDescription("Channel (for mode:channel / mode:acceptmsg / mode:default)")
-            .setRequired(false)
-        )
-        .addRoleOption((option) =>
-          option
-            .setName("role")
-            .setDescription("First role (for mode:approle)")
-            .setRequired(false)
-        )
-        .addRoleOption((option) =>
-          option
-            .setName("role_2")
-            .setDescription("Second role (for mode:approle)")
-            .setRequired(false)
-        )
-        .addRoleOption((option) =>
-          option
-            .setName("role_3")
-            .setDescription("Third role (for mode:approle)")
-            .setRequired(false)
-        )
-        .addRoleOption((option) =>
-          option
-            .setName("role_4")
-            .setDescription("Fourth role (for mode:approle)")
-            .setRequired(false)
-        )
-        .addRoleOption((option) =>
-          option
-            .setName("role_5")
-            .setDescription("Fifth role (for mode:approle)")
-            .setRequired(false)
-        )
-        .addStringOption((option) =>
-          option
-            .setName("message")
-            .setDescription("Template/message (for mode:denymsg / mode:acceptmsg / mode:default)")
-            .setRequired(false)
-        ),
-      new SlashCommandBuilder()
-        .setName("message")
-        .setDescription("Post or edit bot messages")
-        .addStringOption((option) =>
-          option
-            .setName("mode")
-            .setDescription("Message action")
-            .addChoices(
-              { name: "Structured", value: "structured" },
-              { name: "Embed Post", value: "embed" },
-              { name: "Embed Edit", value: "edit" }
-            )
-            .setRequired(true)
-        )
-        .addChannelOption((option) =>
-          option
-            .setName("channel")
-            .setDescription("Target channel (optional; defaults to current)")
-            .setRequired(false)
-        )
-        .addStringOption((option) =>
-          option
-            .setName("message_id")
-            .setDescription("Target message ID (for mode:edit)")
-            .setRequired(false)
-        )
-        .addStringOption((option) =>
-          option
-            .setName("title")
-            .setDescription("Title (structured/embed/edit)")
-            .setRequired(false)
-        )
-        .addStringOption((option) =>
-          option
-            .setName("description")
-            .setDescription("Description/body (embed/edit)")
-            .setRequired(false)
-        )
-        .addStringOption((option) =>
-          option
-            .setName("line_1")
-            .setDescription("First content line (structured)")
-            .setRequired(false)
-        )
-        .addStringOption((option) =>
-          option
-            .setName("line_2")
-            .setDescription("Second content line (structured)")
-            .setRequired(false)
-        )
-        .addStringOption((option) =>
-          option
-            .setName("line_3")
-            .setDescription("Third content line (structured)")
-            .setRequired(false)
-        )
-        .addStringOption((option) =>
-          option
-            .setName("line_4")
-            .setDescription("Fourth content line (structured)")
-            .setRequired(false)
-        )
-        .addStringOption((option) =>
-          option
-            .setName("line_5")
-            .setDescription("Fifth content line (structured)")
-            .setRequired(false)
-        )
-        .addBooleanOption((option) =>
-          option
-            .setName("code_block")
-            .setDescription("Wrap structured content in a code block")
-            .setRequired(false)
-        )
-        .addStringOption((option) =>
-          option
-            .setName("color")
-            .setDescription("Hex color for embed (#57F287) or `clear` (edit)")
-            .setRequired(false)
-        )
-        .addStringOption((option) =>
-          option
-            .setName("footer")
-            .setDescription("Footer text for embed or `clear` (edit)")
-            .setRequired(false)
-        )
-        .addBooleanOption((option) =>
-          option
-            .setName("timestamp")
-            .setDescription("Set embed timestamp on/off")
-            .setRequired(false)
-        ),
+      buildSetCommand(),
+      buildMessageCommand(),
       new SlashCommandBuilder()
         .setName("useapprole")
         .setDescription("Legacy alias for accepted-role management")
@@ -602,7 +697,7 @@ function createSlashCommandLifecycle(options = {}) {
             .setDescription("Open GUI to set accepted roles for a track")
         ),
       buildReactionRoleCommand("reactionrole", "Manage reaction-role mappings"),
-      buildReactionRoleAliasCommand(),
+      buildReactionRoleCommand("rr", "Alias of /reactionrole"),
       new SlashCommandBuilder()
         .setName("track")
         .setDescription("Manage application tracks")
@@ -1207,7 +1302,7 @@ function createSlashCommandLifecycle(options = {}) {
       isSnowflake(channelId)
     );
     if (configuredEntries.length === 0) {
-      console.log("Permission audit skipped: no active channel set. Use /set mode:channel.");
+      console.log("Permission audit skipped: no active channel set. Use /set channel.");
       return;
     }
 

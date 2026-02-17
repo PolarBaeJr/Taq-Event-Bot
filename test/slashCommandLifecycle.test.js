@@ -4,7 +4,7 @@ const { SlashCommandBuilder } = require("discord.js");
 
 const { createSlashCommandLifecycle } = require("../src/lib/slashCommandLifecycle");
 
-test("buildSlashCommands includes unified /set command options", () => {
+test("buildSlashCommands includes unified /set command subcommands", () => {
   const { buildSlashCommands } = createSlashCommandLifecycle({
     config: {},
     client: {
@@ -35,29 +35,52 @@ test("buildSlashCommands includes unified /set command options", () => {
   const commands = buildSlashCommands();
   const setCommand = commands.find((command) => command.name === "set");
   assert.ok(setCommand, "set command should exist");
-  const optionNames = new Set(
+  const subcommandNames = new Set(
     (Array.isArray(setCommand.options) ? setCommand.options : []).map((option) => option.name)
   );
-  assert.ok(optionNames.has("mode"));
-  assert.ok(optionNames.has("channel_target"));
-  assert.ok(optionNames.has("track"));
-  assert.ok(optionNames.has("channel"));
-  assert.ok(optionNames.has("role"));
-  assert.ok(optionNames.has("role_5"));
-  assert.ok(optionNames.has("message"));
+  assert.ok(subcommandNames.has("channel"));
+  assert.ok(subcommandNames.has("default"));
+  assert.ok(subcommandNames.has("approle"));
+  assert.ok(subcommandNames.has("approlegui"));
+  assert.ok(subcommandNames.has("denymsg"));
+  assert.ok(subcommandNames.has("acceptmsg"));
 
-  const modeOption = (Array.isArray(setCommand.options) ? setCommand.options : []).find(
-    (option) => option.name === "mode"
+  const channelSubcommand = (Array.isArray(setCommand.options) ? setCommand.options : []).find(
+    (option) => option.name === "channel"
   );
-  const modeValues = new Set(
-    (Array.isArray(modeOption?.choices) ? modeOption.choices : []).map((choice) => choice.value)
+  const channelOptionNames = new Set(
+    (Array.isArray(channelSubcommand?.options) ? channelSubcommand.options : []).map(
+      (option) => option.name
+    )
   );
-  assert.ok(modeValues.has("channel"));
-  assert.ok(modeValues.has("default"));
-  assert.ok(modeValues.has("approle"));
-  assert.ok(modeValues.has("approlegui"));
-  assert.ok(modeValues.has("denymsg"));
-  assert.ok(modeValues.has("acceptmsg"));
+  assert.ok(channelOptionNames.has("channel_target"));
+  assert.ok(channelOptionNames.has("track"));
+  assert.ok(channelOptionNames.has("channel"));
+
+  const defaultSubcommand = (Array.isArray(setCommand.options) ? setCommand.options : []).find(
+    (option) => option.name === "default"
+  );
+  const defaultOptionNames = new Set(
+    (Array.isArray(defaultSubcommand?.options) ? defaultSubcommand.options : []).map(
+      (option) => option.name
+    )
+  );
+  assert.ok(defaultOptionNames.has("channel"));
+  assert.ok(defaultOptionNames.has("role"));
+  assert.ok(defaultOptionNames.has("role_5"));
+  assert.ok(defaultOptionNames.has("message"));
+
+  const approleSubcommand = (Array.isArray(setCommand.options) ? setCommand.options : []).find(
+    (option) => option.name === "approle"
+  );
+  const approleOptionNames = new Set(
+    (Array.isArray(approleSubcommand?.options) ? approleSubcommand.options : []).map(
+      (option) => option.name
+    )
+  );
+  assert.ok(approleOptionNames.has("track"));
+  assert.ok(approleOptionNames.has("role"));
+  assert.ok(approleOptionNames.has("role_5"));
 
   const commandNames = new Set(commands.map((command) => command.name));
   assert.equal(commandNames.has("setchannel"), false);
@@ -104,24 +127,13 @@ test("buildSlashCommands includes /reactionrole and /rr commands", () => {
 
   const rr = commands.find((command) => command.name === "rr");
   assert.ok(rr, "rr command should exist");
-  const rrOptionNames = new Set(
+  const rrSubcommandNames = new Set(
     (Array.isArray(rr.options) ? rr.options : []).map((option) => option.name)
   );
-  assert.ok(rrOptionNames.has("mode"));
-  assert.ok(rrOptionNames.has("message_id"));
-  assert.ok(rrOptionNames.has("emoji"));
-  assert.ok(rrOptionNames.has("role"));
-  assert.ok(rrOptionNames.has("channel"));
-  const rrModeOption = (Array.isArray(rr.options) ? rr.options : []).find(
-    (option) => option.name === "mode"
-  );
-  const rrModeValues = new Set(
-    (Array.isArray(rrModeOption?.choices) ? rrModeOption.choices : []).map((choice) => choice.value)
-  );
-  assert.ok(rrModeValues.has("create"));
-  assert.ok(rrModeValues.has("remove"));
-  assert.ok(rrModeValues.has("list"));
-  assert.ok(rrModeValues.has("gui"));
+  assert.ok(rrSubcommandNames.has("create"));
+  assert.ok(rrSubcommandNames.has("remove"));
+  assert.ok(rrSubcommandNames.has("list"));
+  assert.ok(rrSubcommandNames.has("gui"));
 });
 
 test("buildSlashCommands keeps /useapprole legacy command", () => {
@@ -258,7 +270,7 @@ test("buildSlashCommands includes /embededit command", () => {
   assert.ok(commandNames.has("embededit"));
 });
 
-test("buildSlashCommands includes /message unified command", () => {
+test("buildSlashCommands includes /message subcommands", () => {
   const { buildSlashCommands } = createSlashCommandLifecycle({
     config: {},
     client: {
@@ -283,26 +295,56 @@ test("buildSlashCommands includes /message unified command", () => {
   const commands = buildSlashCommands();
   const message = commands.find((command) => command.name === "message");
   assert.ok(message, "message command should exist");
-  const optionNames = new Set(
+  const subcommandNames = new Set(
     (Array.isArray(message.options) ? message.options : []).map((option) => option.name)
   );
-  assert.ok(optionNames.has("mode"));
-  assert.ok(optionNames.has("channel"));
-  assert.ok(optionNames.has("message_id"));
-  assert.ok(optionNames.has("title"));
-  assert.ok(optionNames.has("description"));
-  assert.ok(optionNames.has("line_1"));
-  assert.ok(optionNames.has("color"));
-  assert.ok(optionNames.has("timestamp"));
-  const modeOption = (Array.isArray(message.options) ? message.options : []).find(
-    (option) => option.name === "mode"
+  assert.ok(subcommandNames.has("structured"));
+  assert.ok(subcommandNames.has("embed"));
+  assert.ok(subcommandNames.has("edit"));
+
+  const structuredSubcommand = (Array.isArray(message.options) ? message.options : []).find(
+    (option) => option.name === "structured"
   );
-  const modeValues = new Set(
-    (Array.isArray(modeOption?.choices) ? modeOption.choices : []).map((choice) => choice.value)
+  const structuredOptionNames = new Set(
+    (Array.isArray(structuredSubcommand?.options) ? structuredSubcommand.options : []).map(
+      (option) => option.name
+    )
   );
-  assert.ok(modeValues.has("structured"));
-  assert.ok(modeValues.has("embed"));
-  assert.ok(modeValues.has("edit"));
+  assert.ok(structuredOptionNames.has("title"));
+  assert.ok(structuredOptionNames.has("line_1"));
+  assert.ok(structuredOptionNames.has("line_5"));
+  assert.ok(structuredOptionNames.has("code_block"));
+  assert.ok(structuredOptionNames.has("channel"));
+
+  const embedSubcommand = (Array.isArray(message.options) ? message.options : []).find(
+    (option) => option.name === "embed"
+  );
+  const embedOptionNames = new Set(
+    (Array.isArray(embedSubcommand?.options) ? embedSubcommand.options : []).map(
+      (option) => option.name
+    )
+  );
+  assert.ok(embedOptionNames.has("title"));
+  assert.ok(embedOptionNames.has("description"));
+  assert.ok(embedOptionNames.has("color"));
+  assert.ok(embedOptionNames.has("timestamp"));
+  assert.ok(embedOptionNames.has("channel"));
+
+  const editSubcommand = (Array.isArray(message.options) ? message.options : []).find(
+    (option) => option.name === "edit"
+  );
+  const editOptionNames = new Set(
+    (Array.isArray(editSubcommand?.options) ? editSubcommand.options : []).map(
+      (option) => option.name
+    )
+  );
+  assert.ok(editOptionNames.has("message_id"));
+  assert.ok(editOptionNames.has("channel"));
+  assert.ok(editOptionNames.has("title"));
+  assert.ok(editOptionNames.has("description"));
+  assert.ok(editOptionNames.has("color"));
+  assert.ok(editOptionNames.has("footer"));
+  assert.ok(editOptionNames.has("timestamp"));
 });
 
 test("buildSlashCommands includes /repostapps command", () => {

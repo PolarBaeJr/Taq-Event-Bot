@@ -816,7 +816,7 @@ function createInteractionCommandHandler(options = {}) {
         const selectedTrack = normalizeTrackKey(guiContext.trackKey);
         if (!selectedTrack) {
           await interaction.update({
-            content: "Track context expired or invalid. Re-open `/set mode:approlegui`.",
+            content: "Track context expired or invalid. Re-open `/set approlegui`.",
             components: buildAppRoleGuiComponents(interaction.user.id),
           });
           return;
@@ -1292,8 +1292,9 @@ function createInteractionCommandHandler(options = {}) {
       const isDeny = interaction.commandName === "deny";
       const isReopen = interaction.commandName === "reopen";
       const isSetUnified = interaction.commandName === "set";
+      const setSubcommand = isSetUnified ? safeGetSubcommand(interaction) : null;
       const setCommandMode = isSetUnified
-        ? String(safeGetStringOptionFromInteraction(interaction, "mode") || "")
+        ? String(setSubcommand || safeGetStringOptionFromInteraction(interaction, "mode") || "")
             .trim()
             .toLowerCase()
         : "";
@@ -1322,8 +1323,11 @@ function createInteractionCommandHandler(options = {}) {
       const isSettings = interaction.commandName === "settings";
       const isConfig = interaction.commandName === "config";
       const isMessageUnified = interaction.commandName === "message";
+      const messageSubcommand = isMessageUnified ? safeGetSubcommand(interaction) : null;
       const messageCommandMode = isMessageUnified
-        ? String(safeGetStringOptionFromInteraction(interaction, "mode") || "")
+        ? String(
+            messageSubcommand || safeGetStringOptionFromInteraction(interaction, "mode") || ""
+          )
             .trim()
             .toLowerCase()
         : "";
@@ -1428,14 +1432,14 @@ function createInteractionCommandHandler(options = {}) {
       if (isSetUnified && !validSetModes.has(setCommandMode)) {
         await interaction.reply({
           content:
-            "Unknown `/set` mode. Use one of: `channel`, `default`, `approle`, `approlegui`, `denymsg`, `acceptmsg`.",
+            "Unknown `/set` action. Use one of: `channel`, `default`, `approle`, `approlegui`, `denymsg`, `acceptmsg`.",
           ephemeral: true,
         });
         return;
       }
       if (isMessageUnified && !validMessageModes.has(messageCommandMode)) {
         await interaction.reply({
-          content: "Unknown `/message` mode. Use one of: `structured`, `embed`, `edit`.",
+          content: "Unknown `/message` action. Use one of: `structured`, `embed`, `edit`.",
           ephemeral: true,
         });
         return;
@@ -1468,7 +1472,7 @@ function createInteractionCommandHandler(options = {}) {
           heading: "🐞 **Bug Report**",
           channelId: getActiveBugChannelId(),
           emptyChannelMessage:
-            "Bug channel is not configured. Run `/set mode:channel channel_target:bug channel:#channel` first.",
+            "Bug channel is not configured. Run `/set channel channel_target:bug channel:#channel` first.",
         });
         return;
       }
@@ -1480,7 +1484,7 @@ function createInteractionCommandHandler(options = {}) {
           heading: "💡 **Suggestion**",
           channelId: getActiveSuggestionsChannelId(),
           emptyChannelMessage:
-            "Suggestions channel is not configured. Run `/set mode:channel channel_target:suggestions channel:#channel` first.",
+            "Suggestions channel is not configured. Run `/set channel channel_target:suggestions channel:#channel` first.",
         });
         return;
       }
@@ -2102,12 +2106,11 @@ function createInteractionCommandHandler(options = {}) {
           return;
         }
 
-        const action =
-          interaction.commandName === "rr"
-            ? String(interaction.options.getString("mode") || "")
-                .trim()
-                .toLowerCase()
-            : interaction.options.getSubcommand(true);
+        const action = String(
+          safeGetSubcommand(interaction) || interaction.options.getString("mode") || ""
+        )
+          .trim()
+          .toLowerCase();
         logInteractionDebug(
           "track_command_received",
           "Processing track command.",
@@ -2464,7 +2467,7 @@ function createInteractionCommandHandler(options = {}) {
         if (!channel && !trimmedMessage) {
           await interaction.reply({
             content:
-              "Provide `channel`, `message`, or both. Example: `/set mode:acceptmsg message:Welcome to {track} team...`",
+              "Provide `channel`, `message`, or both. Example: `/set acceptmsg message:Welcome to {track} team...`",
             ephemeral: true,
           });
           return;
@@ -2555,7 +2558,7 @@ function createInteractionCommandHandler(options = {}) {
         if (!title || !String(line1Raw || "").trim()) {
           await interaction.reply({
             content: isMessageUnified
-              ? "For `/message mode:structured`, provide at least `title` and `line_1`."
+              ? "For `/message structured`, provide at least `title` and `line_1`."
               : "Please provide both `title` and `line_1`.",
             ephemeral: true,
           });
@@ -2640,7 +2643,7 @@ function createInteractionCommandHandler(options = {}) {
         if (!title || !description) {
           await interaction.reply({
             content: isMessageUnified
-              ? "For `/message mode:embed`, provide both `title` and `description`."
+              ? "For `/message embed`, provide both `title` and `description`."
               : "Please provide both title and description.",
             ephemeral: true,
           });
@@ -2734,7 +2737,7 @@ function createInteractionCommandHandler(options = {}) {
         if (!isSnowflake(messageId)) {
           await interaction.reply({
             content: isMessageUnified
-              ? "For `/message mode:edit`, provide a valid `message_id`."
+              ? "For `/message edit`, provide a valid `message_id`."
               : "Please provide a valid `message_id`.",
             ephemeral: true,
           });
@@ -2971,7 +2974,7 @@ function createInteractionCommandHandler(options = {}) {
           await interaction.reply({
             content: rawTrackInput
               ? `Unknown track \`${rawTrackInput}\`. Use \`/track list\` to view available tracks.`
-              : "Missing `track` option. Use `/set mode:approle track:<track> role:@Role`.",
+              : "Missing `track` option. Use `/set approle track:<track> role:@Role`.",
             ephemeral: true,
           });
           return;
@@ -2990,7 +2993,7 @@ function createInteractionCommandHandler(options = {}) {
           );
           await interaction.reply({
             content:
-              "Missing `role` option. Use `/set mode:approle track:<track> role:@Role` (up to `role_5`). If this keeps failing, restart the bot to refresh slash commands.",
+              "Missing `role` option. Use `/set approle track:<track> role:@Role` (up to `role_5`). If this keeps failing, restart the bot to refresh slash commands.",
             ephemeral: true,
           });
           return;
@@ -3665,7 +3668,7 @@ function createInteractionCommandHandler(options = {}) {
           if (!channelTarget || !genericChannelInput) {
             await interaction.reply({
               content:
-                "For `/set mode:channel`, provide `channel_target` and `channel`. Example: `/set mode:channel channel_target:post track:tester channel:#tester-apps`.",
+                "For `/set channel`, provide `channel_target` and `channel`. Example: `/set channel channel_target:post track:tester channel:#tester-apps`.",
               ephemeral: true,
             });
             return;
@@ -3675,7 +3678,7 @@ function createInteractionCommandHandler(options = {}) {
             if (!dynamicTrackInput) {
               await interaction.reply({
                 content:
-                  "For `/set mode:channel channel_target:post`, provide `track` and `channel`.",
+                  "For `/set channel channel_target:post`, provide `track` and `channel`.",
                 ephemeral: true,
               });
               return;
@@ -3774,7 +3777,7 @@ function createInteractionCommandHandler(options = {}) {
             if (!interaction.channel || interaction.channel.type !== ChannelType.GuildText) {
               await interaction.reply({
                 content:
-                  "Please run `/set mode:channel` in a guild text channel or provide `track` + `channel`.",
+                  "Please run `/set channel` in a guild text channel or provide `track` + `channel`.",
                 ephemeral: true,
               });
               return;

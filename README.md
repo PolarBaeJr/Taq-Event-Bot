@@ -7,9 +7,9 @@ Simple Node.js bot that:
 3. Adds `✅` and `❌` reactions for approve/decline voting.
 4. Uses per-track configurable vote thresholds (default `2/3`, minimum 1 vote) for decisions.
 5. Supports decision overrides with `/accept` and `/deny` (with optional reason), and undo flow with `/reopen` (`/accept mode:force` bypasses missing-member block).
-6. Supports `/set mode:...` so you can configure channels/roles/templates in Discord (no code edit).
-7. `/set mode:channel` configures tester/builder/cmd post channels, application log channel, log channel, accept-message channel, bug channel, and suggestions channel.
-8. `/set mode:default` applies a server-level default channel to all channel targets in one command (and can optionally apply shared accepted roles).
+6. Supports `/set <action>` subcommands so you can configure channels/roles/templates in Discord (no code edit).
+7. `/set channel` configures tester/builder/cmd post channels, application log channel, log channel, accept-message channel, bug channel, and suggestions channel.
+8. `/set default` applies a server-level default channel to all channel targets in one command (and can optionally apply shared accepted roles).
 9. Posts applications, bug reports, and suggestions in embedded format.
 10. Creates a thread per application/feedback message for team discussion.
 11. Creates an `application-logs` channel and posts full close-history when an application is decided.
@@ -71,17 +71,17 @@ Required keys:
 - `DISCORD_BOT_TOKEN`
 - `DISCORD_CLIENT_ID`
 - `DISCORD_GUILD_ID` (optional override)
-- `DISCORD_TESTER_CHANNEL_ID` (optional tester fallback if you do not use `/set mode:channel`)
-- `DISCORD_BUILDER_CHANNEL_ID` (optional builder fallback if you do not use `/set mode:channel`)
-- `DISCORD_CMD_CHANNEL_ID` (optional cmd fallback if you do not use `/set mode:channel`)
+- `DISCORD_TESTER_CHANNEL_ID` (optional tester fallback if you do not use `/set channel`)
+- `DISCORD_BUILDER_CHANNEL_ID` (optional builder fallback if you do not use `/set channel`)
+- `DISCORD_CMD_CHANNEL_ID` (optional cmd fallback if you do not use `/set channel`)
 - `DISCORD_CHANNEL_ID` (legacy tester fallback)
 - `DISCORD_LOGS_CHANNEL_NAME` (application logs default name)
-- `DISCORD_LOGS_CHANNEL_ID` (optional application logs fallback if you do not use `/set mode:channel channel_target:application_log`)
+- `DISCORD_LOGS_CHANNEL_ID` (optional application logs fallback if you do not use `/set channel channel_target:application_log`)
 - `DISCORD_BOT_LOGS_CHANNEL_NAME` (optional bot-operation log channel name fallback)
-- `DISCORD_BOT_LOGS_CHANNEL_ID` (optional bot-operation log fallback if you do not use `/set mode:channel channel_target:log`)
-- `DISCORD_BUG_CHANNEL_ID` (optional fallback if you do not use `/set mode:channel`)
-- `DISCORD_SUGGESTIONS_CHANNEL_ID` (optional fallback if you do not use `/set mode:channel`)
-- `ACCEPT_ANNOUNCE_CHANNEL_ID` (optional fallback if you do not use `/set mode:acceptmsg` or `/set mode:channel channel_target:accept_message`)
+- `DISCORD_BOT_LOGS_CHANNEL_ID` (optional bot-operation log fallback if you do not use `/set channel channel_target:log`)
+- `DISCORD_BUG_CHANNEL_ID` (optional fallback if you do not use `/set channel`)
+- `DISCORD_SUGGESTIONS_CHANNEL_ID` (optional fallback if you do not use `/set channel`)
+- `ACCEPT_ANNOUNCE_CHANNEL_ID` (optional fallback if you do not use `/set acceptmsg` or `/set channel channel_target:accept_message`)
 - `ACCEPT_ANNOUNCE_TEMPLATE` (optional; message sent to configured channel when accepted)
 - `DENY_DM_TEMPLATE` (optional; DM template sent to `discord_ID` when denied)
 - `DISCORD_THREAD_AUTO_ARCHIVE_MINUTES`
@@ -91,13 +91,13 @@ Required keys:
 - `DAILY_DIGEST_HOUR_UTC` (optional; `0-23`, default `15`)
 - `DUPLICATE_LOOKBACK_DAYS` (optional; duplicate detection lookback window, default `60`)
 - `AUTO_REGISTER_TRACKS_FROM_FORM` (optional boolean, default `false`; when `true`, new track values found in form responses can auto-create custom tracks)
-- `DISCORD_TESTER_APPROVED_ROLE_IDS` (optional CSV list fallback if you do not use `/set mode:approle`)
-- `DISCORD_BUILDER_APPROVED_ROLE_IDS` (optional CSV list fallback if you do not use `/set mode:approle`)
-- `DISCORD_CMD_APPROVED_ROLE_IDS` (optional CSV list fallback if you do not use `/set mode:approle`)
+- `DISCORD_TESTER_APPROVED_ROLE_IDS` (optional CSV list fallback if you do not use `/set approle`)
+- `DISCORD_BUILDER_APPROVED_ROLE_IDS` (optional CSV list fallback if you do not use `/set approle`)
+- `DISCORD_CMD_APPROVED_ROLE_IDS` (optional CSV list fallback if you do not use `/set approle`)
 - `DISCORD_APPROVED_ROLE_IDS` (legacy tester CSV list fallback)
-- `DISCORD_TESTER_APPROVED_ROLE_ID` (optional tester fallback if you do not use `/set mode:approle`)
-- `DISCORD_BUILDER_APPROVED_ROLE_ID` (optional builder fallback if you do not use `/set mode:approle`)
-- `DISCORD_CMD_APPROVED_ROLE_ID` (optional cmd fallback if you do not use `/set mode:approle`)
+- `DISCORD_TESTER_APPROVED_ROLE_ID` (optional tester fallback if you do not use `/set approle`)
+- `DISCORD_BUILDER_APPROVED_ROLE_ID` (optional builder fallback if you do not use `/set approle`)
+- `DISCORD_CMD_APPROVED_ROLE_ID` (optional cmd fallback if you do not use `/set approle`)
 - `DISCORD_APPROVED_ROLE_ID` (legacy tester fallback)
 - `CRASH_LOG_DIR` (optional, default: `crashlog`)
 - `STATE_FILE` (optional, default `.bot-state.json`)
@@ -229,25 +229,25 @@ Behavior:
 
 8. In Discord, set channels:
 ```text
-/set mode:channel channel_target:post track:tester channel:#tester-apps
+/set channel channel_target:post track:tester channel:#tester-apps
 ```
 
 Recommended:
 ```text
-/set mode:channel channel_target:post track:tester channel:#tester-apps
-/set mode:channel channel_target:post track:builder channel:#builder-apps
-/set mode:channel channel_target:post track:cmd channel:#cmd-apps
-/set mode:channel channel_target:application_log channel:#application-log
-/set mode:channel channel_target:log channel:#bot-log
-/set mode:channel channel_target:accept_message channel:#welcome-team
-/set mode:channel channel_target:bug channel:#bug-reports
-/set mode:channel channel_target:suggestions channel:#team-suggestions
+/set channel channel_target:post track:tester channel:#tester-apps
+/set channel channel_target:post track:builder channel:#builder-apps
+/set channel channel_target:post track:cmd channel:#cmd-apps
+/set channel channel_target:application_log channel:#application-log
+/set channel channel_target:log channel:#bot-log
+/set channel channel_target:accept_message channel:#welcome-team
+/set channel channel_target:bug channel:#bug-reports
+/set channel channel_target:suggestions channel:#team-suggestions
 ```
 
 Server-level default baseline in one step:
 ```text
-/set mode:default channel:#bot-default
-/set mode:default channel:#bot-default role:@TeamRole role_2:@HelperRole
+/set default channel:#bot-default
+/set default channel:#bot-default role:@TeamRole role_2:@HelperRole
 ```
 
 Send a bug report (creates a thread for discussion):
@@ -270,36 +270,36 @@ Track management:
 
 Set role granted on accepted applications:
 ```text
-/set mode:approle track:tester role:@TesterRole role_2:@HelperRole role_3:@AnotherRole
-/set mode:approle track:builder role:@BuilderRole
-/set mode:approle track:cmd role:@CMDRole
+/set approle track:tester role:@TesterRole role_2:@HelperRole role_3:@AnotherRole
+/set approle track:builder role:@BuilderRole
+/set approle track:cmd role:@CMDRole
 ```
-`/set mode:approle` updates one track per command and overwrites that track's previous role list.
-Use `/set mode:approlegui` to open the accepted-roles GUI.
+`/set approle` updates one track per command and overwrites that track's previous role list.
+Use `/set approlegui` to open the accepted-roles GUI.
 
 Set denied DM template (sent to applicant `discord_ID`):
 ```text
-/set mode:denymsg message:Your application was denied for {track} in {server}.
+/set denymsg message:Your application was denied for {track} in {server}.
 ```
 
 Set accepted announcement channel/message:
 ```text
-/set mode:acceptmsg channel:#welcome-team message:Welcome to {track} team, if you need any information please contact administrators.
+/set acceptmsg channel:#welcome-team message:Welcome to {track} team, if you need any information please contact administrators.
 ```
 
-Reaction roles (mode-based shortcut):
+Reaction roles (subcommand shortcut):
 ```text
-/rr mode:create message_id:123456789012345678 emoji:✅ role:@EventRole channel:#roles
-/rr mode:list
-/rr mode:remove message_id:123456789012345678 emoji:✅ channel:#roles
-/rr mode:gui
+/rr create message_id:123456789012345678 emoji:✅ role:@EventRole channel:#roles
+/rr list
+/rr remove message_id:123456789012345678 emoji:✅ channel:#roles
+/rr gui
 ```
 
-Message tools (mode-based shortcut):
+Message tools (subcommand shortcut):
 ```text
-/message mode:structured title:Team Update line_1:Schedule posted line_2:Check pins
-/message mode:embed title:Welcome description:Rules are in #rules color:#57F287 timestamp:true
-/message mode:edit channel:#announcements message_id:123456789012345678 title:Updated Title footer:clear
+/message structured title:Team Update line_1:Schedule posted line_2:Check pins
+/message embed title:Welcome description:Rules are in #rules color:#57F287 timestamp:true
+/message edit channel:#announcements message_id:123456789012345678 title:Updated Title footer:clear
 ```
 
 Dashboard and settings:
@@ -471,10 +471,10 @@ pm2 restart taq-event-bot --update-env
 - Application posts are queued in `.bot-state.json` with persistent job IDs.
 - Application IDs are formatted as `TRACK-NUMBER` (for example `TESTER-12`, `BUILDER-12`, `CMD-12`).
 - If posting fails, the failed job is kept and retried in strict row order.
-- After `/set mode:channel` succeeds, queued failed jobs are replayed immediately.
+- After `/set channel` succeeds, queued failed jobs are replayed immediately.
 - If you want to reprocess from the start, delete `.bot-state.json`.
-- Prefer `/set mode:channel` to set channels from Discord directly.
-- `/set mode:channel` updates per-track post channels (`tester`, `builder`, `cmd`) plus `application_log`, `log`, `accept_message`, `bug`, and `suggestions`.
+- Prefer `/set channel` to set channels from Discord directly.
+- `/set channel` updates per-track post channels (`tester`, `builder`, `cmd`) plus `application_log`, `log`, `accept_message`, `bug`, and `suggestions`.
 - Track routing is inferred from your form response values using keywords like `tester`, `builder`, and `cmd`/`command`. If none is found, it defaults to `tester`.
 - Multi-select role responses are supported. One row can post to multiple track channels (one application post per selected track).
 - Empty/unanswered form questions are omitted from Discord application posts and stored history.
@@ -509,27 +509,27 @@ pm2 restart taq-event-bot --update-env
 - `/repostapps` replays tracked historical applications back into configured post channels in row order.
 - `/settings` controls vote rules, vote-eligible role filters, stale reminders, reviewer assignment, daily digests, and active Google Sheet source overrides.
 - `/config export` DMs JSON config backup; `/config import` restores settings from JSON.
-- `/set mode:channel` requires `Manage Server` (or `Administrator`).
-- `/set mode:channel` requires `channel_target` and `channel`; for `channel_target:post`, also provide `track`.
-- `/set mode:channel` supports `channel_target:application_log|log|accept_message|bug|suggestions` and `channel_target:post track:<track>`.
-- `/set mode:default` requires `Manage Server` (or `Administrator`) and applies one server-level default channel to all track/shared channel targets.
-- `/set mode:default` accepts optional `role..role_5` to apply the same accepted roles to every track (requires Manage Roles).
-- `/set mode:default` accepts optional `message` to set the accepted-announcement template.
+- `/set channel` requires `Manage Server` (or `Administrator`).
+- `/set channel` requires `channel_target` and `channel`; for `channel_target:post`, also provide `track`.
+- `/set channel` supports `channel_target:application_log|log|accept_message|bug|suggestions` and `channel_target:post track:<track>`.
+- `/set default` requires `Manage Server` (or `Administrator`) and applies one server-level default channel to all track/shared channel targets.
+- `/set default` accepts optional `role..role_5` to apply the same accepted roles to every track (requires Manage Roles).
+- `/set default` accepts optional `message` to set the accepted-announcement template.
 - Application log channel messages are posted as embeds; decision-closure embeds use status colors (accepted=green, denied=red).
 - Non-application log channel messages are posted as red embeds.
 - `/bug` sends an embedded bug report into the configured bug channel and opens a discussion thread.
 - `/suggestions` (and `/suggestion`) sends an embedded idea into the configured suggestions channel and opens a discussion thread.
-- `/set mode:approle` requires both `Manage Server` and `Manage Roles`, or `Administrator`.
-- `/set mode:approle` requires exactly one `track` per command and overwrites that track's roles.
-- `track` options on `/set mode:approle`, `/set mode:channel`, `/debug`, `/track edit/remove`, and `/settings action:vote|reviewers|voters` support autocomplete suggestions.
+- `/set approle` requires both `Manage Server` and `Manage Roles`, or `Administrator`.
+- `/set approle` requires exactly one `track` per command and overwrites that track's roles.
+- `track` options on `/set approle`, `/set channel`, `/debug`, `/track edit/remove`, and `/settings action:vote|reviewers|voters` support autocomplete suggestions.
 - `/track` supports `add`, `edit`, `remove`, and `list`.
-- `/set mode:approle` supports up to 5 roles in one command: `role`, `role_2`, `role_3`, `role_4`, `role_5`.
-- `/set mode:approle` writes a configuration update entry to the configured logs channel.
-- `/set mode:denymsg` requires `Manage Server` (or `Administrator`) and sets the denied-DM template.
-- `/set mode:acceptmsg` requires `Manage Server` (or `Administrator`) and sets accepted-announcement channel/message.
-- `/set mode:acceptmsg` accepts `channel`, `message`, or both.
-- `/rr` is a mode-based shortcut for reaction roles (`create|remove|list|gui`); `/reactionrole` remains supported.
-- `/message` is a mode-based shortcut for message tools (`structured|embed|edit`); `/structuredmsg`, `/embedmsg`, and `/embededit` remain supported.
+- `/set approle` supports up to 5 roles in one command: `role`, `role_2`, `role_3`, `role_4`, `role_5`.
+- `/set approle` writes a configuration update entry to the configured logs channel.
+- `/set denymsg` requires `Manage Server` (or `Administrator`) and sets the denied-DM template.
+- `/set acceptmsg` requires `Manage Server` (or `Administrator`) and sets accepted-announcement channel/message.
+- `/set acceptmsg` accepts `channel`, `message`, or both.
+- `/rr` is a subcommand shortcut for reaction roles (`create|remove|list|gui`); `/reactionrole` remains supported.
+- `/message` is a subcommand shortcut for message tools (`structured|embed|edit`); `/structuredmsg`, `/embedmsg`, and `/embededit` remain supported.
 - `/structuredmsg` requires `Manage Server` (or `Administrator`) and posts in the current channel.
 - Denied applications DM the resolved `discord_ID` user automatically (if available).
 - Supported denied-DM placeholders: `{user}`, `{user_id}`, `{applicant_name}`, `{track}`, `{application_id}`, `{job_id}`, `{server}`, `{decision_source}`, `{reason}`, `{decided_at}`.
