@@ -186,6 +186,128 @@ function createSlashCommandLifecycle(options = {}) {
           .setRequired(false)
       );
 
+    function buildReactionRoleCommand(commandName, description) {
+      return new SlashCommandBuilder()
+        .setName(commandName)
+        .setDescription(description)
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName("create")
+            .setDescription("Create or update a reaction-role mapping")
+            .addStringOption((option) =>
+              option
+                .setName("message_id")
+                .setDescription("Target message ID")
+                .setRequired(true)
+            )
+            .addStringOption((option) =>
+              option
+                .setName("emoji")
+                .setDescription("Emoji (e.g. ✅ or <:name:id>)")
+                .setRequired(true)
+            )
+            .addRoleOption((option) =>
+              option
+                .setName("role")
+                .setDescription("Role to grant when user reacts")
+                .setRequired(true)
+            )
+            .addChannelOption((option) =>
+              option
+                .setName("channel")
+                .setDescription("Channel containing the target message")
+                .setRequired(false)
+            )
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName("remove")
+            .setDescription("Remove a reaction-role mapping")
+            .addStringOption((option) =>
+              option
+                .setName("message_id")
+                .setDescription("Target message ID")
+                .setRequired(true)
+            )
+            .addStringOption((option) =>
+              option
+                .setName("emoji")
+                .setDescription("Emoji used in the mapping")
+                .setRequired(true)
+            )
+            .addChannelOption((option) =>
+              option
+                .setName("channel")
+                .setDescription("Channel containing the target message")
+                .setRequired(false)
+            )
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName("list")
+            .setDescription("List reaction-role mappings")
+            .addStringOption((option) =>
+              option
+                .setName("message_id")
+                .setDescription("Optional message ID filter")
+                .setRequired(false)
+            )
+            .addChannelOption((option) =>
+              option
+                .setName("channel")
+                .setDescription("Optional channel filter")
+                .setRequired(false)
+            )
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName("gui")
+            .setDescription("Open button/modal GUI for reaction-role management")
+        );
+    }
+
+    function buildReactionRoleAliasCommand() {
+      return new SlashCommandBuilder()
+        .setName("rr")
+        .setDescription("Reaction-role shortcut command")
+        .addStringOption((option) =>
+          option
+            .setName("mode")
+            .setDescription("Reaction-role action")
+            .addChoices(
+              { name: "Create", value: "create" },
+              { name: "Remove", value: "remove" },
+              { name: "List", value: "list" },
+              { name: "GUI", value: "gui" }
+            )
+            .setRequired(true)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("message_id")
+            .setDescription("Message ID (create/remove/list)")
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("emoji")
+            .setDescription("Emoji (create/remove)")
+            .setRequired(false)
+        )
+        .addRoleOption((option) =>
+          option
+            .setName("role")
+            .setDescription("Role to grant (create)")
+            .setRequired(false)
+        )
+        .addChannelOption((option) =>
+          option
+            .setName("channel")
+            .setDescription("Target channel (optional)")
+            .setRequired(false)
+        );
+    }
+
     return [
       new SlashCommandBuilder()
         .setName("accept")
@@ -338,6 +460,98 @@ function createSlashCommandLifecycle(options = {}) {
             .setRequired(false)
         ),
       new SlashCommandBuilder()
+        .setName("message")
+        .setDescription("Post or edit bot messages")
+        .addStringOption((option) =>
+          option
+            .setName("mode")
+            .setDescription("Message action")
+            .addChoices(
+              { name: "Structured", value: "structured" },
+              { name: "Embed Post", value: "embed" },
+              { name: "Embed Edit", value: "edit" }
+            )
+            .setRequired(true)
+        )
+        .addChannelOption((option) =>
+          option
+            .setName("channel")
+            .setDescription("Target channel (optional; defaults to current)")
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("message_id")
+            .setDescription("Target message ID (for mode:edit)")
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("title")
+            .setDescription("Title (structured/embed/edit)")
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("description")
+            .setDescription("Description/body (embed/edit)")
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("line_1")
+            .setDescription("First content line (structured)")
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("line_2")
+            .setDescription("Second content line (structured)")
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("line_3")
+            .setDescription("Third content line (structured)")
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("line_4")
+            .setDescription("Fourth content line (structured)")
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("line_5")
+            .setDescription("Fifth content line (structured)")
+            .setRequired(false)
+        )
+        .addBooleanOption((option) =>
+          option
+            .setName("code_block")
+            .setDescription("Wrap structured content in a code block")
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("color")
+            .setDescription("Hex color for embed (#57F287) or `clear` (edit)")
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("footer")
+            .setDescription("Footer text for embed or `clear` (edit)")
+            .setRequired(false)
+        )
+        .addBooleanOption((option) =>
+          option
+            .setName("timestamp")
+            .setDescription("Set embed timestamp on/off")
+            .setRequired(false)
+        ),
+      new SlashCommandBuilder()
         .setName("useapprole")
         .setDescription("Legacy alias for accepted-role management")
         .addSubcommand((subcommand) =>
@@ -387,83 +601,8 @@ function createSlashCommandLifecycle(options = {}) {
             .setName("gui")
             .setDescription("Open GUI to set accepted roles for a track")
         ),
-      new SlashCommandBuilder()
-        .setName("reactionrole")
-        .setDescription("Manage reaction-role mappings")
-        .addSubcommand((subcommand) =>
-          subcommand
-            .setName("create")
-            .setDescription("Create or update a reaction-role mapping")
-            .addStringOption((option) =>
-              option
-                .setName("message_id")
-                .setDescription("Target message ID")
-                .setRequired(true)
-            )
-            .addStringOption((option) =>
-              option
-                .setName("emoji")
-                .setDescription("Emoji (e.g. ✅ or <:name:id>)")
-                .setRequired(true)
-            )
-            .addRoleOption((option) =>
-              option
-                .setName("role")
-                .setDescription("Role to grant when user reacts")
-                .setRequired(true)
-            )
-            .addChannelOption((option) =>
-              option
-                .setName("channel")
-                .setDescription("Channel containing the target message")
-                .setRequired(false)
-            )
-        )
-        .addSubcommand((subcommand) =>
-          subcommand
-            .setName("remove")
-            .setDescription("Remove a reaction-role mapping")
-            .addStringOption((option) =>
-              option
-                .setName("message_id")
-                .setDescription("Target message ID")
-                .setRequired(true)
-            )
-            .addStringOption((option) =>
-              option
-                .setName("emoji")
-                .setDescription("Emoji used in the mapping")
-                .setRequired(true)
-            )
-            .addChannelOption((option) =>
-              option
-                .setName("channel")
-                .setDescription("Channel containing the target message")
-                .setRequired(false)
-            )
-        )
-        .addSubcommand((subcommand) =>
-          subcommand
-            .setName("list")
-            .setDescription("List reaction-role mappings")
-            .addStringOption((option) =>
-              option
-                .setName("message_id")
-                .setDescription("Optional message ID filter")
-                .setRequired(false)
-            )
-            .addChannelOption((option) =>
-              option
-                .setName("channel")
-                .setDescription("Optional channel filter")
-                .setRequired(false)
-            )
-        )
-        .addSubcommand((subcommand) =>
-          subcommand
-            .setName("gui")
-            .setDescription("Open button/modal GUI for reaction-role management")
-        ),
+      buildReactionRoleCommand("reactionrole", "Manage reaction-role mappings"),
+      buildReactionRoleAliasCommand(),
       new SlashCommandBuilder()
         .setName("track")
         .setDescription("Manage application tracks")

@@ -1313,13 +1313,20 @@ function createInteractionCommandHandler(options = {}) {
         interaction.commandName === "setapprolegui" ||
         (isSetUnified && setCommandMode === "approlegui") ||
         (isUseAppRole && useAppRoleSubcommand === "gui");
-      const isReactionRole = interaction.commandName === "reactionrole";
+      const isReactionRole =
+        interaction.commandName === "reactionrole" || interaction.commandName === "rr";
       const isTrackCommand = interaction.commandName === "track";
       const isDashboard = interaction.commandName === "dashboard";
       const isUptime = interaction.commandName === "uptime";
       const isUnassignedRole = interaction.commandName === "unassignedrole";
       const isSettings = interaction.commandName === "settings";
       const isConfig = interaction.commandName === "config";
+      const isMessageUnified = interaction.commandName === "message";
+      const messageCommandMode = isMessageUnified
+        ? String(safeGetStringOptionFromInteraction(interaction, "mode") || "")
+            .trim()
+            .toLowerCase()
+        : "";
       const isSetDenyMsg =
         interaction.commandName === "setdenymsg" ||
         (isSetUnified && setCommandMode === "denymsg");
@@ -1327,9 +1334,15 @@ function createInteractionCommandHandler(options = {}) {
         interaction.commandName === "setacceptmsg" ||
         interaction.commandName === "setaccept" ||
         (isSetUnified && setCommandMode === "acceptmsg");
-      const isStructuredMsg = interaction.commandName === "structuredmsg";
-      const isEmbedMsg = interaction.commandName === "embedmsg";
-      const isEmbedEdit = interaction.commandName === "embededit";
+      const isStructuredMsg =
+        interaction.commandName === "structuredmsg" ||
+        (isMessageUnified && messageCommandMode === "structured");
+      const isEmbedMsg =
+        interaction.commandName === "embedmsg" ||
+        (isMessageUnified && messageCommandMode === "embed");
+      const isEmbedEdit =
+        interaction.commandName === "embededit" ||
+        (isMessageUnified && messageCommandMode === "edit");
       const isBug = interaction.commandName === "bug";
       const isSuggestions =
         interaction.commandName === "suggestions" ||
@@ -1353,6 +1366,7 @@ function createInteractionCommandHandler(options = {}) {
         !isUnassignedRole &&
         !isSettings &&
         !isConfig &&
+        !isMessageUnified &&
         !isSetDenyMsg &&
         !isSetAcceptMsg &&
         !isStructuredMsg &&
@@ -1409,11 +1423,19 @@ function createInteractionCommandHandler(options = {}) {
         "denymsg",
         "acceptmsg",
       ]);
+      const validMessageModes = new Set(["structured", "embed", "edit"]);
 
       if (isSetUnified && !validSetModes.has(setCommandMode)) {
         await interaction.reply({
           content:
             "Unknown `/set` mode. Use one of: `channel`, `default`, `approle`, `approlegui`, `denymsg`, `acceptmsg`.",
+          ephemeral: true,
+        });
+        return;
+      }
+      if (isMessageUnified && !validMessageModes.has(messageCommandMode)) {
+        await interaction.reply({
+          content: "Unknown `/message` mode. Use one of: `structured`, `embed`, `edit`.",
           ephemeral: true,
         });
         return;
@@ -2080,7 +2102,12 @@ function createInteractionCommandHandler(options = {}) {
           return;
         }
 
-        const action = interaction.options.getSubcommand(true);
+        const action =
+          interaction.commandName === "rr"
+            ? String(interaction.options.getString("mode") || "")
+                .trim()
+                .toLowerCase()
+            : interaction.options.getSubcommand(true);
         logInteractionDebug(
           "track_command_received",
           "Processing track command.",
@@ -2501,17 +2528,41 @@ function createInteractionCommandHandler(options = {}) {
           return;
         }
 
-        if (!interaction.channel || !interaction.channel.isTextBased()) {
+        const channelInput = interaction.options.getChannel("channel");
+        const targetChannel = channelInput || interaction.channel;
+        if (
+          !targetChannel ||
+          !targetChannel.isTextBased() ||
+          typeof targetChannel.send !== "function"
+        ) {
           await interaction.reply({
             content: "Run this command in a text channel.",
             ephemeral: true,
           });
           return;
         }
+        if (interaction.guildId && targetChannel.guildId !== interaction.guildId) {
+          await interaction.reply({
+            content: "The selected channel must be in this server.",
+            ephemeral: true,
+          });
+          return;
+        }
 
-        const title = interaction.options.getString("title", true).trim();
+        const titleRaw = interaction.options.getString("title");
+        const line1Raw = interaction.options.getString("line_1");
+        const title = String(titleRaw || "").trim();
+        if (!title || !String(line1Raw || "").trim()) {
+          await interaction.reply({
+            content: isMessageUnified
+              ? "For `/message mode:structured`, provide at least `title` and `line_1`."
+              : "Please provide both `title` and `line_1`.",
+            ephemeral: true,
+          });
+          return;
+        }
         const rawLines = [
-          interaction.options.getString("line_1", true),
+          line1Raw,
           interaction.options.getString("line_2"),
           interaction.options.getString("line_3"),
           interaction.options.getString("line_4"),
@@ -2535,9 +2586,9 @@ function createInteractionCommandHandler(options = {}) {
             ];
         const content = contentLines.join("\n");
 
-        await sendChannelMessage(interaction.channelId, content, { parse: [] });
+        await sendChannelMessage(targetChannel.id, content, { parse: [] });
         await interaction.reply({
-          content: `Structured message posted in <#${interaction.channelId}>.`,
+          content: `Structured message posted in <#${targetChannel.id}>.`,
           ephemeral: true,
         });
         logInteractionDebug(
@@ -2545,7 +2596,7 @@ function createInteractionCommandHandler(options = {}) {
           "Posted structured message.",
           interaction,
           {
-            channelId: interaction.channelId,
+            channelId: targetChannel.id,
             lineCount: lines.length,
             usedCodeBlock: useCodeBlock,
           }
@@ -2584,13 +2635,13 @@ function createInteractionCommandHandler(options = {}) {
           return;
         }
 
-        const title = String(interaction.options.getString("title", true) || "").trim();
-        const description = String(
-          interaction.options.getString("description", true) || ""
-        ).trim();
+        const title = String(interaction.options.getString("title") || "").trim();
+        const description = String(interaction.options.getString("description") || "").trim();
         if (!title || !description) {
           await interaction.reply({
-            content: "Please provide both title and description.",
+            content: isMessageUnified
+              ? "For `/message mode:embed`, provide both `title` and `description`."
+              : "Please provide both title and description.",
             ephemeral: true,
           });
           return;
@@ -2679,10 +2730,12 @@ function createInteractionCommandHandler(options = {}) {
           return;
         }
 
-        const messageId = String(interaction.options.getString("message_id", true) || "").trim();
+        const messageId = String(interaction.options.getString("message_id") || "").trim();
         if (!isSnowflake(messageId)) {
           await interaction.reply({
-            content: "Please provide a valid `message_id`.",
+            content: isMessageUnified
+              ? "For `/message mode:edit`, provide a valid `message_id`."
+              : "Please provide a valid `message_id`.",
             ephemeral: true,
           });
           return;
@@ -3072,15 +3125,29 @@ function createInteractionCommandHandler(options = {}) {
         }
 
         if (action === "create") {
-          const messageId = String(interaction.options.getString("message_id", true) || "").trim();
-          const emoji = String(interaction.options.getString("emoji", true) || "").trim();
-          const role = interaction.options.getRole("role", true);
+          const messageId = String(interaction.options.getString("message_id") || "").trim();
+          const emoji = String(interaction.options.getString("emoji") || "").trim();
+          const role = interaction.options.getRole("role");
           const channelInput = interaction.options.getChannel("channel");
           const targetChannel = channelInput || interaction.channel;
 
           if (!isSnowflake(messageId)) {
             await interaction.reply({
               content: "Please provide a valid message ID.",
+              ephemeral: true,
+            });
+            return;
+          }
+          if (!emoji) {
+            await interaction.reply({
+              content: "Please provide an emoji.",
+              ephemeral: true,
+            });
+            return;
+          }
+          if (!role?.id) {
+            await interaction.reply({
+              content: "Please provide a role.",
               ephemeral: true,
             });
             return;
@@ -3214,14 +3281,21 @@ function createInteractionCommandHandler(options = {}) {
         }
 
         if (action === "remove") {
-          const messageId = String(interaction.options.getString("message_id", true) || "").trim();
-          const emoji = String(interaction.options.getString("emoji", true) || "").trim();
+          const messageId = String(interaction.options.getString("message_id") || "").trim();
+          const emoji = String(interaction.options.getString("emoji") || "").trim();
           const channelInput = interaction.options.getChannel("channel");
           const targetChannel = channelInput || interaction.channel;
 
           if (!isSnowflake(messageId)) {
             await interaction.reply({
               content: "Please provide a valid message ID.",
+              ephemeral: true,
+            });
+            return;
+          }
+          if (!emoji) {
+            await interaction.reply({
+              content: "Please provide an emoji.",
               ephemeral: true,
             });
             return;
@@ -3375,7 +3449,7 @@ function createInteractionCommandHandler(options = {}) {
         }
 
         await interaction.reply({
-          content: `Unknown reactionrole action: ${action}`,
+          content: `Unknown reaction-role action: ${action}`,
           ephemeral: true,
         });
         return;

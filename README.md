@@ -287,6 +287,21 @@ Set accepted announcement channel/message:
 /set mode:acceptmsg channel:#welcome-team message:Welcome to {track} team, if you need any information please contact administrators.
 ```
 
+Reaction roles (mode-based shortcut):
+```text
+/rr mode:create message_id:123456789012345678 emoji:✅ role:@EventRole channel:#roles
+/rr mode:list
+/rr mode:remove message_id:123456789012345678 emoji:✅ channel:#roles
+/rr mode:gui
+```
+
+Message tools (mode-based shortcut):
+```text
+/message mode:structured title:Team Update line_1:Schedule posted line_2:Check pins
+/message mode:embed title:Welcome description:Rules are in #rules color:#57F287 timestamp:true
+/message mode:edit channel:#announcements message_id:123456789012345678 title:Updated Title footer:clear
+```
+
 Dashboard and settings:
 ```text
 /dashboard
@@ -513,6 +528,8 @@ pm2 restart taq-event-bot --update-env
 - `/set mode:denymsg` requires `Manage Server` (or `Administrator`) and sets the denied-DM template.
 - `/set mode:acceptmsg` requires `Manage Server` (or `Administrator`) and sets accepted-announcement channel/message.
 - `/set mode:acceptmsg` accepts `channel`, `message`, or both.
+- `/rr` is a mode-based shortcut for reaction roles (`create|remove|list|gui`); `/reactionrole` remains supported.
+- `/message` is a mode-based shortcut for message tools (`structured|embed|edit`); `/structuredmsg`, `/embedmsg`, and `/embededit` remain supported.
 - `/structuredmsg` requires `Manage Server` (or `Administrator`) and posts in the current channel.
 - Denied applications DM the resolved `discord_ID` user automatically (if available).
 - Supported denied-DM placeholders: `{user}`, `{user_id}`, `{applicant_name}`, `{track}`, `{application_id}`, `{job_id}`, `{server}`, `{decision_source}`, `{reason}`, `{decided_at}`.
