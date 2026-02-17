@@ -5,9 +5,10 @@
 
 async function readAllResponses() {
   const sheets = await getSheetsClient();
-  const range = `${config.sheetName}!A:ZZ`;
+  const source = getActiveSheetSource();
+  const range = `${source.sheetName}!A:ZZ`;
   const response = await sheets.spreadsheets.values.get({
-    spreadsheetId: config.spreadsheetId,
+    spreadsheetId: source.spreadsheetId,
     range,
   });
   return response.data.values || [];

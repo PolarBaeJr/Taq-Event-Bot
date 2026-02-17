@@ -139,6 +139,41 @@ test("buildSlashCommands includes /useapprole legacy command", () => {
   assert.ok(subcommandNames.has("gui"));
 });
 
+test("buildSlashCommands includes /settings config import/export subcommands", () => {
+  const { buildSlashCommands } = createSlashCommandLifecycle({
+    config: {},
+    client: {
+      guilds: {
+        cache: new Map(),
+      },
+    },
+    REST: function REST() {},
+    Routes: {},
+    SlashCommandBuilder,
+    baseSetChannelTrackOptions: [],
+    debugModes: {
+      report: "report",
+      post_test: "post_test",
+      accept_test: "accept_test",
+      deny_test: "deny_test",
+    },
+    getApplicationTrackKeys: () => ["tester"],
+    getTrackLabel: () => "Tester",
+  });
+
+  const commands = buildSlashCommands();
+  const settings = commands.find((command) => command.name === "settings");
+  assert.ok(settings, "settings command should exist");
+
+  const subcommandNames = new Set(
+    (Array.isArray(settings.options) ? settings.options : []).map((option) => option.name)
+  );
+  assert.ok(subcommandNames.has("show"));
+  assert.ok(subcommandNames.has("sheets"));
+  assert.ok(subcommandNames.has("export"));
+  assert.ok(subcommandNames.has("import"));
+});
+
 test("buildSlashCommands includes /embedmsg command", () => {
   const { buildSlashCommands } = createSlashCommandLifecycle({
     config: {},

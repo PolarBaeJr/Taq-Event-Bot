@@ -279,6 +279,10 @@ Dashboard and settings:
 /settings reminders enabled:true threshold_hours:24 repeat_hours:12
 /settings reviewers track:tester mentions:@LeadReviewer @BackupReviewer
 /settings digest enabled:true hour_utc:15
+/settings sheets spreadsheet_id:1AbCdEfGhI... sheet_name:Form Responses 1
+/settings sheets reset:true
+/settings export
+/settings import json:{ ... }
 ```
 
 Config backup/restore:
@@ -453,7 +457,7 @@ pm2 restart taq-event-bot --update-env
 - `/reopen` reopens a decided application back to pending (it does not auto-revert prior side effects).
 - `/dashboard` shows per-track pending/accepted/denied counts, oldest pending age, and vote rule.
 - `/uptime` shows how long the current bot process has been running.
-- `/settings` controls vote rules, stale reminders, reviewer assignment, and daily digests.
+- `/settings` controls vote rules, stale reminders, reviewer assignment, daily digests, and active Google Sheet source overrides.
 - `/config export` DMs JSON config backup; `/config import` restores settings from JSON.
 - `/setchannel` requires `Manage Server` (or `Administrator`).
 - `/setchannel` can be run with no options to set tester channel to the current channel.

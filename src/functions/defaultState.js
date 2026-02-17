@@ -21,6 +21,12 @@ function defaultState() {
       acceptAnnounceTemplate: null,
       denyDmTemplate: null,
       customTracks: getCustomTracksSnapshot(),
+      voteRules: createEmptyTrackVoteRuleMap(),
+      reviewerMentions: createEmptyTrackReviewerMap(),
+      reminders: normalizeReminderSettings(null),
+      dailyDigest: normalizeDailyDigestSettings(null),
+      sheetSource: normalizeSheetSourceSettings(null),
+      reactionRoles: [],
     },
   };
 }

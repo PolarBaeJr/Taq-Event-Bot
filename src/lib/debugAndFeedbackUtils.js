@@ -186,6 +186,24 @@ function createDebugAndFeedbackUtils(options = {}) {
       }`
     );
     lines.push(`Last Processed Sheet Row: ${Number.isInteger(state.lastRow) ? state.lastRow : 0}`);
+    const stateSheetSource =
+      state.settings?.sheetSource && typeof state.settings.sheetSource === "object"
+        ? state.settings.sheetSource
+        : {};
+    const spreadsheetIdFromState =
+      typeof stateSheetSource.spreadsheetId === "string" && stateSheetSource.spreadsheetId.trim()
+        ? stateSheetSource.spreadsheetId.trim()
+        : null;
+    const sheetNameFromState =
+      typeof stateSheetSource.sheetName === "string" && stateSheetSource.sheetName.trim()
+        ? stateSheetSource.sheetName.trim()
+        : null;
+    lines.push(
+      `Source Spreadsheet ID: ${(spreadsheetIdFromState || config.spreadsheetId || "missing")} (${spreadsheetIdFromState ? "state" : "env"})`
+    );
+    lines.push(
+      `Source Sheet Name: ${(sheetNameFromState || config.sheetName || "missing")} (${sheetNameFromState ? "state" : "env"})`
+    );
     for (const trackKey of getApplicationTrackKeys()) {
       const trackLabel = getTrackLabel(trackKey);
       const approvedRoles = Array.isArray(activeApprovedRoleMap[trackKey])

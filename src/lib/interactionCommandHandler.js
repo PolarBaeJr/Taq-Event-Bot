@@ -107,6 +107,11 @@ function createInteractionCommandHandler(options = {}) {
   const setTrackVoteRule = options.setTrackVoteRule;
   const setReminderConfiguration = options.setReminderConfiguration;
   const setDailyDigestConfiguration = options.setDailyDigestConfiguration;
+  const setSheetSourceConfiguration = typeof options.setSheetSourceConfiguration === "function"
+    ? options.setSheetSourceConfiguration
+    : () => {
+        throw new Error("Sheet source configuration is unavailable.");
+      };
   const setTrackReviewerMentions = options.setTrackReviewerMentions;
   const upsertReactionRoleBinding = options.upsertReactionRoleBinding;
   const removeReactionRoleBinding = options.removeReactionRoleBinding;
@@ -1576,6 +1581,118 @@ function createInteractionCommandHandler(options = {}) {
               subcommand,
               enabled: next.enabled,
               hourUtc: next.hourUtc,
+            }
+          );
+          return;
+        }
+
+        if (subcommand === "sheets") {
+          const spreadsheetId = interaction.options.getString("spreadsheet_id");
+          const sheetName = interaction.options.getString("sheet_name");
+          const reset = interaction.options.getBoolean("reset") === true;
+          if (!reset && spreadsheetId === null && sheetName === null) {
+            await interaction.reply({
+              content: "Provide `spreadsheet_id`, `sheet_name`, or `reset:true`.",
+              ephemeral: true,
+            });
+            return;
+          }
+          let update;
+          try {
+            update = setSheetSourceConfiguration({
+              spreadsheetId: spreadsheetId === null ? undefined : spreadsheetId,
+              sheetName: sheetName === null ? undefined : sheetName,
+              reset,
+            });
+          } catch (err) {
+            await interaction.reply({
+              content: err.message || "Failed updating sheet source settings.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          const effective = update.effective;
+          await interaction.reply({
+            content: `Sheet source set to spreadsheet_id=${effective.spreadsheetId} (${effective.spreadsheetIdSource}), sheet_name=${effective.sheetName} (${effective.sheetNameSource}).`,
+            ephemeral: true,
+          });
+          await postConfigurationLog(interaction, "Sheet Source Updated", [
+            `**Spreadsheet ID:** ${effective.spreadsheetId} (${effective.spreadsheetIdSource})`,
+            `**Sheet Name:** ${effective.sheetName} (${effective.sheetNameSource})`,
+          ]);
+          logInteractionDebug(
+            "settings_sheets_updated",
+            "Updated sheet source settings.",
+            interaction,
+            {
+              subcommand,
+              spreadsheetIdSource: effective.spreadsheetIdSource,
+              sheetNameSource: effective.sheetNameSource,
+            }
+          );
+          return;
+        }
+
+        if (subcommand === "export") {
+          const payload = exportAdminConfig();
+          try {
+            await sendDebugDm(interaction.user, payload);
+          } catch {
+            await interaction.reply({
+              content: "Could not DM you the config export. Enable DMs and try again.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          await interaction.reply({
+            content: "Config export sent to your DMs as JSON.",
+            ephemeral: true,
+          });
+          logInteractionDebug(
+            "settings_export_completed",
+            "Exported configuration via /settings.",
+            interaction,
+            {
+              subcommand,
+              payloadLength: typeof payload === "string" ? payload.length : null,
+            }
+          );
+          return;
+        }
+
+        if (subcommand === "import") {
+          const rawJson = interaction.options.getString("json", true);
+          let result;
+          try {
+            result = importAdminConfig(rawJson);
+          } catch (err) {
+            await interaction.reply({
+              content: err.message || "Failed importing config.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          await interaction.reply({
+            content: `Config imported. Tracks: ${result.trackCount}, custom tracks: ${result.customTrackCount}.`,
+            ephemeral: true,
+          });
+          await postConfigurationLog(interaction, "Config Imported", [
+            `**Tracks:** ${result.trackCount}`,
+            `**Custom Tracks:** ${result.customTrackCount}`,
+            "**Source:** /settings import",
+          ]);
+          refreshCommandsIfNeeded();
+          logInteractionDebug(
+            "settings_import_completed",
+            "Imported configuration JSON via /settings.",
+            interaction,
+            {
+              subcommand,
+              trackCount: result.trackCount,
+              customTrackCount: result.customTrackCount,
             }
           );
           return;

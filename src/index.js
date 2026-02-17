@@ -458,6 +458,20 @@ function normalizeDailyDigestSettings(rawDigest) {
   };
 }
 
+function normalizeSheetSourceSettings(rawSheetSource) {
+  const source = rawSheetSource && typeof rawSheetSource === "object" ? rawSheetSource : {};
+  return {
+    spreadsheetId:
+      typeof source.spreadsheetId === "string" && source.spreadsheetId.trim()
+        ? source.spreadsheetId.trim()
+        : null,
+    sheetName:
+      typeof source.sheetName === "string" && source.sheetName.trim()
+        ? source.sheetName.trim()
+        : null,
+  };
+}
+
 let reactionRoleManager = null;
 
 function normalizeReactionRoleBindings(rawBindings) {
@@ -470,6 +484,7 @@ function ensureExtendedSettingsContainers(state) {
   settings.reviewerMentions = normalizeTrackReviewerMap(settings.reviewerMentions);
   settings.reminders = normalizeReminderSettings(settings.reminders);
   settings.dailyDigest = normalizeDailyDigestSettings(settings.dailyDigest);
+  settings.sheetSource = normalizeSheetSourceSettings(settings.sheetSource);
   settings.reactionRoles = normalizeReactionRoleBindings(settings.reactionRoles);
   return settings;
 }
@@ -658,6 +673,68 @@ function setDailyDigestConfiguration({ enabled, hourUtc }) {
   return next;
 }
 
+function getActiveSheetSourceFromSettings(settings) {
+  const source = normalizeSheetSourceSettings(settings?.sheetSource);
+  return {
+    spreadsheetId: source.spreadsheetId || config.spreadsheetId,
+    sheetName: source.sheetName || config.sheetName,
+    spreadsheetIdSource: source.spreadsheetId ? "state" : "env",
+    sheetNameSource: source.sheetName ? "state" : "env",
+  };
+}
+
+function getActiveSheetSource() {
+  const state = readState();
+  const settings = ensureExtendedSettingsContainers(state);
+  return getActiveSheetSourceFromSettings(settings);
+}
+
+function normalizeSheetSourceInputValue(rawValue, fieldLabel) {
+  const normalized = String(rawValue || "").trim();
+  if (!normalized) {
+    throw new Error(`${fieldLabel} cannot be empty.`);
+  }
+  if (/^(default|env|clear|none)$/i.test(normalized)) {
+    return null;
+  }
+  return normalized;
+}
+
+function setSheetSourceConfiguration({ spreadsheetId, sheetName, reset = false } = {}) {
+  const state = readState();
+  const settings = ensureExtendedSettingsContainers(state);
+  const current = normalizeSheetSourceSettings(settings.sheetSource);
+  const resetOverrides = reset === true;
+  const hasSpreadsheetIdUpdate = spreadsheetId !== undefined;
+  const hasSheetNameUpdate = sheetName !== undefined;
+
+  if (!resetOverrides && !hasSpreadsheetIdUpdate && !hasSheetNameUpdate) {
+    throw new Error("Provide `spreadsheet_id`, `sheet_name`, or `reset:true`.");
+  }
+
+  let next = current;
+  if (resetOverrides) {
+    next = normalizeSheetSourceSettings(null);
+  } else {
+    next = {
+      spreadsheetId: hasSpreadsheetIdUpdate
+        ? normalizeSheetSourceInputValue(spreadsheetId, "Spreadsheet ID")
+        : current.spreadsheetId,
+      sheetName: hasSheetNameUpdate
+        ? normalizeSheetSourceInputValue(sheetName, "Sheet name")
+        : current.sheetName,
+    };
+  }
+
+  settings.sheetSource = normalizeSheetSourceSettings(next);
+  writeState(state);
+
+  return {
+    overrides: normalizeSheetSourceSettings(settings.sheetSource),
+    effective: getActiveSheetSourceFromSettings(settings),
+  };
+}
+
 function setTrackReviewerMentions(trackKey, mentionInput) {
   const normalizedTrack = normalizeTrackKey(trackKey);
   if (!normalizedTrack) {
@@ -742,6 +819,7 @@ function defaultState() {
       reviewerMentions: createEmptyTrackReviewerMap(),
       reminders: normalizeReminderSettings(null),
       dailyDigest: normalizeDailyDigestSettings(null),
+      sheetSource: normalizeSheetSourceSettings(null),
       reactionRoles: [],
     },
   };
@@ -923,6 +1001,14 @@ function readState() {
         reviewerMentions: normalizeTrackReviewerMap(legacySettings.reviewerMentions),
         reminders: normalizeReminderSettings(legacySettings.reminders),
         dailyDigest: normalizeDailyDigestSettings(legacySettings.dailyDigest),
+        sheetSource: normalizeSheetSourceSettings(
+          legacySettings.sheetSource && typeof legacySettings.sheetSource === "object"
+            ? legacySettings.sheetSource
+            : {
+              spreadsheetId: legacySettings.spreadsheetId,
+              sheetName: legacySettings.sheetName,
+            }
+        ),
         reactionRoles: normalizeReactionRoleBindings(legacySettings.reactionRoles),
       },
     };
@@ -1278,6 +1364,7 @@ function buildDashboardMessage() {
 function buildSettingsMessage() {
   const state = readState();
   const settings = ensureExtendedSettingsContainers(state);
+  const activeSheetSource = getActiveSheetSourceFromSettings(settings);
   const lines = [
     "⚙️ **Current Settings**",
     `Reminders: ${
@@ -1291,6 +1378,7 @@ function buildSettingsMessage() {
         : "disabled"
     }`,
     `Reaction Roles: ${Array.isArray(settings.reactionRoles) ? settings.reactionRoles.length : 0}`,
+    `Sheets Source: spreadsheet_id=${activeSheetSource.spreadsheetId} (${activeSheetSource.spreadsheetIdSource}) | sheet_name=${activeSheetSource.sheetName} (${activeSheetSource.sheetNameSource})`,
   ];
 
   for (const trackKey of getApplicationTrackKeys()) {
@@ -1338,6 +1426,7 @@ function exportAdminConfig() {
       reviewerMentions: settings.reviewerMentions,
       reminders: settings.reminders,
       dailyDigest: settings.dailyDigest,
+      sheetSource: settings.sheetSource,
       reactionRoles: settings.reactionRoles,
     },
   };
@@ -1397,6 +1486,20 @@ function importAdminConfig(rawJson) {
 
   if (Object.prototype.hasOwnProperty.call(settingsPayload, "dailyDigest")) {
     settings.dailyDigest = normalizeDailyDigestSettings(settingsPayload.dailyDigest);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(settingsPayload, "sheetSource")) {
+    settings.sheetSource = normalizeSheetSourceSettings(settingsPayload.sheetSource);
+  } else if (
+    Object.prototype.hasOwnProperty.call(settingsPayload, "spreadsheetId") ||
+    Object.prototype.hasOwnProperty.call(settingsPayload, "sheetName")
+  ) {
+    settings.sheetSource = normalizeSheetSourceSettings({
+      spreadsheetId: settingsPayload.spreadsheetId,
+      sheetName: settingsPayload.sheetName,
+    });
+  } else {
+    settings.sheetSource = normalizeSheetSourceSettings(settings.sheetSource);
   }
 
   if (Object.prototype.hasOwnProperty.call(settingsPayload, "reactionRoles")) {
@@ -1779,9 +1882,10 @@ async function getSheetsClient() {
 
 async function readAllResponses() {
   const sheets = await getSheetsClient();
-  const range = `${config.sheetName}!A:ZZ`;
+  const source = getActiveSheetSource();
+  const range = `${source.sheetName}!A:ZZ`;
   const response = await sheets.spreadsheets.values.get({
-    spreadsheetId: config.spreadsheetId,
+    spreadsheetId: source.spreadsheetId,
     range,
   });
   return response.data.values || [];
@@ -2496,6 +2600,7 @@ const onInteractionCreate = createInteractionCommandHandler({
   setTrackVoteRule,
   setReminderConfiguration,
   setDailyDigestConfiguration,
+  setSheetSourceConfiguration,
   setTrackReviewerMentions,
   upsertReactionRoleBinding,
   removeReactionRoleBinding,

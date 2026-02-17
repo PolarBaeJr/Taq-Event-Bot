@@ -20,6 +20,25 @@ All notable changes to this project are documented in this file.
 - Startup config validation no longer fails hard when optional Discord ID env vars contain placeholder values; invalid optional IDs are now ignored with warnings.
 - Startup config path resolution no longer trims `cwd`, which fixes false missing-file errors for `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` in paths containing trailing spaces.
 
+## [1.3.8] - 2026-02-17
+
+### Added
+- New `/settings sheets` subcommand to configure runtime Google `spreadsheet_id` and `sheet_name` without editing files.
+- `/debug report` now shows active spreadsheet ID/sheet name and whether each value comes from state or env.
+
+### Changed
+- Polling now reads Google Sheets using active state overrides when configured, with automatic fallback to startup env values.
+- Config export/import now includes `settings.sheetSource` (and accepts legacy `spreadsheetId`/`sheetName` on import).
+
+## [1.3.7] - 2026-02-17
+
+### Added
+- `/settings export` to DM the current full settings JSON.
+- `/settings import` to import full settings JSON directly from Discord.
+
+### Changed
+- `/settings` is now the primary command surface for full settings management, with `/config` still available as a compatibility alias.
+
 ## [1.3.6] - 2026-02-17
 
 ### Changed

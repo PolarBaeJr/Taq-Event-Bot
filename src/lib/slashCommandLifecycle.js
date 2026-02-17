@@ -498,7 +498,7 @@ function createSlashCommandLifecycle(options = {}) {
         ),
       new SlashCommandBuilder()
         .setName("settings")
-        .setDescription("Configure voting, reminders, reviewers, and daily digest")
+        .setDescription("Configure bot settings")
         .addSubcommand((subcommand) =>
           subcommand
             .setName("show")
@@ -602,6 +602,45 @@ function createSlashCommandLifecycle(options = {}) {
                 .setMinValue(0)
                 .setMaxValue(23)
                 .setRequired(false)
+            )
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName("sheets")
+            .setDescription("Configure source Google Sheet settings")
+            .addStringOption((option) =>
+              option
+                .setName("spreadsheet_id")
+                .setDescription("Google Spreadsheet ID (`default` clears override)")
+                .setRequired(false)
+            )
+            .addStringOption((option) =>
+              option
+                .setName("sheet_name")
+                .setDescription("Sheet tab name (`default` clears override)")
+                .setRequired(false)
+            )
+            .addBooleanOption((option) =>
+              option
+                .setName("reset")
+                .setDescription("Clear both overrides and use .env defaults")
+                .setRequired(false)
+            )
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName("export")
+            .setDescription("DM your current admin settings JSON")
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName("import")
+            .setDescription("Import admin settings from JSON")
+            .addStringOption((option) =>
+              option
+                .setName("json")
+                .setDescription("JSON payload (code block accepted)")
+                .setRequired(true)
             )
         ),
       new SlashCommandBuilder()

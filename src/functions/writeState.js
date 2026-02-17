@@ -4,6 +4,7 @@
 */
 
 function writeState(state) {
+  ensureExtendedSettingsContainers(state);
   const serialized = JSON.stringify(state, null, 2);
   const writeToPath = (stateFilePath) => {
     const stateDir = path.dirname(path.resolve(stateFilePath));

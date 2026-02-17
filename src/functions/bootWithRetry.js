@@ -18,11 +18,31 @@ async function bootWithRetry() {
         throw err;
       }
 
-      console.error(
+      logger.error(
+        "startup_retryable_failure",
         `Startup failed (${err.code || err.name || "error"}: ${err.message}). Retrying in ${Math.ceil(
           waitMs / 1000
-        )}s...`
+        )}s...`,
+        {
+          code: err.code || null,
+          name: err.name || null,
+          error: err.message,
+          retryAfterMs: waitMs,
+        }
       );
+      if (config.alertOnRetry) {
+        await sendOperationalAlert({
+          event: "startup_retryable_failure",
+          severity: "warning",
+          title: "Startup retry scheduled",
+          message: "Bot startup failed with a retryable error.",
+          details: {
+            code: err.code || err.name || "error",
+            error: err.message,
+            retryAfterSeconds: Math.ceil(waitMs / 1000),
+          },
+        });
+      }
       try {
         client.destroy();
       } catch {

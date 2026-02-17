@@ -24,10 +24,28 @@ async function addReaction(channelId, messageId, emoji) {
     if (res.status === 429 && attempt < maxAttempts) {
       const retryAfterMs = getRetryAfterMsFromBody(body);
       const waitMs = Math.max(300, retryAfterMs ?? 1000) + 100;
+      logger.warn("discord_reaction_rate_limited", "Reaction add rate limited.", {
+        channelId,
+        messageId,
+        emoji,
+        waitMs,
+        attempt,
+        nextAttempt: attempt + 1,
+        maxAttempts,
+      });
       await sleep(waitMs);
       continue;
     }
 
+    logger.error("discord_reaction_failed", "Failed adding reaction.", {
+      channelId,
+      messageId,
+      emoji,
+      status: res.status,
+      attempt,
+      maxAttempts,
+      body,
+    });
     throw new Error(`Failed adding reaction ${emoji} (${res.status}): ${body}`);
   }
 }

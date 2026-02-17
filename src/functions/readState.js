@@ -104,12 +104,45 @@ function readState() {
       normalizedApprovedRoles[DEFAULT_TRACK_KEY] = [legacySettings.approvedRoleId];
     }
 
-    return {
+    const normalizedApplications = {};
+    if (parsed.applications && typeof parsed.applications === "object") {
+      for (const [messageId, application] of Object.entries(parsed.applications)) {
+        if (!application || typeof application !== "object") {
+          continue;
+        }
+        const rawTrackKey = String(application.trackKey || "").trim();
+        const normalizedTrackKey = normalizeTrackKey(rawTrackKey) || rawTrackKey || DEFAULT_TRACK_KEY;
+        normalizedApplications[messageId] = {
+          ...application,
+          trackKey: normalizedTrackKey,
+          status:
+            application.status === STATUS_ACCEPTED || application.status === STATUS_DENIED
+              ? application.status
+              : STATUS_PENDING,
+          applicantUserId: isSnowflake(application.applicantUserId)
+            ? application.applicantUserId
+            : null,
+          duplicateSignals: Array.isArray(application.duplicateSignals)
+            ? application.duplicateSignals
+            : [],
+          reminderCount: clampInteger(application.reminderCount, {
+            min: 0,
+            max: Number.MAX_SAFE_INTEGER,
+            fallback: 0,
+          }),
+          lastReminderAt:
+            typeof application.lastReminderAt === "string" ? application.lastReminderAt : null,
+          submittedFieldsFingerprint:
+            typeof application.submittedFieldsFingerprint === "string"
+              ? application.submittedFieldsFingerprint
+              : null,
+        };
+      }
+    }
+
+    const normalizedState = {
       lastRow: typeof parsed.lastRow === "number" ? parsed.lastRow : 1,
-      applications:
-        parsed.applications && typeof parsed.applications === "object"
-          ? parsed.applications
-          : {},
+      applications: normalizedApplications,
       threads:
         parsed.threads && typeof parsed.threads === "object" ? parsed.threads : {},
       controlActions:
@@ -142,8 +175,23 @@ function readState() {
             ? legacySettings.denyDmTemplate
             : null,
         customTracks: normalizedCustomTracks,
+        voteRules: normalizeTrackVoteRuleMap(legacySettings.voteRules),
+        reviewerMentions: normalizeTrackReviewerMap(legacySettings.reviewerMentions),
+        reminders: normalizeReminderSettings(legacySettings.reminders),
+        dailyDigest: normalizeDailyDigestSettings(legacySettings.dailyDigest),
+        sheetSource: normalizeSheetSourceSettings(
+          legacySettings.sheetSource && typeof legacySettings.sheetSource === "object"
+            ? legacySettings.sheetSource
+            : {
+              spreadsheetId: legacySettings.spreadsheetId,
+              sheetName: legacySettings.sheetName,
+            }
+        ),
+        reactionRoles: normalizeReactionRoleBindings(legacySettings.reactionRoles),
       },
     };
+    ensureExtendedSettingsContainers(normalizedState);
+    return normalizedState;
   } catch {
     setRuntimeCustomTracks([]);
     return defaultState();

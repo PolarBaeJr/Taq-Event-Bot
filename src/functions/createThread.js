@@ -27,13 +27,26 @@ async function createThread(channelId, messageId, name) {
     if (res.status === 429 && attempt < maxAttempts) {
       const retryAfterMs = getRetryAfterMsFromBody(body);
       const waitMs = Math.max(300, retryAfterMs ?? 1000) + 100;
-      console.warn(
-        `Thread creation rate limited. Retrying in ${waitMs}ms (attempt ${attempt + 1}/${maxAttempts}).`
-      );
+      logger.warn("discord_thread_rate_limited", "Thread creation rate limited.", {
+        channelId,
+        messageId,
+        waitMs,
+        attempt,
+        nextAttempt: attempt + 1,
+        maxAttempts,
+      });
       await sleep(waitMs);
       continue;
     }
 
+    logger.error("discord_thread_create_failed", "Thread creation failed.", {
+      channelId,
+      messageId,
+      status: res.status,
+      attempt,
+      maxAttempts,
+      body,
+    });
     throw new Error(`Thread creation failed (${res.status}): ${body}`);
   }
 }

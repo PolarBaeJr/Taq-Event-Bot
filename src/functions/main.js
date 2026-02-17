@@ -11,7 +11,10 @@ async function main() {
   try {
     const activeChannelId = getAnyActiveChannelId();
     if (!activeChannelId) {
-      console.log("No active application channels configured yet. Use /setchannel.");
+      logger.info(
+        "startup_no_active_channels",
+        "No active application channels configured yet. Use /setchannel."
+      );
     } else {
       const channel = await client.channels.fetch(activeChannelId);
       if (channel && "guild" in channel && channel.guild) {
@@ -19,21 +22,90 @@ async function main() {
       }
     }
   } catch (err) {
-    console.error("Failed ensuring logs channel on startup:", err.message);
+    logger.error("startup_ensure_logs_channel_failed", "Failed ensuring logs channel on startup.", {
+      error: err.message,
+    });
   }
 
-  console.log("Bot started. Polling for Google Form responses...");
+  await maintenanceManager.runMaintenance("startup").catch((err) => {
+    logger.error("startup_maintenance_failed", "Startup maintenance run failed.", {
+      error: err.message,
+    });
+  });
+  if (backupManager.enabled) {
+    await backupManager.runBackup("startup").catch((err) => {
+      logger.error("startup_backup_failed", "Startup backup run failed.", {
+        error: err.message,
+      });
+    });
+  }
+
+  logger.info("startup_bot_ready", "Bot started. Polling for Google Form responses.");
+  if (config.alertOnStartup) {
+    await sendOperationalAlert({
+      event: "bot_started",
+      severity: "info",
+      title: "Bot started",
+      message: "Taq Event Team Bot is online.",
+      details: {
+        pid: process.pid,
+        node: process.version,
+        pollIntervalMs: config.pollIntervalMs,
+      },
+    });
+  }
+
   await pollOnce().catch((err) => {
-    console.error("Initial poll failed:", err.message);
+    logger.error("startup_initial_poll_failed", "Initial poll failed.", {
+      error: err.message,
+    });
+  });
+  await maybeSendPendingReminders().catch((err) => {
+    logger.error("startup_initial_reminder_failed", "Initial reminder pass failed.", {
+      error: err.message,
+    });
+  });
+  await maybeSendDailyDigest().catch((err) => {
+    logger.error("startup_initial_digest_failed", "Initial digest pass failed.", {
+      error: err.message,
+    });
   });
 
   setInterval(async () => {
     try {
       await pollOnce();
+      await maybeSendPendingReminders();
+      await maybeSendDailyDigest();
     } catch (err) {
-      console.error("Poll failed:", err.message);
+      logger.error("poll_cycle_failed", "Poll cycle failed.", {
+        error: err.message,
+      });
     }
   }, config.pollIntervalMs);
+
+  const maintenanceIntervalMs =
+    Number.isFinite(config.maintenanceIntervalMinutes) && config.maintenanceIntervalMinutes > 0
+      ? Math.floor(config.maintenanceIntervalMinutes * 60000)
+      : 3600000;
+  setInterval(async () => {
+    try {
+      await maintenanceManager.runMaintenance("scheduled");
+    } catch (err) {
+      logger.error("scheduled_maintenance_failed", "Scheduled maintenance failed.", {
+        error: err.message,
+      });
+    }
+  }, maintenanceIntervalMs);
+
+  if (backupManager.enabled) {
+    const backupIntervalMs =
+      Number.isFinite(config.backupIntervalMinutes) && config.backupIntervalMinutes > 0
+        ? Math.floor(config.backupIntervalMinutes * 60000)
+        : 6 * 60 * 60000;
+    setInterval(async () => {
+      await backupManager.runBackup("scheduled");
+    }, backupIntervalMs);
+  }
 }
 
 module.exports = main;
