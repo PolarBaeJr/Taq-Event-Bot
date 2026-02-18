@@ -1,9 +1,14 @@
+/*
+  Test coverage for slash command lifecycle.test.
+*/
+
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { SlashCommandBuilder } = require("discord.js");
 
 const { createSlashCommandLifecycle } = require("../src/lib/slashCommandLifecycle");
 
+// These tests guard command-schema regressions so Discord option visibility stays stable.
 test("buildSlashCommands includes unified /set command structure", () => {
   const { buildSlashCommands } = createSlashCommandLifecycle({
     config: {},
@@ -175,6 +180,7 @@ test("buildSlashCommands includes /reactionrole and /rr commands", () => {
   );
   assert.ok(rrButtonOptionNames.has("message_type"));
   assert.ok(rrButtonOptionNames.has("title"));
+  assert.ok(rrButtonOptionNames.has("embed_color"));
   assert.ok(rrButtonOptionNames.has("color"));
 
   const rrButtonEditSubcommand = (Array.isArray(rr.options) ? rr.options : []).find(
@@ -188,6 +194,7 @@ test("buildSlashCommands includes /reactionrole and /rr commands", () => {
   assert.ok(rrButtonEditOptionNames.has("role"));
   assert.ok(rrButtonEditOptionNames.has("role_5"));
   assert.ok(rrButtonEditOptionNames.has("color"));
+  assert.ok(rrButtonEditOptionNames.has("embed_color"));
   assert.ok(rrButtonEditOptionNames.has("remove_top_text"));
 });
 

@@ -1,3 +1,7 @@
+/*
+  Core module for startup config.
+*/
+
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -34,6 +38,7 @@ const OPTIONAL_SNOWFLAKE_LIST_ENV_KEYS = [
 
 const VALID_THREAD_ARCHIVE_MINUTES = new Set([60, 1440, 4320, 10080]);
 
+// normalizeString: handles normalize string.
 function normalizeString(value) {
   if (value === undefined || value === null) {
     return "";
@@ -41,10 +46,12 @@ function normalizeString(value) {
   return String(value).trim();
 }
 
+// isSnowflake: handles is snowflake.
 function isSnowflake(value) {
   return /^\d{17,20}$/.test(normalizeString(value));
 }
 
+// parseSnowflakeList: handles parse snowflake list.
 function parseSnowflakeList(raw) {
   const tokens = normalizeString(raw).split(/[,\s]+/).filter(Boolean);
   const valid = [];
@@ -69,6 +76,7 @@ function parseSnowflakeList(raw) {
   };
 }
 
+// parseNumberEnv: handles parse number env.
 function parseNumberEnv(env, key, defaultValue, rules = {}, errors = []) {
   const raw = normalizeString(env[key]);
   if (!raw) {
@@ -105,6 +113,7 @@ function parseNumberEnv(env, key, defaultValue, rules = {}, errors = []) {
   return value;
 }
 
+// parseBooleanEnv: handles parse boolean env.
 function parseBooleanEnv(env, key, defaultValue, warnings = []) {
   const raw = normalizeString(env[key]);
   if (!raw) {
@@ -121,6 +130,7 @@ function parseBooleanEnv(env, key, defaultValue, warnings = []) {
   return defaultValue;
 }
 
+// loadStartupConfig: handles load startup config.
 function loadStartupConfig(options = {}) {
   const env = options.env && typeof options.env === "object" ? options.env : process.env;
   const cwd =

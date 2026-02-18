@@ -1,3 +1,7 @@
+/*
+  Application entrypoint and composition root for runtime wiring.
+*/
+
 const fs = require("node:fs");
 const path = require("node:path");
 const dotenv = require("dotenv");
@@ -45,6 +49,7 @@ const {
   withRateLimitRetry,
 } = require("./lib/messageAndRetryUtils");
 
+// Runtime configuration + logging bootstrap.
 dotenv.config();
 const logger = createStructuredLogger({
   baseContext: {
@@ -67,6 +72,7 @@ for (const message of startupConfig.warnings) {
 }
 const config = startupConfig.config;
 const botStartedAtMs = Date.now();
+// Optional operational alerting channel (webhook-based) for crash/startup/retry visibility.
 const opsAlerting = createAlertingClient({
   webhookUrl: config.alertWebhookUrl,
   mention: config.alertMention,
@@ -110,6 +116,7 @@ const TRACK_TESTER = "tester";
 const TRACK_BUILDER = "builder";
 const TRACK_CMD = "cmd";
 const DEFAULT_TRACK_KEY = TRACK_TESTER;
+// Built-in application tracks; custom tracks are layered on top at runtime.
 const BASE_APPLICATION_TRACKS = [
   {
     key: TRACK_TESTER,

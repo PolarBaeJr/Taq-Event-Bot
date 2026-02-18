@@ -1,6 +1,11 @@
 #!/usr/bin/env node
+/*
+  Project utility script for enable branch protection.
+*/
+
 const { execSync } = require("node:child_process");
 
+// resolveRepositorySlug: handles resolve repository slug.
 function resolveRepositorySlug() {
   const remote = execSync("git config --get remote.origin.url", {
     encoding: "utf8",
@@ -19,6 +24,7 @@ function resolveRepositorySlug() {
   );
 }
 
+// main: handles main.
 async function main() {
   const branch = process.argv[2] || "main";
   const repository = process.env.GITHUB_REPOSITORY || resolveRepositorySlug();

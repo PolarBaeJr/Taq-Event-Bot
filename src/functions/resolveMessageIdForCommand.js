@@ -4,6 +4,7 @@
 */
 
 function resolveMessageIdForCommand(interaction) {
+  // resolveUniqueMatch: handles resolve unique match.
   function resolveUniqueMatch(matches) {
     if (matches.length === 1) {
       return matches[0].messageId;
@@ -28,6 +29,7 @@ function resolveMessageIdForCommand(interaction) {
     return null;
   }
 
+  // resolveByApplicationId: handles resolve by application id.
   function resolveByApplicationId(state, rawApplicationId) {
     const needle = normalizeApplicationIdForLookup(rawApplicationId);
     if (!needle) {
@@ -45,6 +47,7 @@ function resolveMessageIdForCommand(interaction) {
     return resolveUniqueMatch(matches);
   }
 
+  // resolveByJobId: handles resolve by job id.
   function resolveByJobId(state, rawJobId) {
     const needle = normalizeJobIdForLookup(rawJobId);
     if (!needle) {

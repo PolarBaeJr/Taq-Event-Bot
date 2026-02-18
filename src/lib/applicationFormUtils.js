@@ -1,3 +1,7 @@
+/*
+  Core module for application form utils.
+*/
+
 function createApplicationFormUtils(options = {}) {
   const client = options.client;
   const getTrackLabel = typeof options.getTrackLabel === "function"
@@ -72,6 +76,7 @@ function createApplicationFormUtils(options = {}) {
         };
       };
 
+  // sanitizeThreadName: handles sanitize thread name.
   function sanitizeThreadName(name) {
     return (
       name.replace(/[^\p{L}\p{N}\s\-_]/gu, "").trim().slice(0, 90) ||
@@ -79,6 +84,7 @@ function createApplicationFormUtils(options = {}) {
     );
   }
 
+  // isAnsweredValue: handles is answered value.
   function isAnsweredValue(value) {
     if (value === undefined || value === null) {
       return false;
@@ -86,6 +92,7 @@ function createApplicationFormUtils(options = {}) {
     return String(value).trim().length > 0;
   }
 
+  // extractAnsweredFields: handles extract answered fields.
   function extractAnsweredFields(headers, row) {
     const headerList = Array.isArray(headers) ? headers : [];
     const rowList = Array.isArray(row) ? row : [];
@@ -106,6 +113,7 @@ function createApplicationFormUtils(options = {}) {
     return fields;
   }
 
+  // makeApplicationContent: handles make application content.
   function makeApplicationContent(headers, row) {
     const answered = extractAnsweredFields(headers, row);
     if (answered.length === 0) {
@@ -114,6 +122,7 @@ function createApplicationFormUtils(options = {}) {
     return answered.map(({ key, value }) => `${key}: ${value}`).join("\n\n");
   }
 
+  // truncateForEmbed: handles truncate for embed.
   function truncateForEmbed(value, maxLength) {
     const text = String(value || "");
     if (text.length <= maxLength) {
@@ -122,6 +131,7 @@ function createApplicationFormUtils(options = {}) {
     return `${text.slice(0, Math.max(0, maxLength - 16))}\n...[truncated]`;
   }
 
+  // resolveApplicationStatusColor: handles resolve application status color.
   function resolveApplicationStatusColor(status) {
     const normalizedStatus = String(status || "").trim().toLowerCase();
     if (normalizedStatus === "accepted") {
@@ -136,6 +146,7 @@ function createApplicationFormUtils(options = {}) {
     return 0x2b2d31;
   }
 
+  // inferApplicantDiscordValue: handles infer applicant discord value.
   function inferApplicantDiscordValue(headers, row) {
     let fallback = null;
     for (let i = 0; i < headers.length; i += 1) {
@@ -162,6 +173,7 @@ function createApplicationFormUtils(options = {}) {
     return fallback;
   }
 
+  // extractDiscordUserId: handles extract discord user id.
   function extractDiscordUserId(value) {
     if (!value) {
       return null;
@@ -178,6 +190,7 @@ function createApplicationFormUtils(options = {}) {
     return null;
   }
 
+  // normalizeDiscordLookupQuery: handles normalize discord lookup query.
   function normalizeDiscordLookupQuery(value) {
     const raw = String(value || "").trim();
     if (!raw) {
@@ -201,6 +214,7 @@ function createApplicationFormUtils(options = {}) {
     return withoutAt;
   }
 
+  // pickBestDiscordMemberMatch: handles pick best discord member match.
   function pickBestDiscordMemberMatch(members, query) {
     if (!members || typeof members.find !== "function") {
       return null;
@@ -232,6 +246,7 @@ function createApplicationFormUtils(options = {}) {
     return typeof members.first === "function" ? members.first() || null : null;
   }
 
+  // resolveApplicantDiscordUser: handles resolve applicant discord user.
   async function resolveApplicantDiscordUser(channelId, headers, row) {
     const rawValue = inferApplicantDiscordValue(headers, row);
     if (!rawValue) {
@@ -280,6 +295,7 @@ function createApplicationFormUtils(options = {}) {
     }
   }
 
+  // makeApplicationPostContent: handles make application post content.
   function makeApplicationPostContent({
     applicationId,
     status,
@@ -302,6 +318,7 @@ function createApplicationFormUtils(options = {}) {
     });
   }
 
+  // sendDebugDm: handles send debug dm.
   async function sendDebugDm(user, text) {
     const chunks = splitMessageByLength(text);
     for (const chunk of chunks) {
@@ -309,6 +326,7 @@ function createApplicationFormUtils(options = {}) {
     }
   }
 
+  // inferApplicantName: handles infer applicant name.
   function inferApplicantName(headers, row) {
     const candidates = ["name", "full name", "applicant", "discord name"];
     for (let i = 0; i < headers.length; i += 1) {
@@ -320,10 +338,12 @@ function createApplicationFormUtils(options = {}) {
     return "Applicant";
   }
 
+  // escapeRegExp: handles escape reg exp.
   function escapeRegExp(value) {
     return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
 
+  // detectTracksFromText: handles detect tracks from text.
   function detectTracksFromText(value) {
     const text = String(value || "").toLowerCase();
     if (!text.trim()) {
@@ -343,6 +363,7 @@ function createApplicationFormUtils(options = {}) {
     return matched;
   }
 
+  // inferApplicationTracks: handles infer application tracks.
   function inferApplicationTracks(headers, row) {
     const explicitSelectionHeaderHints = [
       "what are you applying for",
@@ -361,6 +382,7 @@ function createApplicationFormUtils(options = {}) {
       "type",
     ];
 
+    // collectMatchesFromHeaders: handles collect matches from headers.
     const collectMatchesFromHeaders = (hints) => {
       const matches = new Set();
       for (let i = 0; i < headers.length; i += 1) {
@@ -414,10 +436,12 @@ function createApplicationFormUtils(options = {}) {
     });
   }
 
+  // inferApplicationTrack: handles infer application track.
   function inferApplicationTrack(headers, row) {
     return inferApplicationTracks(headers, row)[0] || defaultTrackKey;
   }
 
+  // extractCellByHeaderHints: handles extract cell by header hints.
   function extractCellByHeaderHints(headers, row, hintSets) {
     for (let i = 0; i < headers.length; i += 1) {
       const header = String(headers[i] || "").toLowerCase();
@@ -433,6 +457,7 @@ function createApplicationFormUtils(options = {}) {
     return "";
   }
 
+  // buildResponseKey: handles build response key.
   function buildResponseKey(headers, row) {
     const timestamp = extractCellByHeaderHints(headers, row, [["timestamp"]]);
     const discordId = extractCellByHeaderHints(headers, row, [
@@ -478,6 +503,7 @@ function createApplicationFormUtils(options = {}) {
     return `row:${normalizedCells.join("\u241f").toLowerCase()}`;
   }
 
+  // extractSubmittedFieldValue: handles extract submitted field value.
   function extractSubmittedFieldValue(submittedFields, hintSets) {
     if (!Array.isArray(submittedFields)) {
       return "";
@@ -505,6 +531,7 @@ function createApplicationFormUtils(options = {}) {
     return "";
   }
 
+  // buildResponseKeyFromApplication: handles build response key from application.
   function buildResponseKeyFromApplication(application) {
     if (!application || typeof application !== "object") {
       return null;
@@ -552,10 +579,12 @@ function createApplicationFormUtils(options = {}) {
     return null;
   }
 
+  // requiredVotesCount: handles required votes count.
   function requiredVotesCount(eligibleCount) {
     return Math.ceil((eligibleCount * 2) / 3);
   }
 
+  // allocateNextJobId: handles allocate next job id.
   function allocateNextJobId(state) {
     if (!Number.isInteger(state.nextJobId) || state.nextJobId < 1) {
       state.nextJobId = 1;
@@ -565,6 +594,7 @@ function createApplicationFormUtils(options = {}) {
     return jobId;
   }
 
+  // buildTrackedRowSet: handles build tracked row set.
   function buildTrackedRowSet(state) {
     const trackedRows = new Set();
 
@@ -585,6 +615,7 @@ function createApplicationFormUtils(options = {}) {
     return trackedRows;
   }
 
+  // buildTrackedResponseKeySet: handles build tracked response key set.
   function buildTrackedResponseKeySet(state) {
     const trackedKeys = new Set();
 
@@ -615,6 +646,7 @@ function createApplicationFormUtils(options = {}) {
     return trackedKeys;
   }
 
+  // createPostJob: handles create post job.
   function createPostJob(state, headers, row, rowIndex) {
     const normalizedHeaders = (Array.isArray(headers) ? headers : []).map(normalizeCell);
     const normalizedRow = (Array.isArray(row) ? row : []).map(normalizeCell);

@@ -1,8 +1,13 @@
+/*
+  Test coverage for polling pipeline.test.
+*/
+
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const { createPollingPipeline } = require("../src/lib/pollingPipeline");
 
+// normalizeTrackKeys: handles normalize track keys.
 function normalizeTrackKeys(values, { fallback = [] } = {}) {
   const primary = Array.isArray(values) ? values : [values];
   const source = primary.some((value) => Boolean(value)) ? primary : fallback;

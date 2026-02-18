@@ -1,3 +1,7 @@
+/*
+  Test coverage for dynamic message system.test.
+*/
+
 const test = require("node:test");
 const assert = require("node:assert/strict");
 

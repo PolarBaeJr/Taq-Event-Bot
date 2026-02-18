@@ -1,3 +1,7 @@
+/*
+  Core module for channel settings accessors.
+*/
+
 function createChannelSettingsAccessors(options = {}) {
   const config = options.config && typeof options.config === "object"
     ? options.config
@@ -36,14 +40,17 @@ function createChannelSettingsAccessors(options = {}) {
     ? options.getApplicationTrackKeys
     : () => [];
 
+  // createEmptyTrackMap: handles create empty track map.
   function createEmptyTrackMap() {
     return Object.fromEntries(getApplicationTrackKeys().map((trackKey) => [trackKey, null]));
   }
 
+  // createEmptyTrackRoleMap: handles create empty track role map.
   function createEmptyTrackRoleMap() {
     return Object.fromEntries(getApplicationTrackKeys().map((trackKey) => [trackKey, []]));
   }
 
+  // getEnvChannelIdForTrack: handles get env channel id for track.
   function getEnvChannelIdForTrack(trackKey) {
     const normalized = normalizeTrackKey(trackKey) || defaultTrackKey;
     const envOverride = baseTrackEnvOverrides[normalized];
@@ -61,6 +68,7 @@ function createChannelSettingsAccessors(options = {}) {
     return null;
   }
 
+  // getEnvApprovedRoleIdsForTrack: handles get env approved role ids for track.
   function getEnvApprovedRoleIdsForTrack(trackKey) {
     const normalized = normalizeTrackKey(trackKey) || defaultTrackKey;
     const envOverride = baseTrackEnvOverrides[normalized];
@@ -85,6 +93,7 @@ function createChannelSettingsAccessors(options = {}) {
     return [];
   }
 
+  // getActiveChannelIdFromState: handles get active channel id from state.
   function getActiveChannelIdFromState(state, trackKey = defaultTrackKey) {
     const normalized = normalizeTrackKey(trackKey) || defaultTrackKey;
     const stateChannels = normalizeTrackMap(state?.settings?.channels);
@@ -94,11 +103,13 @@ function createChannelSettingsAccessors(options = {}) {
     return getEnvChannelIdForTrack(normalized);
   }
 
+  // getActiveChannelId: handles get active channel id.
   function getActiveChannelId(trackKey = defaultTrackKey) {
     const state = readState();
     return getActiveChannelIdFromState(state, trackKey);
   }
 
+  // getActiveChannelMap: handles get active channel map.
   function getActiveChannelMap() {
     const state = readState();
     const result = createEmptyTrackMap();
@@ -108,6 +119,7 @@ function createChannelSettingsAccessors(options = {}) {
     return result;
   }
 
+  // getAnyActiveChannelId: handles get any active channel id.
   function getAnyActiveChannelId() {
     const channels = getActiveChannelMap();
     for (const trackKey of getApplicationTrackKeys()) {
@@ -118,6 +130,7 @@ function createChannelSettingsAccessors(options = {}) {
     return null;
   }
 
+  // getTrackKeyForChannelId: handles get track key for channel id.
   function getTrackKeyForChannelId(channelId) {
     if (!isSnowflake(channelId)) {
       return null;
@@ -131,10 +144,12 @@ function createChannelSettingsAccessors(options = {}) {
     return null;
   }
 
+  // hasAnyActivePostChannelConfigured: handles has any active post channel configured.
   function hasAnyActivePostChannelConfigured() {
     return Boolean(getAnyActiveChannelId());
   }
 
+  // setActiveChannel: handles set active channel.
   function setActiveChannel(trackKey, channelId) {
     const normalized = normalizeTrackKey(trackKey);
     if (!normalized) {
@@ -152,6 +167,7 @@ function createChannelSettingsAccessors(options = {}) {
     writeState(state);
   }
 
+  // getActiveLogsChannelId: handles get active logs channel id.
   function getActiveLogsChannelId() {
     const state = readState();
     if (isSnowflake(state.settings.logChannelId)) {
@@ -163,6 +179,7 @@ function createChannelSettingsAccessors(options = {}) {
     return null;
   }
 
+  // setActiveLogsChannel: handles set active logs channel.
   function setActiveLogsChannel(channelId) {
     if (!isSnowflake(channelId)) {
       throw new Error("Invalid log channel id.");
@@ -175,6 +192,7 @@ function createChannelSettingsAccessors(options = {}) {
     writeState(state);
   }
 
+  // getConfiguredBotLogsChannelId: handles get configured bot logs channel id.
   function getConfiguredBotLogsChannelId(state) {
     if (isSnowflake(state?.settings?.botLogChannelId)) {
       return state.settings.botLogChannelId;
@@ -185,6 +203,7 @@ function createChannelSettingsAccessors(options = {}) {
     return null;
   }
 
+  // getActiveBotLogsChannelId: handles get active bot logs channel id.
   function getActiveBotLogsChannelId() {
     const state = readState();
     const configured = getConfiguredBotLogsChannelId(state);
@@ -200,6 +219,7 @@ function createChannelSettingsAccessors(options = {}) {
     return null;
   }
 
+  // setActiveBotLogsChannel: handles set active bot logs channel.
   function setActiveBotLogsChannel(channelId) {
     if (!isSnowflake(channelId)) {
       throw new Error("Invalid bot log channel id.");
@@ -212,6 +232,7 @@ function createChannelSettingsAccessors(options = {}) {
     writeState(state);
   }
 
+  // getActiveBugChannelId: handles get active bug channel id.
   function getActiveBugChannelId() {
     const state = readState();
     if (isSnowflake(state?.settings?.bugChannelId)) {
@@ -223,6 +244,7 @@ function createChannelSettingsAccessors(options = {}) {
     return null;
   }
 
+  // setActiveBugChannel: handles set active bug channel.
   function setActiveBugChannel(channelId) {
     if (!isSnowflake(channelId)) {
       throw new Error("Invalid bug channel id.");
@@ -235,6 +257,7 @@ function createChannelSettingsAccessors(options = {}) {
     writeState(state);
   }
 
+  // getActiveSuggestionsChannelId: handles get active suggestions channel id.
   function getActiveSuggestionsChannelId() {
     const state = readState();
     if (isSnowflake(state?.settings?.suggestionsChannelId)) {
@@ -246,6 +269,7 @@ function createChannelSettingsAccessors(options = {}) {
     return null;
   }
 
+  // setActiveSuggestionsChannel: handles set active suggestions channel.
   function setActiveSuggestionsChannel(channelId) {
     if (!isSnowflake(channelId)) {
       throw new Error("Invalid suggestions channel id.");
@@ -258,6 +282,7 @@ function createChannelSettingsAccessors(options = {}) {
     writeState(state);
   }
 
+  // getActiveAcceptAnnounceChannelId: handles get active accept announce channel id.
   function getActiveAcceptAnnounceChannelId() {
     const state = readState();
     if (isSnowflake(state?.settings?.acceptAnnounceChannelId)) {
@@ -269,6 +294,7 @@ function createChannelSettingsAccessors(options = {}) {
     return null;
   }
 
+  // setActiveAcceptAnnounceChannel: handles set active accept announce channel.
   function setActiveAcceptAnnounceChannel(channelId) {
     if (!isSnowflake(channelId)) {
       throw new Error("Invalid accept announce channel id.");
@@ -281,6 +307,7 @@ function createChannelSettingsAccessors(options = {}) {
     writeState(state);
   }
 
+  // getActiveAcceptAnnounceTemplate: handles get active accept announce template.
   function getActiveAcceptAnnounceTemplate() {
     const state = readState();
     const fromState = state?.settings?.acceptAnnounceTemplate;
@@ -296,6 +323,7 @@ function createChannelSettingsAccessors(options = {}) {
     return defaultAcceptAnnounceTemplate;
   }
 
+  // setActiveAcceptAnnounceTemplate: handles set active accept announce template.
   function setActiveAcceptAnnounceTemplate(template) {
     const value = String(template || "").trim();
     if (!value) {
@@ -309,6 +337,7 @@ function createChannelSettingsAccessors(options = {}) {
     writeState(state);
   }
 
+  // getActiveDenyDmTemplate: handles get active deny dm template.
   function getActiveDenyDmTemplate() {
     const state = readState();
     const fromState = state?.settings?.denyDmTemplate;
@@ -321,6 +350,7 @@ function createChannelSettingsAccessors(options = {}) {
     return defaultDenyDmTemplate;
   }
 
+  // setActiveDenyDmTemplate: handles set active deny dm template.
   function setActiveDenyDmTemplate(template) {
     const value = String(template || "").trim();
     if (!value) {
@@ -334,6 +364,7 @@ function createChannelSettingsAccessors(options = {}) {
     writeState(state);
   }
 
+  // getActiveApprovedRoleMap: handles get active approved role map.
   function getActiveApprovedRoleMap() {
     const state = readState();
     const result = createEmptyTrackRoleMap();
@@ -343,6 +374,7 @@ function createChannelSettingsAccessors(options = {}) {
     return result;
   }
 
+  // getActiveApprovedRoleIdsFromState: handles get active approved role ids from state.
   function getActiveApprovedRoleIdsFromState(state, trackKey = defaultTrackKey) {
     const normalized = normalizeTrackKey(trackKey) || defaultTrackKey;
     const stateRoles = normalizeTrackRoleMap(state?.settings?.approvedRoles);
@@ -352,11 +384,13 @@ function createChannelSettingsAccessors(options = {}) {
     return getEnvApprovedRoleIdsForTrack(normalized);
   }
 
+  // getActiveApprovedRoleIds: handles get active approved role ids.
   function getActiveApprovedRoleIds(trackKey = defaultTrackKey) {
     const state = readState();
     return getActiveApprovedRoleIdsFromState(state, trackKey);
   }
 
+  // setActiveApprovedRoles: handles set active approved roles.
   function setActiveApprovedRoles(trackKey, roleIds) {
     const normalized = normalizeTrackKey(trackKey);
     if (!normalized) {

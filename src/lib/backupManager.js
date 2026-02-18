@@ -1,10 +1,16 @@
+/*
+  Core module for backup manager.
+*/
+
 const fs = require("node:fs");
 const path = require("node:path");
 
+// toBackupTimestamp: handles to backup timestamp.
 function toBackupTimestamp(date = new Date()) {
   return date.toISOString().replace(/[:.]/g, "-");
 }
 
+// ensureDirectory: handles ensure directory.
 function ensureDirectory(dirPath) {
   if (!dirPath) {
     return;
@@ -14,6 +20,7 @@ function ensureDirectory(dirPath) {
   }
 }
 
+// listFilesByPrefix: handles list files by prefix.
 function listFilesByPrefix(directory, prefix) {
   if (!directory || !fs.existsSync(directory)) {
     return [];
@@ -33,6 +40,7 @@ function listFilesByPrefix(directory, prefix) {
   return files;
 }
 
+// pruneOldBackupsByCount: handles prune old backups by count.
 function pruneOldBackupsByCount(directory, prefix, maxFiles) {
   const keep = Number.isInteger(maxFiles) && maxFiles > 0 ? maxFiles : 60;
   const files = listFilesByPrefix(directory, prefix);
@@ -44,6 +52,7 @@ function pruneOldBackupsByCount(directory, prefix, maxFiles) {
   return removed;
 }
 
+// createBackupManager: handles create backup manager.
 function createBackupManager(options = {}) {
   const enabled = options.enabled !== false;
   const stateBackupEnabled = options.stateBackupEnabled !== false;
@@ -71,6 +80,7 @@ function createBackupManager(options = {}) {
       ? options.logger
       : null;
 
+  // runBackup: handles run backup.
   async function runBackup(reason = "scheduled") {
     if (!enabled) {
       return {

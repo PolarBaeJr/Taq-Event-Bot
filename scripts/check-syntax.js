@@ -1,4 +1,8 @@
 #!/usr/bin/env node
+/*
+  Project utility script for check syntax.
+*/
+
 const fs = require("node:fs");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
@@ -6,6 +10,7 @@ const { spawnSync } = require("node:child_process");
 const roots = ["src/lib", "scripts", "test"];
 const extraFiles = ["ecosystem.config.cjs"];
 
+// collectJsFiles: handles collect js files.
 function collectJsFiles(dir, out) {
   if (!fs.existsSync(dir)) {
     return;
@@ -26,12 +31,14 @@ function collectJsFiles(dir, out) {
   }
 }
 
+// runNodeCheck: handles run node check.
 function runNodeCheck(filePath) {
   return spawnSync(process.execPath, ["--check", filePath], {
     encoding: "utf8",
   });
 }
 
+// main: handles main.
 function main() {
   const files = [];
   for (const root of roots) {

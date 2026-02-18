@@ -1,3 +1,7 @@
+/*
+  Core module for application decision utils.
+*/
+
 function createApplicationDecisionUtils(options = {}) {
   const client = options.client;
   const ensureLogsChannel =
@@ -72,6 +76,7 @@ function createApplicationDecisionUtils(options = {}) {
       ? options.getApplicantMissingDiscordThreadNoticeMessage
       : () => defaultApplicantMissingDiscordThreadNoticeMessage;
 
+  // trimEmbedValue: handles trim embed value.
   function trimEmbedValue(value, maxLength = 1024, fallback = "n/a") {
     const text = String(value ?? "").trim();
     if (!text) {
@@ -83,10 +88,12 @@ function createApplicationDecisionUtils(options = {}) {
     return `${text.slice(0, Math.max(0, maxLength - 20))}\n...[truncated]`;
   }
 
+  // isSnowflake: handles is snowflake.
   function isSnowflake(value) {
     return /^\d{17,20}$/.test(String(value || "").trim());
   }
 
+  // normalizeRoleIdList: handles normalize role id list.
   function normalizeRoleIdList(value) {
     const source = Array.isArray(value) ? value : [value];
     const out = [];
@@ -102,6 +109,7 @@ function createApplicationDecisionUtils(options = {}) {
     return out;
   }
 
+  // normalizeResolverHints: handles normalize resolver hints.
   function normalizeResolverHints(value) {
     const source = Array.isArray(value) ? value : [value];
     const out = [];
@@ -121,6 +129,7 @@ function createApplicationDecisionUtils(options = {}) {
     return out;
   }
 
+  // parseSubmittedFieldLine: handles parse submitted field line.
   function parseSubmittedFieldLine(rawLine) {
     const line = String(rawLine || "").trim();
     if (!line) {
@@ -143,6 +152,7 @@ function createApplicationDecisionUtils(options = {}) {
     return { key, value };
   }
 
+  // extractSubmittedFieldValue: handles extract submitted field value.
   function extractSubmittedFieldValue(submittedFields, hintSets) {
     if (!Array.isArray(submittedFields)) {
       return "";
@@ -176,6 +186,7 @@ function createApplicationDecisionUtils(options = {}) {
     return "";
   }
 
+  // inferApplicantDiscordValueFromSubmittedFields: handles infer applicant discord value from submitted fields.
   function inferApplicantDiscordValueFromSubmittedFields(application) {
     const submittedFields = Array.isArray(application?.submittedFields)
       ? application.submittedFields
@@ -206,6 +217,7 @@ function createApplicationDecisionUtils(options = {}) {
     return "";
   }
 
+  // extractDiscordUserId: handles extract discord user id.
   function extractDiscordUserId(value) {
     const raw = String(value || "").trim();
     if (!raw) {
@@ -225,6 +237,7 @@ function createApplicationDecisionUtils(options = {}) {
     return null;
   }
 
+  // normalizeDiscordLookupQuery: handles normalize discord lookup query.
   function normalizeDiscordLookupQuery(value) {
     const raw = String(value || "").trim();
     if (!raw) {
@@ -248,6 +261,7 @@ function createApplicationDecisionUtils(options = {}) {
     return withoutAt;
   }
 
+  // pickBestGuildMemberMatch: handles pick best guild member match.
   function pickBestGuildMemberMatch(members, query) {
     if (!members || typeof members.find !== "function") {
       return null;
@@ -279,6 +293,7 @@ function createApplicationDecisionUtils(options = {}) {
     return null;
   }
 
+  // resolveApplicantUserIdFromApplication: handles resolve applicant user id from application.
   async function resolveApplicantUserIdFromApplication(
     application,
     guild,
@@ -343,6 +358,7 @@ function createApplicationDecisionUtils(options = {}) {
     return null;
   }
 
+  // postApplicantNotInDiscordThreadNotice: handles post applicant not in discord thread notice.
   async function postApplicantNotInDiscordThreadNotice(application) {
     if (!application?.threadId) {
       return false;
@@ -378,6 +394,7 @@ function createApplicationDecisionUtils(options = {}) {
     }
   }
 
+  // postClosureLog: handles post closure log.
   async function postClosureLog(application) {
     try {
       const channel = await client.channels.fetch(application.channelId);
@@ -508,6 +525,7 @@ function createApplicationDecisionUtils(options = {}) {
     }
   }
 
+  // grantApprovedRoleOnAcceptance: handles grant approved role on acceptance.
   async function grantApprovedRoleOnAcceptance(application, behavior = {}) {
     const postMissingMemberThreadNotice =
       behavior?.postMissingMemberThreadNotice === true;
@@ -695,6 +713,7 @@ function createApplicationDecisionUtils(options = {}) {
     }
   }
 
+  // revertApprovedRolesOnReopen: handles revert approved roles on reopen.
   async function revertApprovedRolesOnReopen(application, actorId) {
     const grantedRoleIds = normalizeRoleIdList(application?.approvedRoleResult?.grantedRoleIds);
     if (grantedRoleIds.length === 0) {
@@ -866,6 +885,7 @@ function createApplicationDecisionUtils(options = {}) {
     }
   }
 
+  // sendDeniedApplicationDm: handles send denied application dm.
   async function sendDeniedApplicationDm(application, decisionReason, behavior = {}) {
     const resolverHints = normalizeResolverHints(behavior?.resolverHints);
     const trackLabel = getTrackLabel(application.trackKey);
@@ -936,6 +956,7 @@ function createApplicationDecisionUtils(options = {}) {
     }
   }
 
+  // sendAcceptedApplicationAnnouncement: handles send accepted application announcement.
   async function sendAcceptedApplicationAnnouncement(application, roleResult, behavior = {}) {
     const resolverHints = normalizeResolverHints(behavior?.resolverHints);
     const channelId = getActiveAcceptAnnounceChannelId();
@@ -1011,6 +1032,7 @@ function createApplicationDecisionUtils(options = {}) {
     }
   }
 
+  // revertAcceptedAnnouncementOnReopen: handles revert accepted announcement on reopen.
   async function revertAcceptedAnnouncementOnReopen(application, actorId) {
     const channelId = String(application?.acceptAnnounceResult?.channelId || "").trim();
     const messageId = String(application?.acceptAnnounceResult?.messageId || "").trim();
@@ -1081,6 +1103,7 @@ function createApplicationDecisionUtils(options = {}) {
     }
   }
 
+  // sendReopenCompensationDm: handles send reopen compensation dm.
   async function sendReopenCompensationDm(
     application,
     previousStatus,

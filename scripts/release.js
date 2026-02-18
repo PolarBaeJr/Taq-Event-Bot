@@ -1,7 +1,12 @@
 #!/usr/bin/env node
+/*
+  Project utility script for release.
+*/
+
 const fs = require("node:fs");
 const { spawnSync } = require("node:child_process");
 
+// run: handles run.
 function run(command, args) {
   const result = spawnSync(command, args, {
     stdio: "inherit",
@@ -12,11 +17,13 @@ function run(command, args) {
   }
 }
 
+// readPackageVersion: handles read package version.
 function readPackageVersion() {
   const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
   return String(pkg.version || "").trim();
 }
 
+// usage: handles usage.
 function usage() {
   process.stdout.write(
     [
@@ -31,6 +38,7 @@ function usage() {
   process.stdout.write("\n");
 }
 
+// main: handles main.
 function main() {
   const args = process.argv.slice(2);
   if (args.length === 0 || args.includes("--help") || args.includes("-h")) {

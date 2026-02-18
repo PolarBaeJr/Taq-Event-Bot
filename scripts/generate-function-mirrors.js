@@ -1,3 +1,7 @@
+/*
+  Project utility script for generate function mirrors.
+*/
+
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -14,6 +18,7 @@ for (let match; (match = fnDeclaration.exec(src)); ) {
   });
 }
 
+// isRegexStart: handles is regex start.
 function isRegexStart(previousSignificantChar) {
   if (!previousSignificantChar) {
     return true;
@@ -21,6 +26,7 @@ function isRegexStart(previousSignificantChar) {
   return /[=([{!,:;?&|+\-*%^~<>]/.test(previousSignificantChar);
 }
 
+// findFunctionEnd: handles find function end.
 function findFunctionEnd(startIndex) {
   const braceStart = src.indexOf("{", startIndex);
   if (braceStart === -1) {

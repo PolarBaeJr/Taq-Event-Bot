@@ -1,12 +1,18 @@
+/*
+  Core module for dynamic message system.
+*/
+
 function createDynamicMessageSystem(options = {}) {
   const toCodeBlock = typeof options.toCodeBlock === "function"
     ? options.toCodeBlock
     : (text) => String(text || "");
 
+  // isSnowflake: handles is snowflake.
   function isSnowflake(value) {
     return typeof value === "string" && /^\d{17,20}$/.test(value.trim());
   }
 
+  // uniqueSnowflakes: handles unique snowflakes.
   function uniqueSnowflakes(values) {
     const source = Array.isArray(values) ? values : [values];
     const out = [];
@@ -22,11 +28,13 @@ function createDynamicMessageSystem(options = {}) {
     return out;
   }
 
+  // parseMentionUserId: handles parse mention user id.
   function parseMentionUserId(value) {
     const match = /^<@!?(\d{17,20})>$/.exec(String(value || "").trim());
     return match ? match[1] : null;
   }
 
+  // truncate: handles truncate.
   function truncate(value, maxLength) {
     const text = String(value || "");
     const cap = Number.isInteger(maxLength) && maxLength > 0 ? maxLength : 200;
@@ -36,6 +44,7 @@ function createDynamicMessageSystem(options = {}) {
     return `${text.slice(0, Math.max(0, cap - 16))}\n...[truncated]`;
   }
 
+  // stableColorFromKey: handles stable color from key.
   function stableColorFromKey(value, fallback = 0x2b2d31) {
     const source = String(value || "").trim().toLowerCase();
     if (!source) {
@@ -48,6 +57,7 @@ function createDynamicMessageSystem(options = {}) {
     return hash === 0 ? fallback : hash;
   }
 
+  // resolveApplicationStatusColor: handles resolve application status color.
   function resolveApplicationStatusColor(status) {
     const normalizedStatus = String(status || "").trim().toLowerCase();
     if (normalizedStatus === "accepted") {
@@ -62,6 +72,7 @@ function createDynamicMessageSystem(options = {}) {
     return 0x2b2d31;
   }
 
+  // normalizeFields: handles normalize fields.
   function normalizeFields(fields) {
     if (!Array.isArray(fields)) {
       return [];
@@ -83,6 +94,7 @@ function createDynamicMessageSystem(options = {}) {
       .slice(0, 25);
   }
 
+  // buildMessagePayload: handles build message payload.
   function buildMessagePayload(options = {}) {
     const title = truncate(options.title, 256).trim() || "Message";
     const descriptionText = truncate(options.description, 3800).trim();
@@ -130,6 +142,7 @@ function createDynamicMessageSystem(options = {}) {
     return payload;
   }
 
+  // buildApplicationMessagePayload: handles build application message payload.
   function buildApplicationMessagePayload(options = {}) {
     const applicationId = String(options.applicationId || "").trim();
     const applicantMention = String(options.applicantMention || "").trim();
@@ -170,6 +183,7 @@ function createDynamicMessageSystem(options = {}) {
     });
   }
 
+  // buildFeedbackMessagePayload: handles build feedback message payload.
   function buildFeedbackMessagePayload(options = {}) {
     const kind = String(options.kind || "").toLowerCase();
     const isBug = kind.includes("bug");

@@ -1,3 +1,7 @@
+/*
+  Core module for debug and feedback utils.
+*/
+
 function createDebugAndFeedbackUtils(options = {}) {
   const client = options.client;
   const config = options.config && typeof options.config === "object"
@@ -150,6 +154,7 @@ function createDebugAndFeedbackUtils(options = {}) {
     ? options.getApplicationDisplayId
     : () => "Unknown";
 
+  // buildDebugReport: handles build debug report.
   async function buildDebugReport(interaction) {
     const lines = [];
     const state = readState();
@@ -334,6 +339,7 @@ function createDebugAndFeedbackUtils(options = {}) {
     return lines.join("\n");
   }
 
+  // runDebugPostTest: handles run debug post test.
   async function runDebugPostTest(interaction) {
     const requestedTrack = normalizeTrackKey(interaction.options.getString("track"));
     const currentChatIsGuildText =
@@ -445,10 +451,12 @@ function createDebugAndFeedbackUtils(options = {}) {
     };
   }
 
+  // formatDecisionLabel: handles format decision label.
   function formatDecisionLabel(decision) {
     return decision === statusAccepted ? "ACCEPTED" : "DENIED";
   }
 
+  // relayFeedbackCommand: handles relay feedback command.
   async function relayFeedbackCommand({
     interaction,
     commandLabel,
@@ -542,6 +550,7 @@ function createDebugAndFeedbackUtils(options = {}) {
     });
   }
 
+  // runDebugRoleAssignmentSimulation: handles run debug role assignment simulation.
   async function runDebugRoleAssignmentSimulation({
     trackKey,
     channelId,
@@ -587,6 +596,7 @@ function createDebugAndFeedbackUtils(options = {}) {
     };
   }
 
+  // runDebugDeniedDmSimulation: handles run debug denied dm simulation.
   async function runDebugDeniedDmSimulation({
     trackKey,
     channelId,
@@ -628,6 +638,7 @@ function createDebugAndFeedbackUtils(options = {}) {
     };
   }
 
+  // runDebugDecisionTest: handles run debug decision test.
   async function runDebugDecisionTest(interaction, decision) {
     const suppliedJobId = interaction.options.getString("job_id");
     const messageId = resolveMessageIdForCommand(interaction);

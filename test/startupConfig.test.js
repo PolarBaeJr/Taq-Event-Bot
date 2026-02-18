@@ -1,3 +1,7 @@
+/*
+  Test coverage for startup config.test.
+*/
+
 const test = require("node:test");
 const assert = require("node:assert/strict");
 

@@ -1,3 +1,4 @@
+// Builds, registers, and audits slash command definitions for guild/global scope.
 function createSlashCommandLifecycle(options = {}) {
   const config = options.config && typeof options.config === "object"
     ? options.config
@@ -34,6 +35,7 @@ function createSlashCommandLifecycle(options = {}) {
   const setChannelOptionLimit = 25;
   const setChannelReservedOptionCount = 8;
 
+  // Convert arbitrary track keys into valid slash option names.
   function toSetChannelTrackOptionName(trackKey) {
     const raw = String(trackKey || "").trim().toLowerCase();
     if (!raw) {
@@ -48,6 +50,7 @@ function createSlashCommandLifecycle(options = {}) {
     return `${cleaned.slice(0, maxBaseLength)}${suffix}`;
   }
 
+  // Add dynamic `/setchannel` options for custom tracks while respecting Discord option limits.
   function buildDynamicSetChannelTrackOptions() {
     const staticTrackKeys = new Set(
       baseSetChannelTrackOptions
@@ -108,6 +111,7 @@ function createSlashCommandLifecycle(options = {}) {
       .slice(0, maxDynamicCount);
   }
 
+  // Central command builder used by both registration and refresh paths.
   function buildSlashCommands() {
     const setChannelTrackOptions = [
       ...baseSetChannelTrackOptions,
@@ -186,6 +190,7 @@ function createSlashCommandLifecycle(options = {}) {
           .setRequired(false)
       );
 
+    // Both `/reactionrole` and `/rr` share the same subcommand schema.
     function buildReactionRoleCommand(commandName, description) {
       return new SlashCommandBuilder()
         .setName(commandName)
@@ -323,6 +328,12 @@ function createSlashCommandLifecycle(options = {}) {
             )
             .addStringOption((option) =>
               option
+                .setName("embed_color")
+                .setDescription("Embed hex color (for message_type:embed, e.g. #57F287)")
+                .setRequired(false)
+            )
+            .addStringOption((option) =>
+              option
                 .setName("color")
                 .setDescription("Button color/style")
                 .addChoices(
@@ -416,6 +427,12 @@ function createSlashCommandLifecycle(options = {}) {
                 )
                 .setRequired(false)
             )
+            .addStringOption((option) =>
+              option
+                .setName("embed_color")
+                .setDescription("New embed hex color (#57F287), or `clear`")
+                .setRequired(false)
+            )
             .addBooleanOption((option) =>
               option
                 .setName("remove_top_text")
@@ -436,6 +453,7 @@ function createSlashCommandLifecycle(options = {}) {
         );
     }
 
+    // `/set` is intentionally grouped to keep mode-specific options scoped in Discord UI.
     function buildSetCommand() {
       return new SlashCommandBuilder()
         .setName("set")
@@ -660,6 +678,7 @@ function createSlashCommandLifecycle(options = {}) {
         );
     }
 
+    // `/message` and `/msg` intentionally share one definition to avoid drift.
     function buildMessageCommand(commandName = "message", description = "Post or edit bot messages") {
       return new SlashCommandBuilder()
         .setName(commandName)
@@ -1339,11 +1358,13 @@ function createSlashCommandLifecycle(options = {}) {
     ].map((command) => command.toJSON());
   }
 
+  // isGuildCommandSetCurrent: handles is guild command set current.
   async function isGuildCommandSetCurrent(rest, guildId, commands) {
     const existing = await rest.get(
       Routes.applicationGuildCommands(config.clientId, guildId)
     );
 
+    // Normalize to avoid false positives from payload ordering/extra transient fields.
     const normalizeCommand = (command) => ({
       name: command.name || "",
       description: command.description || "",
@@ -1365,6 +1386,7 @@ function createSlashCommandLifecycle(options = {}) {
     return normalizeSet(existing) === normalizeSet(commands);
   }
 
+  // clearGlobalCommands: handles clear global commands.
   async function clearGlobalCommands(rest) {
     const existing = await rest.get(Routes.applicationCommands(config.clientId));
     if (Array.isArray(existing) && existing.length > 0) {
@@ -1375,6 +1397,7 @@ function createSlashCommandLifecycle(options = {}) {
     return 0;
   }
 
+  // confirmGuildCommandSet: handles confirm guild command set.
   async function confirmGuildCommandSet(rest, guildId, commands) {
     const existing = await rest.get(
       Routes.applicationGuildCommands(config.clientId, guildId)
@@ -1394,6 +1417,7 @@ function createSlashCommandLifecycle(options = {}) {
     }
   }
 
+  // Register commands with guild-first strategy so updates appear immediately.
   async function registerSlashCommands() {
     const commands = buildSlashCommands();
     const rest = new REST({ version: "10" }).setToken(config.botToken);
@@ -1426,6 +1450,7 @@ function createSlashCommandLifecycle(options = {}) {
     console.log("Registered global slash commands (may take time to appear)");
   }
 
+  // registerSlashCommandsForGuild: handles register slash commands for guild.
   async function registerSlashCommandsForGuild(rest, guildId, commands) {
     if (await isGuildCommandSetCurrent(rest, guildId, commands)) {
       console.log(`Slash commands already up to date in guild ${guildId}`);
@@ -1438,6 +1463,7 @@ function createSlashCommandLifecycle(options = {}) {
     console.log(`Registered slash commands in guild ${guildId}`);
   }
 
+  // Resolve best guild target for command registration when DISCORD_GUILD_ID is unset.
   async function resolveGuildIdForCommands() {
     if (isSnowflake(config.guildId)) {
       return config.guildId;
@@ -1460,6 +1486,7 @@ function createSlashCommandLifecycle(options = {}) {
     }
   }
 
+  // Permission audit is used by debug/config flows to explain channel-level failures quickly.
   async function auditBotPermissions() {
     const channelMap = getActiveChannelMap();
     const configuredEntries = Object.entries(channelMap).filter(([, channelId]) =>

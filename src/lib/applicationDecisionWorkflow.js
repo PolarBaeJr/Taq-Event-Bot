@@ -1,3 +1,7 @@
+/*
+  Core module for application decision workflow.
+*/
+
 function createApplicationDecisionWorkflow(options = {}) {
   const client = options.client;
   const PermissionsBitField = options.PermissionsBitField;
@@ -95,6 +99,7 @@ function createApplicationDecisionWorkflow(options = {}) {
       ? options.toCodeBlock
       : (value) => String(value || "");
 
+  // buildStatusColorEmbeds: handles build status color embeds.
   function buildStatusColorEmbeds(message, status) {
     const messageEmbeds = Array.isArray(message?.embeds) ? message.embeds : [];
     if (messageEmbeds.length === 0) {
@@ -113,6 +118,7 @@ function createApplicationDecisionWorkflow(options = {}) {
     });
   }
 
+  // postAcceptanceBlockedUpdate: handles post acceptance blocked update.
   async function postAcceptanceBlockedUpdate(application, reason) {
     const summary = [
       "⚠️ **Acceptance Blocked**",
@@ -149,6 +155,7 @@ function createApplicationDecisionWorkflow(options = {}) {
     }
   }
 
+  // getReviewersWithChannelAccess: handles get reviewers with channel access.
   async function getReviewersWithChannelAccess(channel, trackKey) {
     const members = await channel.guild.members.fetch();
     const reviewers = new Set();
@@ -179,6 +186,7 @@ function createApplicationDecisionWorkflow(options = {}) {
     return reviewers;
   }
 
+  // getVoteSnapshot: handles get vote snapshot.
   async function getVoteSnapshot(message, eligibleReviewerIds) {
     const yesReaction = message.reactions.cache.find(
       (reaction) => reaction.emoji.name === acceptEmoji
@@ -221,6 +229,7 @@ function createApplicationDecisionWorkflow(options = {}) {
     };
   }
 
+  // postDecisionUpdate: handles post decision update.
   async function postDecisionUpdate(application, decision, reason) {
     const decisionLabel = decision === statusAccepted ? "ACCEPTED" : "DENIED";
     const summary = `🧾 **Application ${decisionLabel}**\n${reason}`;
@@ -264,6 +273,7 @@ function createApplicationDecisionWorkflow(options = {}) {
     }
   }
 
+  // postForcedDecisionTemplateToThread: handles post forced decision template to thread.
   async function postForcedDecisionTemplateToThread(application, decision, decisionReason) {
     if (application?.decisionSource !== "force_command") {
       return;
@@ -341,6 +351,7 @@ function createApplicationDecisionWorkflow(options = {}) {
     }
   }
 
+  // postReopenUpdate: handles post reopen update.
   async function postReopenUpdate(
     application,
     previousStatus,
@@ -420,6 +431,7 @@ function createApplicationDecisionWorkflow(options = {}) {
     }
   }
 
+  // reopenApplication: handles reopen application.
   async function reopenApplication(messageId, actorId, reopenReason = "") {
     const state = readState();
     const application = state.applications[messageId];
@@ -501,6 +513,7 @@ function createApplicationDecisionWorkflow(options = {}) {
     };
   }
 
+  // finalizeApplication: handles finalize application.
   async function finalizeApplication(messageId, decision, sourceLabel, actorId, context = {}) {
     const state = readState();
     const application = state.applications[messageId];
@@ -654,6 +667,7 @@ function createApplicationDecisionWorkflow(options = {}) {
     return { ok: true, application };
   }
 
+  // evaluateAndApplyVoteDecision: handles evaluate and apply vote decision.
   async function evaluateAndApplyVoteDecision(messageId) {
     const state = readState();
     const application = state.applications[messageId];

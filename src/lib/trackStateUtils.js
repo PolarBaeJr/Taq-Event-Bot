@@ -1,3 +1,7 @@
+/*
+  Core module for track state utils.
+*/
+
 function createTrackStateUtils(options = {}) {
   const defaultTrackKey = String(options.defaultTrackKey || "tester");
   const normalizeTrackAlias = typeof options.normalizeTrackAlias === "function"
@@ -19,6 +23,7 @@ function createTrackStateUtils(options = {}) {
     ? options.parseRoleIdList
     : () => [];
 
+  // normalizeTrackKey: handles normalize track key.
   function normalizeTrackKey(value) {
     const normalized = normalizeTrackAlias(value);
     if (!normalized) {
@@ -35,12 +40,14 @@ function createTrackStateUtils(options = {}) {
     return null;
   }
 
+  // getTrackLabel: handles get track label.
   function getTrackLabel(trackKey) {
     const normalized = normalizeTrackKey(trackKey) || defaultTrackKey;
     const lookup = getTrackLookupByKey();
     return lookup[normalized]?.label || lookup[defaultTrackKey]?.label || defaultTrackKey;
   }
 
+  // normalizeTrackKeys: handles normalize track keys.
   function normalizeTrackKeys(values, options = {}) {
     const { allowEmpty = false } = options;
     const fallback = Object.prototype.hasOwnProperty.call(options, "fallback")
@@ -80,18 +87,22 @@ function createTrackStateUtils(options = {}) {
     return allowEmpty ? [] : [defaultTrackKey];
   }
 
+  // formatTrackLabels: handles format track labels.
   function formatTrackLabels(trackKeys) {
     return normalizeTrackKeys(trackKeys).map(getTrackLabel).join(", ");
   }
 
+  // createEmptyTrackMap: handles create empty track map.
   function createEmptyTrackMap() {
     return Object.fromEntries(getApplicationTrackKeys().map((trackKey) => [trackKey, null]));
   }
 
+  // createEmptyTrackRoleMap: handles create empty track role map.
   function createEmptyTrackRoleMap() {
     return Object.fromEntries(getApplicationTrackKeys().map((trackKey) => [trackKey, []]));
   }
 
+  // normalizeTrackMap: handles normalize track map.
   function normalizeTrackMap(rawMap) {
     const normalized = createEmptyTrackMap();
     if (!rawMap || typeof rawMap !== "object") {
@@ -109,6 +120,7 @@ function createTrackStateUtils(options = {}) {
     return normalized;
   }
 
+  // normalizeTrackRoleMap: handles normalize track role map.
   function normalizeTrackRoleMap(rawMap) {
     const normalized = createEmptyTrackRoleMap();
     if (!rawMap || typeof rawMap !== "object") {

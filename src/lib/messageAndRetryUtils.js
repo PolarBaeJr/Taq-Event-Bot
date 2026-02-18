@@ -1,12 +1,18 @@
+/*
+  Core module for message and retry utils.
+*/
+
 function toCodeBlock(text) {
   const safe = String(text || "").replace(/```/g, "``\u200b`");
   return `\`\`\`txt\n${safe}\n\`\`\``;
 }
 
+// escapeRegExp: handles escape reg exp.
 function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+// applyTemplatePlaceholders: handles apply template placeholders.
 function applyTemplatePlaceholders(template, replacements) {
   let output = String(template || "");
   for (const [key, value] of Object.entries(replacements || {})) {
@@ -17,6 +23,7 @@ function applyTemplatePlaceholders(template, replacements) {
   return output;
 }
 
+// splitMessageByLength: handles split message by length.
 function splitMessageByLength(text, maxLength = 1900) {
   const lines = String(text || "").split("\n");
   const chunks = [];
@@ -51,10 +58,12 @@ function splitMessageByLength(text, maxLength = 1900) {
   return chunks.length > 0 ? chunks : [""];
 }
 
+// sleep: handles sleep.
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// getRetryAfterMsFromBody: handles get retry after ms from body.
 function getRetryAfterMsFromBody(body) {
   if (!body) {
     return null;
@@ -70,6 +79,7 @@ function getRetryAfterMsFromBody(body) {
   return null;
 }
 
+// getRetryAfterMsFromError: handles get retry after ms from error.
 function getRetryAfterMsFromError(err) {
   const directRetryAfter =
     err?.rawError?.retry_after ?? err?.data?.retry_after ?? err?.retry_after;
@@ -82,6 +92,7 @@ function getRetryAfterMsFromError(err) {
   return null;
 }
 
+// isRateLimitError: handles is rate limit error.
 function isRateLimitError(err) {
   if (!err) {
     return false;
@@ -98,6 +109,7 @@ function isRateLimitError(err) {
   return message.includes("rate limit");
 }
 
+// withRateLimitRetry: handles with rate limit retry.
 async function withRateLimitRetry(label, run, options = {}) {
   const maxAttempts =
     Number.isInteger(options.maxAttempts) && options.maxAttempts > 0

@@ -1,3 +1,7 @@
+/*
+  Core module for application id utils.
+*/
+
 function createApplicationIdUtils(options = {}) {
   const jobIdPattern = options.jobIdPattern instanceof RegExp
     ? options.jobIdPattern
@@ -10,10 +14,12 @@ function createApplicationIdUtils(options = {}) {
     ? options.getTrackLabel
     : (trackKey) => String(trackKey || "");
 
+  // formatJobId: handles format job id.
   function formatJobId(sequence) {
     return `job-${String(sequence).padStart(6, "0")}`;
   }
 
+  // parseJobIdSequence: handles parse job id sequence.
   function parseJobIdSequence(jobId) {
     if (typeof jobId !== "string") {
       return 0;
@@ -29,6 +35,7 @@ function createApplicationIdUtils(options = {}) {
     return sequence;
   }
 
+  // parseLooseJobIdSequence: handles parse loose job id sequence.
   function parseLooseJobIdSequence(jobId) {
     const strict = parseJobIdSequence(jobId);
     if (strict > 0) {
@@ -52,6 +59,7 @@ function createApplicationIdUtils(options = {}) {
     return sequence;
   }
 
+  // normalizeJobIdForLookup: handles normalize job id for lookup.
   function normalizeJobIdForLookup(jobId) {
     const sequence = parseLooseJobIdSequence(jobId);
     if (sequence > 0) {
@@ -65,6 +73,7 @@ function createApplicationIdUtils(options = {}) {
     return jobId.trim().toLowerCase();
   }
 
+  // normalizeApplicationIdForLookup: handles normalize application id for lookup.
   function normalizeApplicationIdForLookup(applicationId) {
     if (typeof applicationId !== "string") {
       return "";
@@ -88,6 +97,7 @@ function createApplicationIdUtils(options = {}) {
     return `${match[1].toUpperCase()}-${sequence}`;
   }
 
+  // compareJobsByOrder: handles compare jobs by order.
   function compareJobsByOrder(a, b) {
     const rowDiff = a.rowIndex - b.rowIndex;
     if (rowDiff !== 0) {
@@ -109,10 +119,12 @@ function createApplicationIdUtils(options = {}) {
     return String(a.jobId).localeCompare(String(b.jobId));
   }
 
+  // sortPostJobsInPlace: handles sort post jobs in place.
   function sortPostJobsInPlace(postJobs) {
     postJobs.sort(compareJobsByOrder);
   }
 
+  // getTrackApplicationIdPrefix: handles get track application id prefix.
   function getTrackApplicationIdPrefix(trackKey) {
     const normalizedTrack = normalizeTrackKey(trackKey) || defaultTrackKey;
     const label = getTrackLabel(normalizedTrack);
@@ -120,6 +132,7 @@ function createApplicationIdUtils(options = {}) {
     return cleaned || "APP";
   }
 
+  // buildApplicationId: handles build application id.
   function buildApplicationId(trackKey, jobId, fallbackSequence = null) {
     let sequence = parseJobIdSequence(jobId);
     if (
@@ -135,6 +148,7 @@ function createApplicationIdUtils(options = {}) {
     return `${getTrackApplicationIdPrefix(trackKey)}-${sequence}`;
   }
 
+  // getApplicationDisplayId: handles get application display id.
   function getApplicationDisplayId(application, fallbackMessageId = null) {
     const derived = buildApplicationId(application?.trackKey, application?.jobId);
     if (derived) {

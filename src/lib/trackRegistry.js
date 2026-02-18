@@ -1,8 +1,13 @@
+/*
+  Core module for track registry.
+*/
+
 function normalizeTrackAlias(value) {
   const normalized = String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
   return normalized;
 }
 
+// parseTrackAliasInput: handles parse track alias input.
 function parseTrackAliasInput(value) {
   if (Array.isArray(value)) {
     return value.flatMap((item) => parseTrackAliasInput(item));
@@ -19,6 +24,7 @@ function parseTrackAliasInput(value) {
     .filter(Boolean);
 }
 
+// normalizeTrackStorageKey: handles normalize track storage key.
 function normalizeTrackStorageKey(value) {
   const raw = String(value || "").trim().toLowerCase();
   if (!raw) {
@@ -33,6 +39,7 @@ function normalizeTrackStorageKey(value) {
   return cleaned.slice(0, 32);
 }
 
+// defaultTrackLabelFromKey: handles default track label from key.
 function defaultTrackLabelFromKey(trackKey) {
   const words = String(trackKey || "")
     .split(/[_\-\s]+/)
@@ -46,6 +53,7 @@ function defaultTrackLabelFromKey(trackKey) {
     .join(" ");
 }
 
+// buildTrackAliasLookup: handles build track alias lookup.
 function buildTrackAliasLookup(tracks) {
   const lookup = new Map();
   for (const track of tracks) {
@@ -63,11 +71,13 @@ function buildTrackAliasLookup(tracks) {
   return lookup;
 }
 
+// createTrackRegistry: handles create track registry.
 function createTrackRegistry({ baseTracks }) {
   const baseTrackList = Array.isArray(baseTracks) ? baseTracks : [];
   const baseTrackKeySet = new Set(baseTrackList.map((track) => track.key));
   let runtimeCustomTracks = [];
 
+  // normalizeCustomTrackDefinition: handles normalize custom track definition.
   function normalizeCustomTrackDefinition(rawTrack) {
     if (!rawTrack || typeof rawTrack !== "object") {
       return null;
@@ -95,6 +105,7 @@ function createTrackRegistry({ baseTracks }) {
     };
   }
 
+  // setCustomTracks: handles set custom tracks.
   function setCustomTracks(rawTracks) {
     const normalized = [];
     const seenKeys = new Set(baseTrackKeySet);
@@ -133,6 +144,7 @@ function createTrackRegistry({ baseTracks }) {
     return getCustomTracksSnapshot();
   }
 
+  // getCustomTracksSnapshot: handles get custom tracks snapshot.
   function getCustomTracksSnapshot() {
     return runtimeCustomTracks.map((track) => ({
       key: track.key,
@@ -141,14 +153,17 @@ function createTrackRegistry({ baseTracks }) {
     }));
   }
 
+  // getApplicationTracks: handles get application tracks.
   function getApplicationTracks() {
     return [...baseTrackList, ...runtimeCustomTracks];
   }
 
+  // getApplicationTrackKeys: handles get application track keys.
   function getApplicationTrackKeys() {
     return getApplicationTracks().map((track) => track.key);
   }
 
+  // getTrackLookupByKey: handles get track lookup by key.
   function getTrackLookupByKey() {
     return Object.fromEntries(
       getApplicationTracks().map((track) => [track.key, track])

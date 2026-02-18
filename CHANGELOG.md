@@ -5,13 +5,26 @@ All notable changes to this project are documented in this file.
 ## [Unreleased]
 
 ### Added
-- Planned updates.
+
 
 ### Changed
-- Planned updates.
+
 
 ### Fixed
-- Planned updates.
+
+### Planned Updates
+- Multi guild supprt 
+- Support channels through different servers
+- Cross Chat multi server channels
+- Cross Chat with Minecraft
+- Cross guild Role Sync
+- Elo Systems for Events 
+
+## [1.4.6] - 2026-02-18
+
+### Added
+- `/reactionrole button` and `/rr button` now support `embed_color:#RRGGBB` for embed sidebar color.
+- `/reactionrole button_edit` and `/rr button_edit` now support updating embed sidebar color with `embed_color:#RRGGBB` or `embed_color:clear`.
 
 ## [1.4.5] - 2026-02-18
 

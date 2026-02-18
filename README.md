@@ -291,8 +291,10 @@ Reaction roles (subcommand shortcut):
 ```text
 /rr create message_id:123456789012345678 emoji:✅ role:@EventRole channel:#roles
 /rr button role:@EventRole role_2:@HelperRole channel:#roles color:green message:Pick your roles below
-/rr button role:@EventRole role_2:@HelperRole channel:#roles message_type:embed title:Choose Team Roles message:Pick your roles below
+/rr button role:@EventRole role_2:@HelperRole channel:#roles message_type:embed title:Choose Team Roles message:Pick your roles below embed_color:#57F287
 /rr button_edit message_id:123456789012345678 channel:#roles color:red
+/rr button_edit message_id:123456789012345678 channel:#roles embed_color:#FFAA00
+/rr button_edit message_id:123456789012345678 channel:#roles embed_color:clear
 /rr button_edit message_id:123456789012345678 channel:#roles role:@NewRole role_2:@SecondRole
 /rr button_edit message_id:123456789012345678 channel:#roles remove_top_text:true
 /rr list
@@ -301,6 +303,7 @@ Reaction roles (subcommand shortcut):
 ```
 `/rr button` posts clickable buttons; users can click again to remove the same role.  
 `message_type` supports `text` (default) and `embed`.  
+`embed_color` supports hex for embed sidebars (example `#57F287`); `button_edit` also supports `clear`.  
 `color` supports `gray`, `blue`, `green`, `red` on create and edit.  
 `/rr button_edit` can replace the button role set with new `role` options, and can also remove the top text with `remove_top_text:true`.
 

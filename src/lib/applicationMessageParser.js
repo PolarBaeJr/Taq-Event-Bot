@@ -1,3 +1,7 @@
+/*
+  Core module for application message parser.
+*/
+
 function normalizeComparableText(value) {
   return String(value || "")
     .toLowerCase()
@@ -5,6 +9,7 @@ function normalizeComparableText(value) {
     .trim();
 }
 
+// stripDecorators: handles strip decorators.
 function stripDecorators(value) {
   return String(value || "")
     .replace(/[`*_~]/g, "")
@@ -12,6 +17,7 @@ function stripDecorators(value) {
     .trim();
 }
 
+// getPrimaryEmbed: handles get primary embed.
 function getPrimaryEmbed(message) {
   if (!message || !Array.isArray(message.embeds) || message.embeds.length === 0) {
     return null;
@@ -19,6 +25,7 @@ function getPrimaryEmbed(message) {
   return message.embeds[0];
 }
 
+// extractTrackLabelFromContent: handles extract track label from content.
 function extractTrackLabelFromContent(content) {
   const match = /(?:^|\n)[^\n]*\*\*Track:\*\*\s*([^\n]+)/i.exec(String(content || ""));
   if (!match) {
@@ -27,6 +34,7 @@ function extractTrackLabelFromContent(content) {
   return normalizeComparableText(match[1].replace(/[`*_~]/g, ""));
 }
 
+// extractTrackLabelFromEmbed: handles extract track label from embed.
 function extractTrackLabelFromEmbed(embed) {
   if (!embed || !Array.isArray(embed.fields)) {
     return "";
@@ -40,6 +48,7 @@ function extractTrackLabelFromEmbed(embed) {
   return normalizeComparableText(stripDecorators(field.value));
 }
 
+// extractTrackLabelFromMessage: handles extract track label from message.
 function extractTrackLabelFromMessage(message) {
   const fromContent = extractTrackLabelFromContent(message?.content);
   if (fromContent) {
@@ -48,6 +57,7 @@ function extractTrackLabelFromMessage(message) {
   return extractTrackLabelFromEmbed(getPrimaryEmbed(message));
 }
 
+// extractApplicationIdFromContent: handles extract application id from content.
 function extractApplicationIdFromContent(content) {
   const match = /application\s*id[^a-z0-9]*:\s*[*_~`]*\s*`?([A-Za-z0-9]+-\d+)`?/i.exec(
     String(content || "")
@@ -55,6 +65,7 @@ function extractApplicationIdFromContent(content) {
   return match ? String(match[1]).trim() : null;
 }
 
+// extractApplicationIdFromEmbed: handles extract application id from embed.
 function extractApplicationIdFromEmbed(embed) {
   if (!embed || !Array.isArray(embed.fields)) {
     return null;
@@ -69,6 +80,7 @@ function extractApplicationIdFromEmbed(embed) {
   return raw || null;
 }
 
+// extractApplicationIdFromMessage: handles extract application id from message.
 function extractApplicationIdFromMessage(message) {
   const fromContent = extractApplicationIdFromContent(message?.content);
   if (fromContent) {
@@ -89,6 +101,7 @@ function extractApplicationIdFromMessage(message) {
   return null;
 }
 
+// parseSubmittedFieldsFromPostContent: handles parse submitted fields from post content.
 function parseSubmittedFieldsFromPostContent(content) {
   const blockMatch = /```(?:\w+)?\n?([\s\S]*?)```/.exec(String(content || ""));
   if (!blockMatch) {
@@ -125,6 +138,7 @@ function parseSubmittedFieldsFromPostContent(content) {
   return submittedFields;
 }
 
+// parseSubmittedFieldsFromEmbed: handles parse submitted fields from embed.
 function parseSubmittedFieldsFromEmbed(embed) {
   if (!embed || typeof embed !== "object") {
     return [];
@@ -155,6 +169,7 @@ function parseSubmittedFieldsFromEmbed(embed) {
   return submittedFields;
 }
 
+// parseSubmittedFieldsFromMessage: handles parse submitted fields from message.
 function parseSubmittedFieldsFromMessage(message) {
   const fromContent = parseSubmittedFieldsFromPostContent(message?.content || "");
   if (fromContent.length > 0) {
@@ -163,6 +178,7 @@ function parseSubmittedFieldsFromMessage(message) {
   return parseSubmittedFieldsFromEmbed(getPrimaryEmbed(message));
 }
 
+// isApplicationPostMessage: handles is application post message.
 function isApplicationPostMessage(message) {
   const content = normalizeComparableText(message?.content || "");
   if (content.includes("new application")) {

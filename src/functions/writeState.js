@@ -6,6 +6,7 @@
 function writeState(state) {
   ensureExtendedSettingsContainers(state);
   const serialized = JSON.stringify(state, null, 2);
+  // writeToPath: handles write to path.
   const writeToPath = (stateFilePath) => {
     const stateDir = path.dirname(path.resolve(stateFilePath));
     if (!fs.existsSync(stateDir)) {

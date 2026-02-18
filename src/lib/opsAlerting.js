@@ -1,3 +1,7 @@
+/*
+  Core module for ops alerting.
+*/
+
 function normalizeString(value) {
   if (value === undefined || value === null) {
     return "";
@@ -5,6 +9,7 @@ function normalizeString(value) {
   return String(value).trim();
 }
 
+// formatDetails: handles format details.
 function formatDetails(details) {
   const lines = [];
   const source = details && typeof details === "object" ? details : {};
@@ -17,6 +22,7 @@ function formatDetails(details) {
   return lines;
 }
 
+// createAlertingClient: handles create alerting client.
 function createAlertingClient(options = {}) {
   const webhookUrl = normalizeString(options.webhookUrl);
   const mention = normalizeString(options.mention);
@@ -33,6 +39,7 @@ function createAlertingClient(options = {}) {
       : 0;
   const lastSentByEvent = new Map();
 
+  // canSend: handles can send.
   function canSend(eventKey) {
     if (cooldownMs <= 0) {
       return true;
@@ -46,6 +53,7 @@ function createAlertingClient(options = {}) {
     return true;
   }
 
+  // sendAlert: handles send alert.
   async function sendAlert({
     event = "ops_alert",
     severity = "warning",

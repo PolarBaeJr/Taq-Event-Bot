@@ -1,9 +1,14 @@
+/*
+  Project utility script for botctl.
+*/
+
 const fs = require("node:fs");
 const path = require("node:path");
 const { execSync, spawn, spawnSync } = require("node:child_process");
 
 const PID_FILE = path.resolve(process.cwd(), ".bot.pid");
 
+// usage: handles usage.
 function usage() {
   console.log(
     [
@@ -18,6 +23,7 @@ function usage() {
   );
 }
 
+// readPidFile: handles read pid file.
 function readPidFile() {
   try {
     const pid = Number(fs.readFileSync(PID_FILE, "utf8").trim());
@@ -27,10 +33,12 @@ function readPidFile() {
   }
 }
 
+// writePidFile: handles write pid file.
 function writePidFile(pid) {
   fs.writeFileSync(PID_FILE, String(pid));
 }
 
+// removePidFile: handles remove pid file.
 function removePidFile() {
   try {
     fs.unlinkSync(PID_FILE);
@@ -39,6 +47,7 @@ function removePidFile() {
   }
 }
 
+// isRunning: handles is running.
 function isRunning(pid) {
   try {
     process.kill(pid, 0);
@@ -48,6 +57,7 @@ function isRunning(pid) {
   }
 }
 
+// listBotPids: handles list bot pids.
 function listBotPids() {
   const cwd = process.cwd().replace(/\\/g, "/");
   let output = "";
@@ -90,10 +100,12 @@ function listBotPids() {
   return [...new Set(matches)];
 }
 
+// wait: handles wait.
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// terminatePids: handles terminate pids.
 async function terminatePids(pids) {
   if (pids.length === 0) {
     return 0;
@@ -125,6 +137,7 @@ async function terminatePids(pids) {
   return pids.length;
 }
 
+// startForeground: handles start foreground.
 function startForeground() {
   const result = spawnSync(process.execPath, ["src/index.js"], {
     cwd: process.cwd(),
@@ -134,6 +147,7 @@ function startForeground() {
   process.exit(result.status ?? 0);
 }
 
+// startBackground: handles start background.
 function startBackground() {
   const child = spawn(process.execPath, ["src/index.js"], {
     cwd: process.cwd(),
@@ -146,6 +160,7 @@ function startBackground() {
   console.log(`Bot started in background (PID ${child.pid}).`);
 }
 
+// stopProcess: handles stop process.
 async function stopProcess(backgroundOnly) {
   const running = listBotPids();
   const pidFromFile = readPidFile();
@@ -172,6 +187,7 @@ async function stopProcess(backgroundOnly) {
   console.log(`Stopped ${count} bot process(es).`);
 }
 
+// restartProcess: handles restart process.
 async function restartProcess(background) {
   await stopProcess(false);
   if (background) {
@@ -181,6 +197,7 @@ async function restartProcess(background) {
   startForeground();
 }
 
+// main: handles main.
 async function main() {
   const args = process.argv.slice(2);
   const action = args[0];

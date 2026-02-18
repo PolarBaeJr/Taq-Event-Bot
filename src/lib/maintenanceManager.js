@@ -1,6 +1,11 @@
+/*
+  Core module for maintenance manager.
+*/
+
 const fs = require("node:fs");
 const path = require("node:path");
 
+// ensureDirectory: handles ensure directory.
 function ensureDirectory(dirPath) {
   if (!dirPath) {
     return;
@@ -10,6 +15,7 @@ function ensureDirectory(dirPath) {
   }
 }
 
+// rotateFileBySize: handles rotate file by size.
 function rotateFileBySize(filePath, maxBytes, maxFiles) {
   if (!filePath || !Number.isFinite(maxBytes) || maxBytes <= 0) {
     return false;
@@ -36,6 +42,7 @@ function rotateFileBySize(filePath, maxBytes, maxFiles) {
   return true;
 }
 
+// pruneFilesByAge: handles prune files by age.
 function pruneFilesByAge(directory, maxAgeDays, filePattern = null) {
   if (!directory || !fs.existsSync(directory) || !Number.isFinite(maxAgeDays) || maxAgeDays <= 0) {
     return [];
@@ -64,6 +71,7 @@ function pruneFilesByAge(directory, maxAgeDays, filePattern = null) {
   return removed;
 }
 
+// createMaintenanceManager: handles create maintenance manager.
 function createMaintenanceManager(options = {}) {
   const controlLogFile = options.controlLogFile
     ? path.resolve(options.controlLogFile)
@@ -92,6 +100,7 @@ function createMaintenanceManager(options = {}) {
       ? options.logger
       : null;
 
+  // runMaintenance: handles run maintenance.
   async function runMaintenance(reason = "scheduled") {
     const summary = {
       reason,
@@ -146,6 +155,7 @@ function createMaintenanceManager(options = {}) {
   };
 }
 
+// escapeRegExp: handles escape reg exp.
 function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

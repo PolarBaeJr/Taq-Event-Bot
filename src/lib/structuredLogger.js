@@ -1,3 +1,7 @@
+/*
+  Core module for structured logger.
+*/
+
 function normalizeContext(context) {
   if (!context || typeof context !== "object" || Array.isArray(context)) {
     return {};
@@ -5,6 +9,7 @@ function normalizeContext(context) {
   return context;
 }
 
+// serializeError: handles serialize error.
 function serializeError(error) {
   if (!error) {
     return null;
@@ -21,9 +26,11 @@ function serializeError(error) {
   };
 }
 
+// createStructuredLogger: handles create structured logger.
 function createStructuredLogger(options = {}) {
   const baseContext = normalizeContext(options.baseContext);
 
+  // emit: handles emit.
   function emit(level, event, message, context = {}) {
     const payload = {
       timestamp: new Date().toISOString(),

@@ -1,3 +1,7 @@
+/*
+  Core module for track auto manager.
+*/
+
 const DEFAULT_AUTO_TRACK_HEADER_HINTS = [
   "what are you applying for",
   "applying for",
@@ -20,6 +24,7 @@ const DEFAULT_AUTO_TRACK_SKIP_VALUES = [
   "null",
 ];
 
+// createTrackAutoManager: handles create track auto manager.
 function createTrackAutoManager(options = {}) {
   const autoTrackRegistrationEnabled = options.autoTrackRegistrationEnabled === true;
   const autoTrackHeaderHints = Array.isArray(options.autoTrackHeaderHints)
@@ -49,6 +54,7 @@ function createTrackAutoManager(options = {}) {
     normalizeTrackKey,
   } = options;
 
+  // ensureTrackSettingsContainers: handles ensure track settings containers.
   function ensureTrackSettingsContainers(state) {
     state.settings = state.settings && typeof state.settings === "object"
       ? state.settings
@@ -59,6 +65,7 @@ function createTrackAutoManager(options = {}) {
     return state.settings;
   }
 
+  // upsertCustomTrackInState: handles upsert custom track in state.
   function upsertCustomTrackInState(state, { name, key, aliases }) {
     const settings = ensureTrackSettingsContainers(state);
     const existingCustomTracks = [...settings.customTracks];
@@ -114,6 +121,7 @@ function createTrackAutoManager(options = {}) {
     };
   }
 
+  // collectTrackValuesFromFormFields: handles collect track values from form fields.
   function collectTrackValuesFromFormFields(headers, row) {
     const values = [];
     const maxLength = Math.max(
@@ -136,6 +144,7 @@ function createTrackAutoManager(options = {}) {
     return values;
   }
 
+  // splitTrackValueCandidates: handles split track value candidates.
   function splitTrackValueCandidates(rawValue) {
     const normalized = String(rawValue || "").replace(/\s+/g, " ").trim();
     if (!normalized) {
@@ -147,6 +156,7 @@ function createTrackAutoManager(options = {}) {
       .filter(Boolean);
   }
 
+  // isAutoCreatableTrackToken: handles is auto creatable track token.
   function isAutoCreatableTrackToken(value) {
     const normalized = String(value || "").replace(/\s+/g, " ").trim();
     if (!normalized) {
@@ -165,6 +175,7 @@ function createTrackAutoManager(options = {}) {
     return true;
   }
 
+  // autoRegisterTracksFromFormRow: handles auto register tracks from form row.
   function autoRegisterTracksFromFormRow(state, headers, row) {
     if (!autoTrackRegistrationEnabled) {
       return [];

@@ -1,3 +1,7 @@
+/*
+  Core module for polling pipeline.
+*/
+
 const {
   normalizeComparableText,
   extractTrackLabelFromMessage,
@@ -6,6 +10,7 @@ const {
   isApplicationPostMessage,
 } = require("./applicationMessageParser");
 
+// createPollingPipeline: handles create polling pipeline.
 function createPollingPipeline(options = {}) {
   const readState = typeof options.readState === "function"
     ? options.readState
@@ -118,6 +123,7 @@ function createPollingPipeline(options = {}) {
   let isProcessingPostJobs = false;
   let loggedNoChannelWarning = false;
 
+  // logInfo: handles log info.
   function logInfo(event, message, context = {}) {
     if (logger) {
       logger.info(event, message, context);
@@ -126,6 +132,7 @@ function createPollingPipeline(options = {}) {
     console.log(message);
   }
 
+  // logError: handles log error.
   function logError(event, message, context = {}) {
     if (logger) {
       logger.error(event, message, context);
@@ -134,6 +141,7 @@ function createPollingPipeline(options = {}) {
     console.error(message);
   }
 
+  // normalizeMessagePayload: handles normalize message payload.
   function normalizeMessagePayload(payload, allowedMentions) {
     if (payload && typeof payload === "object" && !Array.isArray(payload)) {
       return {
@@ -146,6 +154,7 @@ function createPollingPipeline(options = {}) {
     };
   }
 
+  // buildSubmittedFieldsFingerprint: handles build submitted fields fingerprint.
   function buildSubmittedFieldsFingerprint(submittedFields) {
     return submittedFields
       .map((line) => normalizeComparableText(line))
@@ -153,6 +162,7 @@ function createPollingPipeline(options = {}) {
       .join("|");
   }
 
+  // findExistingApplicationPostInChannel: handles find existing application post in channel.
   async function findExistingApplicationPostInChannel({
     channelId,
     trackLabel,
@@ -240,6 +250,7 @@ function createPollingPipeline(options = {}) {
     return null;
   }
 
+  // postApplicationForJob: handles post application for job.
   async function postApplicationForJob(state, job) {
     const headers = Array.isArray(job.headers) ? job.headers : [];
     const row = Array.isArray(job.row) ? job.row : [];
@@ -543,6 +554,7 @@ function createPollingPipeline(options = {}) {
     }
   }
 
+  // processQueuedPostJobs: handles process queued post jobs.
   async function processQueuedPostJobs() {
     if (isProcessingPostJobs) {
       const state = readState();
@@ -679,6 +691,7 @@ function createPollingPipeline(options = {}) {
     }
   }
 
+  // pollOnce: handles poll once.
   async function pollOnce() {
     const state = readState();
     const values = await readAllResponses();

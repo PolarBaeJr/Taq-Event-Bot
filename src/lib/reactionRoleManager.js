@@ -1,12 +1,18 @@
+/*
+  Core module for reaction role manager.
+*/
+
 const CUSTOM_EMOJI_MENTION_PATTERN = /^<a?:([a-zA-Z0-9_]{2,32}):(\d{17,20})>$/;
 const CUSTOM_EMOJI_COLON_PATTERN = /^([a-zA-Z0-9_]{2,32}):(\d{17,20})$/;
 const CUSTOM_EMOJI_ID_PATTERN = /^(\d{17,20})$/;
 const DEFAULT_REACTION_ROLE_LIST_MAX_LINES = 40;
 
+// defaultIsSnowflake: handles default is snowflake.
 function defaultIsSnowflake(value) {
   return typeof value === "string" && /^\d{17,20}$/.test(value);
 }
 
+// normalizeReactionRoleEmojiInput: handles normalize reaction role emoji input.
 function normalizeReactionRoleEmojiInput(rawValue, options = {}) {
   const isSnowflake = typeof options.isSnowflake === "function"
     ? options.isSnowflake
@@ -74,6 +80,7 @@ function normalizeReactionRoleEmojiInput(rawValue, options = {}) {
   };
 }
 
+// normalizeStoredReactionRoleEmojiKey: handles normalize stored reaction role emoji key.
 function normalizeStoredReactionRoleEmojiKey(rawValue, options = {}) {
   const isSnowflake = typeof options.isSnowflake === "function"
     ? options.isSnowflake
@@ -103,6 +110,7 @@ function normalizeStoredReactionRoleEmojiKey(rawValue, options = {}) {
   return parsed ? parsed.key : null;
 }
 
+// normalizeReactionRoleBindings: handles normalize reaction role bindings.
 function normalizeReactionRoleBindings(rawBindings, options = {}) {
   const isSnowflake = typeof options.isSnowflake === "function"
     ? options.isSnowflake
@@ -178,6 +186,7 @@ function normalizeReactionRoleBindings(rawBindings, options = {}) {
   );
 }
 
+// getReactionRoleEmojiKeyFromReaction: handles get reaction role emoji key from reaction.
 function getReactionRoleEmojiKeyFromReaction(emoji, options = {}) {
   const isSnowflake = typeof options.isSnowflake === "function"
     ? options.isSnowflake
@@ -193,6 +202,7 @@ function getReactionRoleEmojiKeyFromReaction(emoji, options = {}) {
   return `unicode:${emojiName.normalize("NFC")}`;
 }
 
+// createReactionRoleManager: handles create reaction role manager.
 function createReactionRoleManager(options = {}) {
   const readState = typeof options.readState === "function"
     ? options.readState
@@ -216,6 +226,7 @@ function createReactionRoleManager(options = {}) {
   const PermissionsBitField = options.PermissionsBitField;
   const manageRolesPermission = PermissionsBitField?.Flags?.ManageRoles;
 
+  // ensureReactionRoleSettings: handles ensure reaction role settings.
   function ensureReactionRoleSettings(state) {
     state.settings = state.settings && typeof state.settings === "object"
       ? state.settings
@@ -227,6 +238,7 @@ function createReactionRoleManager(options = {}) {
     return state.settings;
   }
 
+  // upsertReactionRoleBinding: handles upsert reaction role binding.
   function upsertReactionRoleBinding({
     guildId,
     channelId,
@@ -299,6 +311,7 @@ function createReactionRoleManager(options = {}) {
     };
   }
 
+  // removeReactionRoleBinding: handles remove reaction role binding.
   function removeReactionRoleBinding({ guildId, channelId, messageId, emojiInput }) {
     if (!isSnowflake(guildId)) {
       throw new Error("Invalid guild id.");
@@ -346,6 +359,7 @@ function createReactionRoleManager(options = {}) {
     };
   }
 
+  // listReactionRoleBindings: handles list reaction role bindings.
   function listReactionRoleBindings({ guildId, channelId, messageId } = {}) {
     const state = readState();
     const settings = ensureReactionRoleSettings(state);
@@ -364,6 +378,7 @@ function createReactionRoleManager(options = {}) {
     });
   }
 
+  // applyReactionRoleFromEvent: handles apply reaction role from event.
   async function applyReactionRoleFromEvent(reaction, user, action = "add") {
     const normalizedAction = action === "remove" ? "remove" : "add";
     if (!user || user.bot) {

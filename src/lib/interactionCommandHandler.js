@@ -1,3 +1,7 @@
+/*
+  Core module for interaction command handler.
+*/
+
 const {
   ActionRowBuilder,
   ButtonBuilder,
@@ -11,6 +15,7 @@ const {
   TextInputStyle,
 } = require("discord.js");
 
+// Custom ID prefixes used to route button/select/modal interactions back to the right handler.
 const REACTION_ROLE_GUI_PREFIX = "rrgui";
 const REACTION_ROLE_GUI_ACTION_ADD = "add";
 const REACTION_ROLE_GUI_ACTION_REMOVE = "remove";
@@ -36,6 +41,7 @@ const REACTION_ROLE_BUTTON_COLOR_CHOICES = Object.freeze({
   danger: ButtonStyle.Danger,
 });
 
+// Main interaction router. All runtime dependencies are injected from index.js.
 function createInteractionCommandHandler(options = {}) {
   const PermissionsBitField = options.PermissionsBitField;
   const ChannelType = options.ChannelType;
@@ -180,6 +186,7 @@ function createInteractionCommandHandler(options = {}) {
   const pendingAcceptResolvePrompts = new Map();
   let acceptResolvePromptCounter = 0;
 
+  // "Manage roles config" is intentionally stricter than plain ManageGuild to avoid accidental role edits.
   function hasManageRolesConfigPermission(memberPerms) {
     if (!memberPerms) {
       return false;
@@ -191,10 +198,12 @@ function createInteractionCommandHandler(options = {}) {
     );
   }
 
+  // buildReactionRoleGuiCustomId: handles build reaction role gui custom id.
   function buildReactionRoleGuiCustomId(action, userId) {
     return `${REACTION_ROLE_GUI_PREFIX}:${action}:${String(userId || "")}`;
   }
 
+  // parseReactionRoleGuiCustomId: handles parse reaction role gui custom id.
   function parseReactionRoleGuiCustomId(customId) {
     const raw = String(customId || "").trim();
     if (!raw.startsWith(`${REACTION_ROLE_GUI_PREFIX}:`)) {
@@ -210,6 +219,7 @@ function createInteractionCommandHandler(options = {}) {
     };
   }
 
+  // buildReactionRoleGuiComponents: handles build reaction role gui components.
   function buildReactionRoleGuiComponents(userId) {
     return [
       new ActionRowBuilder().addComponents(
@@ -225,10 +235,12 @@ function createInteractionCommandHandler(options = {}) {
     ];
   }
 
+  // buildReactionRoleButtonCustomId: handles build reaction role button custom id.
   function buildReactionRoleButtonCustomId(guildId, roleId) {
     return `${REACTION_ROLE_BUTTON_PREFIX}:${String(guildId || "")}:${String(roleId || "")}`;
   }
 
+  // parseReactionRoleButtonCustomId: handles parse reaction role button custom id.
   function parseReactionRoleButtonCustomId(customId) {
     const raw = String(customId || "").trim();
     if (!raw.startsWith(`${REACTION_ROLE_BUTTON_PREFIX}:`)) {
@@ -249,6 +261,7 @@ function createInteractionCommandHandler(options = {}) {
     };
   }
 
+  // Build one or more ActionRows (max 5 buttons per row, 25 total) for button-role panels.
   function buildReactionRoleButtonPanelComponents(guildId, buttonEntries, buttonStyle) {
     const entries = Array.isArray(buttonEntries)
       ? buttonEntries
@@ -291,6 +304,7 @@ function createInteractionCommandHandler(options = {}) {
     return rows;
   }
 
+  // parseReactionRoleButtonStyle: handles parse reaction role button style.
   function parseReactionRoleButtonStyle(rawValue) {
     const normalized = String(rawValue || "").trim().toLowerCase();
     if (!normalized) {
@@ -299,6 +313,7 @@ function createInteractionCommandHandler(options = {}) {
     return REACTION_ROLE_BUTTON_COLOR_CHOICES[normalized] || null;
   }
 
+  // formatReactionRoleButtonStyle: handles format reaction role button style.
   function formatReactionRoleButtonStyle(style) {
     switch (style) {
       case ButtonStyle.Primary:
@@ -313,6 +328,7 @@ function createInteractionCommandHandler(options = {}) {
     }
   }
 
+  // parseReactionRoleButtonMessageType: handles parse reaction role button message type.
   function parseReactionRoleButtonMessageType(rawValue) {
     const normalized = String(rawValue || "").trim().toLowerCase();
     if (!normalized || normalized === REACTION_ROLE_BUTTON_MESSAGE_TYPE_TEXT) {
@@ -324,6 +340,15 @@ function createInteractionCommandHandler(options = {}) {
     return null;
   }
 
+  // Convert numeric embed color to a Discord-friendly hex preview (for logs/replies).
+  function formatEmbedColorHex(value) {
+    if (!Number.isInteger(value) || value < 0 || value > 0xffffff) {
+      return null;
+    }
+    return `#${value.toString(16).toUpperCase().padStart(6, "0")}`;
+  }
+
+  // Read current button-role panel components to infer existing style/count during edits.
   function summarizeExistingReactionRoleButtons(rows, guildId) {
     const sourceRows = Array.isArray(rows) ? rows : [];
     let count = 0;
@@ -358,11 +383,13 @@ function createInteractionCommandHandler(options = {}) {
     };
   }
 
+  // buildAppRoleGuiCustomId: handles build app role gui custom id.
   function buildAppRoleGuiCustomId(action, userId, trackKey = "") {
     const keyPart = String(trackKey || "").trim();
     return `${APPROLE_GUI_PREFIX}:${action}:${String(userId || "")}${keyPart ? `:${keyPart}` : ""}`;
   }
 
+  // parseAppRoleGuiCustomId: handles parse app role gui custom id.
   function parseAppRoleGuiCustomId(customId) {
     const raw = String(customId || "").trim();
     if (!raw.startsWith(`${APPROLE_GUI_PREFIX}:`)) {
@@ -379,10 +406,12 @@ function createInteractionCommandHandler(options = {}) {
     };
   }
 
+  // buildAcceptResolveModalCustomId: handles build accept resolve modal custom id.
   function buildAcceptResolveModalCustomId(promptId) {
     return `${ACCEPT_RESOLVE_MODAL_PREFIX}:${String(promptId || "")}`;
   }
 
+  // parseAcceptResolveModalCustomId: handles parse accept resolve modal custom id.
   function parseAcceptResolveModalCustomId(customId) {
     const raw = String(customId || "").trim();
     if (!raw.startsWith(`${ACCEPT_RESOLVE_MODAL_PREFIX}:`)) {
@@ -399,11 +428,13 @@ function createInteractionCommandHandler(options = {}) {
     return { promptId };
   }
 
+  // nextAcceptResolvePromptId: handles next accept resolve prompt id.
   function nextAcceptResolvePromptId() {
     acceptResolvePromptCounter = (acceptResolvePromptCounter + 1) % 1679616;
     return `${Date.now().toString(36)}${acceptResolvePromptCounter.toString(36)}`;
   }
 
+  // pruneExpiredAcceptResolvePrompts: handles prune expired accept resolve prompts.
   function pruneExpiredAcceptResolvePrompts() {
     const now = Date.now();
     for (const [key, value] of pendingAcceptResolvePrompts.entries()) {
@@ -414,6 +445,7 @@ function createInteractionCommandHandler(options = {}) {
     }
   }
 
+  // buildAcceptResolveModal: handles build accept resolve modal.
   function buildAcceptResolveModal(promptId) {
     const modal = new ModalBuilder()
       .setCustomId(buildAcceptResolveModalCustomId(promptId))
@@ -434,6 +466,7 @@ function createInteractionCommandHandler(options = {}) {
     return modal;
   }
 
+  // buildAppRoleTrackSelectOptions: handles build app role track select options.
   function buildAppRoleTrackSelectOptions(selectedTrackKey = null) {
     const selected = String(selectedTrackKey || "").trim();
     return getApplicationTracks()
@@ -453,6 +486,7 @@ function createInteractionCommandHandler(options = {}) {
       .slice(0, 25);
   }
 
+  // buildAppRoleGuiComponents: handles build app role gui components.
   function buildAppRoleGuiComponents(userId, selectedTrackKey = null) {
     const trackOptions = buildAppRoleTrackSelectOptions(selectedTrackKey);
     if (trackOptions.length === 0) {
@@ -485,6 +519,7 @@ function createInteractionCommandHandler(options = {}) {
     return rows;
   }
 
+  // buildReactionRoleAddModal: handles build reaction role add modal.
   function buildReactionRoleAddModal(userId) {
     const modal = new ModalBuilder()
       .setCustomId(buildReactionRoleGuiCustomId(REACTION_ROLE_GUI_ACTION_MODAL_ADD, userId))
@@ -525,6 +560,7 @@ function createInteractionCommandHandler(options = {}) {
     return modal;
   }
 
+  // buildReactionRoleRemoveModal: handles build reaction role remove modal.
   function buildReactionRoleRemoveModal(userId) {
     const modal = new ModalBuilder()
       .setCustomId(buildReactionRoleGuiCustomId(REACTION_ROLE_GUI_ACTION_MODAL_REMOVE, userId))
@@ -558,6 +594,7 @@ function createInteractionCommandHandler(options = {}) {
     return modal;
   }
 
+  // resolveReactionRoleTargetChannel: handles resolve reaction role target channel.
   async function resolveReactionRoleTargetChannel(interaction, rawChannelId) {
     const requestedChannelId = String(rawChannelId || "").trim();
     if (!requestedChannelId) {
@@ -569,6 +606,7 @@ function createInteractionCommandHandler(options = {}) {
     return interaction.guild.channels.fetch(requestedChannelId).catch(() => null);
   }
 
+  // isValidReactionRoleTargetChannel: handles is valid reaction role target channel.
   function isValidReactionRoleTargetChannel(channel, guildId) {
     return Boolean(
       channel &&
@@ -578,6 +616,7 @@ function createInteractionCommandHandler(options = {}) {
     );
   }
 
+  // Keep dynamic /set channel option names within Discord's 32-char option name limit.
   function toSetChannelTrackOptionName(trackKey) {
     const raw = String(trackKey || "").trim().toLowerCase();
     if (!raw) {
@@ -592,6 +631,7 @@ function createInteractionCommandHandler(options = {}) {
     return `${cleaned.slice(0, maxBaseLength)}${suffix}`;
   }
 
+  // buildDynamicSetChannelTrackOptions: handles build dynamic set channel track options.
   function buildDynamicSetChannelTrackOptions() {
     const staticTrackKeys = new Set(
       (Array.isArray(baseSetChannelTrackOptions) ? baseSetChannelTrackOptions : [])
@@ -635,6 +675,7 @@ function createInteractionCommandHandler(options = {}) {
     );
   }
 
+  // parseEmbedColor: handles parse embed color.
   function parseEmbedColor(rawValue) {
     const raw = String(rawValue || "").trim().toLowerCase();
     if (!raw) {
@@ -654,6 +695,7 @@ function createInteractionCommandHandler(options = {}) {
     return Number.isInteger(value) ? value : null;
   }
 
+  // Flatten nested slash command option trees (subcommand groups -> subcommands -> options).
   function flattenCommandOptions(optionsData) {
     const out = [];
     const queue = Array.isArray(optionsData) ? [...optionsData] : [];
@@ -685,6 +727,7 @@ function createInteractionCommandHandler(options = {}) {
     return out;
   }
 
+  // safeGetStringOptionFromInteraction: handles safe get string option from interaction.
   function safeGetStringOptionFromInteraction(interaction, optionName) {
     if (!interaction?.options || typeof interaction.options.getString !== "function") {
       return null;
@@ -696,6 +739,7 @@ function createInteractionCommandHandler(options = {}) {
     }
   }
 
+  // safeGetRoleOptionIdFromInteraction: handles safe get role option id from interaction.
   function safeGetRoleOptionIdFromInteraction(interaction, optionName) {
     if (!interaction?.options || typeof interaction.options.getRole !== "function") {
       return null;
@@ -708,6 +752,7 @@ function createInteractionCommandHandler(options = {}) {
     }
   }
 
+  // safeGetSubcommand: handles safe get subcommand.
   function safeGetSubcommand(interaction) {
     if (!interaction?.options || typeof interaction.options.getSubcommand !== "function") {
       return null;
@@ -719,6 +764,7 @@ function createInteractionCommandHandler(options = {}) {
     }
   }
 
+  // safeGetSubcommandGroup: handles safe get subcommand group.
   function safeGetSubcommandGroup(interaction) {
     if (!interaction?.options || typeof interaction.options.getSubcommandGroup !== "function") {
       return null;
@@ -730,6 +776,7 @@ function createInteractionCommandHandler(options = {}) {
     }
   }
 
+  // extractTrackOptionInput: handles extract track option input.
   function extractTrackOptionInput(interaction) {
     const namedCandidates = ["track", "track_key", "application_track", "team"];
     for (const optionName of namedCandidates) {
@@ -755,6 +802,7 @@ function createInteractionCommandHandler(options = {}) {
     return String(source?.value || "").trim();
   }
 
+  // extractRoleIdsFromInteractionOptions: handles extract role ids from interaction options.
   function extractRoleIdsFromInteractionOptions(interaction) {
     const namedRoleOptionIds = [
       "role",
@@ -778,6 +826,7 @@ function createInteractionCommandHandler(options = {}) {
     return parseRoleIdList([...namedRoleOptionIds, ...discoveredRoleIds]);
   }
 
+  // Debug helpers keep interaction failure logs compact while still actionable.
   function summarizeDebugString(value, maxLength = 120) {
     const raw = String(value ?? "");
     if (raw.length <= maxLength) {
@@ -786,6 +835,7 @@ function createInteractionCommandHandler(options = {}) {
     return `${raw.slice(0, maxLength)}...(${raw.length})`;
   }
 
+  // summarizeCommandOptionValue: handles summarize command option value.
   function summarizeCommandOptionValue(optionName, value) {
     if (value === undefined || value === null) {
       return null;
@@ -810,6 +860,7 @@ function createInteractionCommandHandler(options = {}) {
     return summarizeDebugString(String(value), 120);
   }
 
+  // summarizeCommandOptionsForDebug: handles summarize command options for debug.
   function summarizeCommandOptionsForDebug(interaction) {
     const options = flattenCommandOptions(interaction?.options?.data);
     if (!Array.isArray(options) || options.length === 0) {
@@ -822,6 +873,7 @@ function createInteractionCommandHandler(options = {}) {
     }));
   }
 
+  // summarizeModalFieldsForDebug: handles summarize modal fields for debug.
   function summarizeModalFieldsForDebug(interaction) {
     const fields = interaction?.fields?.fields;
     if (!fields || typeof fields.values !== "function") {
@@ -839,6 +891,7 @@ function createInteractionCommandHandler(options = {}) {
       });
   }
 
+  // buildInteractionDebugContext: handles build interaction debug context.
   function buildInteractionDebugContext(interaction, extra = {}) {
     const type =
       interaction && interaction.type !== undefined && interaction.type !== null
@@ -862,6 +915,7 @@ function createInteractionCommandHandler(options = {}) {
     };
   }
 
+  // logInteractionDebug: handles log interaction debug.
   function logInteractionDebug(event, message, interaction, extra = {}) {
     if (!logger || typeof logger.info !== "function") {
       return;
@@ -869,6 +923,7 @@ function createInteractionCommandHandler(options = {}) {
     logger.info(event, message, buildInteractionDebugContext(interaction, extra));
   }
 
+  // logInteractionFailure: handles log interaction failure.
   function logInteractionFailure(event, message, interaction, err, extra = {}) {
     const payload = buildInteractionDebugContext(interaction, {
       ...extra,
@@ -887,8 +942,10 @@ function createInteractionCommandHandler(options = {}) {
     console.error(message, payload);
   }
 
+  // Single entrypoint for all Discord interactions (slash commands, buttons, select menus, modals).
   return async function onInteractionCreate(interaction) {
     try {
+      // refreshCommandsIfNeeded: handles refresh commands if needed.
       const refreshCommandsIfNeeded = () => {
         if (!refreshSlashCommandsForGuild || !interaction.guildId) {
           return;
@@ -909,6 +966,7 @@ function createInteractionCommandHandler(options = {}) {
         });
       };
 
+      // GUI flow: track picker for accepted-role assignment.
       if (interaction.isStringSelectMenu()) {
         const guiContext = parseAppRoleGuiCustomId(interaction.customId);
         if (!guiContext || guiContext.action !== APPROLE_GUI_ACTION_TRACK) {
@@ -987,6 +1045,7 @@ function createInteractionCommandHandler(options = {}) {
         return;
       }
 
+      // GUI flow: role picker updates accepted roles for the selected track.
       if (interaction.isRoleSelectMenu()) {
         const guiContext = parseAppRoleGuiCustomId(interaction.customId);
         if (!guiContext || guiContext.action !== APPROLE_GUI_ACTION_ROLES) {
@@ -1093,6 +1152,9 @@ function createInteractionCommandHandler(options = {}) {
         return;
       }
 
+      // Button interactions include:
+      // 1) reaction-role admin GUI controls
+      // 2) public button-role toggles for members.
       if (interaction.isButton()) {
         const guiContext = parseReactionRoleGuiCustomId(interaction.customId);
         if (guiContext) {
@@ -1251,6 +1313,7 @@ function createInteractionCommandHandler(options = {}) {
         return;
       }
 
+      // Modal submissions include applicant resolve modal + reaction-role GUI modals.
       if (interaction.isModalSubmit()) {
         const acceptResolveContext = parseAcceptResolveModalCustomId(interaction.customId);
         if (acceptResolveContext) {
@@ -3588,6 +3651,25 @@ function createInteractionCommandHandler(options = {}) {
             });
             return;
           }
+          const embedColorInput = String(
+            interaction.options.getString("embed_color") || ""
+          ).trim();
+          const hasEmbedColorInput = embedColorInput.length > 0;
+          const embedColor = hasEmbedColorInput ? parseEmbedColor(embedColorInput) : null;
+          if (hasEmbedColorInput && panelMessageType !== REACTION_ROLE_BUTTON_MESSAGE_TYPE_EMBED) {
+            await interaction.reply({
+              content: "`embed_color` can only be used when `message_type:embed`.",
+              ephemeral: true,
+            });
+            return;
+          }
+          if (hasEmbedColorInput && embedColor === null) {
+            await interaction.reply({
+              content: "Invalid `embed_color`. Use 6-digit hex like `#57F287`.",
+              ephemeral: true,
+            });
+            return;
+          }
           const selectedRoleIds = extractRoleIdsFromInteractionOptions(interaction).slice(0, 25);
           if (selectedRoleIds.length === 0) {
             await interaction.reply({
@@ -3696,11 +3778,13 @@ function createInteractionCommandHandler(options = {}) {
               },
             };
             if (panelMessageType === REACTION_ROLE_BUTTON_MESSAGE_TYPE_EMBED) {
-              payload.embeds = [
-                new EmbedBuilder()
-                  .setTitle(panelTitleInput || "Choose Roles")
-                  .setDescription(panelMessageText),
-              ];
+              const panelEmbed = new EmbedBuilder()
+                .setTitle(panelTitleInput || "Choose Roles")
+                .setDescription(panelMessageText);
+              if (Number.isInteger(embedColor)) {
+                panelEmbed.setColor(embedColor);
+              }
+              payload.embeds = [panelEmbed];
             } else {
               payload.content = panelMessageText;
             }
@@ -3734,6 +3818,9 @@ function createInteractionCommandHandler(options = {}) {
             `Color: ${formatReactionRoleButtonStyle(buttonStyle)}`,
             `Roles (${resolvedRoles.length}): ${roleMentions}`,
           ];
+          if (panelMessageType === REACTION_ROLE_BUTTON_MESSAGE_TYPE_EMBED && Number.isInteger(embedColor)) {
+            replyLines.push(`Embed Sidebar: ${formatEmbedColorHex(embedColor)}`);
+          }
           if (warningLines.length > 0) {
             replyLines.push(`Warnings: ${warningLines.join(" ")}`);
           }
@@ -3749,6 +3836,10 @@ function createInteractionCommandHandler(options = {}) {
             `**Type:** ${panelMessageType}`,
             `**Color:** ${formatReactionRoleButtonStyle(buttonStyle)}`,
             `**Roles (${resolvedRoles.length}):** ${roleMentions}`,
+            ...(panelMessageType === REACTION_ROLE_BUTTON_MESSAGE_TYPE_EMBED &&
+            Number.isInteger(embedColor)
+              ? [`**Embed Sidebar:** ${formatEmbedColorHex(embedColor)}`]
+              : []),
           ]);
           logInteractionDebug(
             "reaction_role_button_panel_posted",
@@ -3760,6 +3851,7 @@ function createInteractionCommandHandler(options = {}) {
               messageId: panelMessage.id,
               messageType: panelMessageType,
               color: formatReactionRoleButtonStyle(buttonStyle),
+              embedColor: Number.isInteger(embedColor) ? formatEmbedColorHex(embedColor) : null,
               roleCount: resolvedRoles.length,
               roleIds: resolvedRoles.map((role) => role.id),
             }
@@ -3777,8 +3869,20 @@ function createInteractionCommandHandler(options = {}) {
             return;
           }
 
+          // button_edit supports three independent updates:
+          // - replace buttons/roles
+          // - recolor buttons
+          // - recolor embed sidebar / clear top text
           const requestedColor = String(interaction.options.getString("color") || "").trim();
           const hasColorUpdate = requestedColor.length > 0;
+          const requestedEmbedColor = String(
+            interaction.options.getString("embed_color") || ""
+          ).trim();
+          const hasEmbedColorUpdate = requestedEmbedColor.length > 0;
+          const isClearEmbedColor = /^(clear|none)$/i.test(requestedEmbedColor);
+          const parsedEmbedColor = hasEmbedColorUpdate && !isClearEmbedColor
+            ? parseEmbedColor(requestedEmbedColor)
+            : null;
           const replacementRoleIds = extractRoleIdsFromInteractionOptions(interaction).slice(0, 5);
           const hasRoleUpdate = replacementRoleIds.length > 0;
           const removeTopText = Boolean(interaction.options.getBoolean("remove_top_text"));
@@ -3792,10 +3896,17 @@ function createInteractionCommandHandler(options = {}) {
             });
             return;
           }
-          if (!hasColorUpdate && !removeTopText && !hasRoleUpdate) {
+          if (hasEmbedColorUpdate && !isClearEmbedColor && parsedEmbedColor === null) {
+            await interaction.reply({
+              content: "Invalid `embed_color`. Use 6-digit hex like `#57F287`, or `clear`.",
+              ephemeral: true,
+            });
+            return;
+          }
+          if (!hasColorUpdate && !removeTopText && !hasRoleUpdate && !hasEmbedColorUpdate) {
             await interaction.reply({
               content:
-                "Provide at least one update: `role` (up to `role_5`), `color`, or `remove_top_text:true`.",
+                "Provide at least one update: `role` (up to `role_5`), `color`, `embed_color`, or `remove_top_text:true`.",
               ephemeral: true,
             });
             return;
@@ -3863,12 +3974,31 @@ function createInteractionCommandHandler(options = {}) {
             return;
           }
 
+          const existingEmbeds = Array.isArray(targetMessage.embeds)
+            ? targetMessage.embeds.map((embed) =>
+                embed && typeof embed.toJSON === "function" ? embed.toJSON() : { ...(embed || {}) }
+              )
+            : [];
+          if (hasEmbedColorUpdate && existingEmbeds.length === 0) {
+            await interaction.reply({
+              content: "That message has no embed to recolor.",
+              ephemeral: true,
+            });
+            return;
+          }
+          const embedColorLabel = hasEmbedColorUpdate
+            ? isClearEmbedColor
+              ? "clear"
+              : formatEmbedColorHex(parsedEmbedColor)
+            : null;
+
           let roleUpdateMentions = "none";
           let roleUpdateWarning = "";
           let roleAssignabilityWarning = "";
           let updatedButtonCount = 0;
           let updatedComponents = null;
           if (hasRoleUpdate) {
+            // Rebuild the panel button rows from scratch when a new role set is provided.
             const resolvedRoles = [];
             const missingRoleIds = [];
             for (const roleId of replacementRoleIds) {
@@ -3928,6 +4058,7 @@ function createInteractionCommandHandler(options = {}) {
               roleAssignabilityWarning = `Could not fully validate role assignability (${err.message}).`;
             }
           } else {
+            // No role replacement: preserve existing button layout and only mutate styles if requested.
             updatedComponents = existingRows.map((row) => {
               const rowJson = row.toJSON();
               if (!Array.isArray(rowJson.components)) {
@@ -3962,6 +4093,17 @@ function createInteractionCommandHandler(options = {}) {
             if (removeTopText) {
               editPayload.content = null;
             }
+            if (hasEmbedColorUpdate) {
+              const updatedEmbeds = [...existingEmbeds];
+              const firstEmbed = { ...(updatedEmbeds[0] || {}) };
+              if (isClearEmbedColor) {
+                delete firstEmbed.color;
+              } else {
+                firstEmbed.color = parsedEmbedColor;
+              }
+              updatedEmbeds[0] = firstEmbed;
+              editPayload.embeds = updatedEmbeds;
+            }
             await targetMessage.edit(editPayload);
           } catch (err) {
             logInteractionFailure(
@@ -3977,6 +4119,8 @@ function createInteractionCommandHandler(options = {}) {
                 roleIds: hasRoleUpdate ? replacementRoleIds : [],
                 hasColorUpdate,
                 color: hasColorUpdate ? formatReactionRoleButtonStyle(buttonStyle) : null,
+                hasEmbedColorUpdate,
+                embedColor: embedColorLabel,
                 removeTopText,
               }
             );
@@ -3997,6 +4141,9 @@ function createInteractionCommandHandler(options = {}) {
           if (hasColorUpdate) {
             replyLines.push(`Color: ${formatReactionRoleButtonStyle(buttonStyle)}`);
             replyLines.push(`Buttons updated: ${updatedButtonCount}`);
+          }
+          if (hasEmbedColorUpdate) {
+            replyLines.push(`Embed Sidebar: ${embedColorLabel}`);
           }
           if (removeTopText) {
             replyLines.push("Top message text removed.");
@@ -4024,6 +4171,9 @@ function createInteractionCommandHandler(options = {}) {
             logLines.push(`**Color:** ${formatReactionRoleButtonStyle(buttonStyle)}`);
             logLines.push(`**Buttons Updated:** ${updatedButtonCount}`);
           }
+          if (hasEmbedColorUpdate) {
+            logLines.push(`**Embed Sidebar:** ${embedColorLabel}`);
+          }
           if (removeTopText) {
             logLines.push("**Top Text Removed:** yes");
           }
@@ -4047,6 +4197,8 @@ function createInteractionCommandHandler(options = {}) {
               roleIds: hasRoleUpdate ? replacementRoleIds : [],
               hasColorUpdate,
               color: hasColorUpdate ? formatReactionRoleButtonStyle(buttonStyle) : null,
+              hasEmbedColorUpdate,
+              embedColor: embedColorLabel,
               removeTopText,
               buttonCount: updatedButtonCount,
             }
