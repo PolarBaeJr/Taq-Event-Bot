@@ -290,12 +290,16 @@ Set accepted announcement channel/message:
 Reaction roles (subcommand shortcut):
 ```text
 /rr create message_id:123456789012345678 emoji:✅ role:@EventRole channel:#roles
-/rr button role:@EventRole role_2:@HelperRole channel:#roles message:Pick your roles below
+/rr button role:@EventRole role_2:@HelperRole channel:#roles color:green message:Pick your roles below
+/rr button role:@EventRole role_2:@HelperRole channel:#roles message_type:embed title:Choose Team Roles message:Pick your roles below
+/rr button_edit message_id:123456789012345678 channel:#roles color:red
 /rr list
 /rr remove message_id:123456789012345678 emoji:✅ channel:#roles
 /rr gui
 ```
-`/rr button` posts clickable buttons; users can click again to remove the same role.
+`/rr button` posts clickable buttons; users can click again to remove the same role.  
+`message_type` supports `text` (default) and `embed`.  
+`color` supports `gray`, `blue`, `green`, `red` on create and edit.
 
 Message tools (subcommand shortcut):
 ```text

@@ -13,6 +13,8 @@ All notable changes to this project are documented in this file.
 - Branch-protection setup script (`npm run protect:main`) to enforce CI/review rules on `main`.
 - New `/uptime` slash command to show current bot process uptime.
 - New `/reactionrole button` and `/rr button` subcommand to post clickable role-toggle button panels (supports multiple roles in one message).
+- New `/reactionrole button_edit` and `/rr button_edit` subcommand to recolor an existing button panel message.
+- `/reactionrole button` and `/rr button` now support `message_type:embed` plus optional embed `title` when creating panels.
 
 ### Changed
 - Startup config now includes env parsing for alerting, maintenance, and backup operations.

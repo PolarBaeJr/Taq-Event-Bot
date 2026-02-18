@@ -150,6 +150,7 @@ test("buildSlashCommands includes /reactionrole and /rr commands", () => {
   assert.ok(subcommandNames.has("remove"));
   assert.ok(subcommandNames.has("list"));
   assert.ok(subcommandNames.has("button"));
+  assert.ok(subcommandNames.has("button_edit"));
   assert.ok(subcommandNames.has("gui"));
 
   const rr = commands.find((command) => command.name === "rr");
@@ -161,7 +162,20 @@ test("buildSlashCommands includes /reactionrole and /rr commands", () => {
   assert.ok(rrSubcommandNames.has("remove"));
   assert.ok(rrSubcommandNames.has("list"));
   assert.ok(rrSubcommandNames.has("button"));
+  assert.ok(rrSubcommandNames.has("button_edit"));
   assert.ok(rrSubcommandNames.has("gui"));
+
+  const rrButtonSubcommand = (Array.isArray(rr.options) ? rr.options : []).find(
+    (option) => option.name === "button"
+  );
+  const rrButtonOptionNames = new Set(
+    (Array.isArray(rrButtonSubcommand?.options) ? rrButtonSubcommand.options : []).map(
+      (option) => option.name
+    )
+  );
+  assert.ok(rrButtonOptionNames.has("message_type"));
+  assert.ok(rrButtonOptionNames.has("title"));
+  assert.ok(rrButtonOptionNames.has("color"));
 });
 
 test("buildSlashCommands keeps /useapprole legacy command", () => {

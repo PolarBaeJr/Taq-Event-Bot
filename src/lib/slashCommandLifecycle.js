@@ -299,10 +299,97 @@ function createSlashCommandLifecycle(options = {}) {
                 .setDescription("Panel message text")
                 .setRequired(false)
             )
+            .addStringOption((option) =>
+              option
+                .setName("message_type")
+                .setDescription("Panel format")
+                .addChoices(
+                  {
+                    name: "Text",
+                    value: "text",
+                  },
+                  {
+                    name: "Embed",
+                    value: "embed",
+                  }
+                )
+                .setRequired(false)
+            )
+            .addStringOption((option) =>
+              option
+                .setName("title")
+                .setDescription("Embed title (for message_type:embed)")
+                .setRequired(false)
+            )
+            .addStringOption((option) =>
+              option
+                .setName("color")
+                .setDescription("Button color/style")
+                .addChoices(
+                  {
+                    name: "Gray",
+                    value: "secondary",
+                  },
+                  {
+                    name: "Blue",
+                    value: "primary",
+                  },
+                  {
+                    name: "Green",
+                    value: "success",
+                  },
+                  {
+                    name: "Red",
+                    value: "danger",
+                  }
+                )
+                .setRequired(false)
+            )
             .addChannelOption((option) =>
               option
                 .setName("channel")
                 .setDescription("Target channel (defaults to current)")
+                .setRequired(false)
+            )
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName("button_edit")
+            .setDescription("Change color/style on an existing button role panel")
+            .addStringOption((option) =>
+              option
+                .setName("message_id")
+                .setDescription("Button panel message ID")
+                .setRequired(true)
+            )
+            .addStringOption((option) =>
+              option
+                .setName("color")
+                .setDescription("New button color/style")
+                .addChoices(
+                  {
+                    name: "Gray",
+                    value: "secondary",
+                  },
+                  {
+                    name: "Blue",
+                    value: "primary",
+                  },
+                  {
+                    name: "Green",
+                    value: "success",
+                  },
+                  {
+                    name: "Red",
+                    value: "danger",
+                  }
+                )
+                .setRequired(true)
+            )
+            .addChannelOption((option) =>
+              option
+                .setName("channel")
+                .setDescription("Channel containing the panel message")
                 .setRequired(false)
             )
         )

@@ -2,6 +2,8 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  ComponentType,
+  EmbedBuilder,
   ModalBuilder,
   RoleSelectMenuBuilder,
   StringSelectMenuBuilder,
@@ -25,6 +27,14 @@ const COMMAND_OPTION_TYPE_SUBCOMMAND = 1;
 const COMMAND_OPTION_TYPE_SUBCOMMAND_GROUP = 2;
 const COMMAND_OPTION_TYPE_STRING = 3;
 const COMMAND_OPTION_TYPE_ROLE = 8;
+const REACTION_ROLE_BUTTON_MESSAGE_TYPE_TEXT = "text";
+const REACTION_ROLE_BUTTON_MESSAGE_TYPE_EMBED = "embed";
+const REACTION_ROLE_BUTTON_COLOR_CHOICES = Object.freeze({
+  secondary: ButtonStyle.Secondary,
+  primary: ButtonStyle.Primary,
+  success: ButtonStyle.Success,
+  danger: ButtonStyle.Danger,
+});
 
 function createInteractionCommandHandler(options = {}) {
   const PermissionsBitField = options.PermissionsBitField;
@@ -239,7 +249,7 @@ function createInteractionCommandHandler(options = {}) {
     };
   }
 
-  function buildReactionRoleButtonPanelComponents(guildId, buttonEntries) {
+  function buildReactionRoleButtonPanelComponents(guildId, buttonEntries, buttonStyle) {
     const entries = Array.isArray(buttonEntries)
       ? buttonEntries
           .map((entry) => {
@@ -264,6 +274,7 @@ function createInteractionCommandHandler(options = {}) {
     }
     const usableEntries = [...unique.values()].slice(0, 25);
     const rows = [];
+    const style = Number.isInteger(buttonStyle) ? buttonStyle : ButtonStyle.Secondary;
     for (let i = 0; i < usableEntries.length; i += 5) {
       const rowEntries = usableEntries.slice(i, i + 5);
       const row = new ActionRowBuilder();
@@ -272,12 +283,45 @@ function createInteractionCommandHandler(options = {}) {
           new ButtonBuilder()
             .setCustomId(buildReactionRoleButtonCustomId(guildId, entry.roleId))
             .setLabel(entry.label)
-            .setStyle(ButtonStyle.Secondary)
+            .setStyle(style)
         );
       }
       rows.push(row);
     }
     return rows;
+  }
+
+  function parseReactionRoleButtonStyle(rawValue) {
+    const normalized = String(rawValue || "").trim().toLowerCase();
+    if (!normalized) {
+      return ButtonStyle.Secondary;
+    }
+    return REACTION_ROLE_BUTTON_COLOR_CHOICES[normalized] || null;
+  }
+
+  function formatReactionRoleButtonStyle(style) {
+    switch (style) {
+      case ButtonStyle.Primary:
+        return "blue";
+      case ButtonStyle.Success:
+        return "green";
+      case ButtonStyle.Danger:
+        return "red";
+      case ButtonStyle.Secondary:
+      default:
+        return "gray";
+    }
+  }
+
+  function parseReactionRoleButtonMessageType(rawValue) {
+    const normalized = String(rawValue || "").trim().toLowerCase();
+    if (!normalized || normalized === REACTION_ROLE_BUTTON_MESSAGE_TYPE_TEXT) {
+      return REACTION_ROLE_BUTTON_MESSAGE_TYPE_TEXT;
+    }
+    if (normalized === REACTION_ROLE_BUTTON_MESSAGE_TYPE_EMBED) {
+      return REACTION_ROLE_BUTTON_MESSAGE_TYPE_EMBED;
+    }
+    return null;
   }
 
   function buildAppRoleGuiCustomId(action, userId, trackKey = "") {
@@ -3490,6 +3534,26 @@ function createInteractionCommandHandler(options = {}) {
         }
 
         if (action === "button") {
+          const requestedColor = String(interaction.options.getString("color") || "").trim();
+          const buttonStyle = parseReactionRoleButtonStyle(requestedColor);
+          if (!buttonStyle) {
+            await interaction.reply({
+              content: "Invalid color. Use one of: gray, blue, green, red.",
+              ephemeral: true,
+            });
+            return;
+          }
+          const messageTypeInput = String(
+            interaction.options.getString("message_type") || ""
+          ).trim();
+          const panelMessageType = parseReactionRoleButtonMessageType(messageTypeInput);
+          if (!panelMessageType) {
+            await interaction.reply({
+              content: "Invalid message type. Use `text` or `embed`.",
+              ephemeral: true,
+            });
+            return;
+          }
           const selectedRoleIds = extractRoleIdsFromInteractionOptions(interaction).slice(0, 25);
           if (selectedRoleIds.length === 0) {
             await interaction.reply({
@@ -3524,6 +3588,14 @@ function createInteractionCommandHandler(options = {}) {
             });
             return;
           }
+          const panelTitleInput = String(interaction.options.getString("title") || "").trim();
+          if (panelTitleInput.length > 256) {
+            await interaction.reply({
+              content: "Embed title cannot exceed 256 characters.",
+              ephemeral: true,
+            });
+            return;
+          }
           const panelMessageText =
             panelMessageInput || "Click a button below to add or remove the matching role.";
 
@@ -3551,7 +3623,8 @@ function createInteractionCommandHandler(options = {}) {
             resolvedRoles.map((role) => ({
               roleId: role.id,
               label: role.name,
-            }))
+            })),
+            buttonStyle
           );
 
           const warningLines = [];
@@ -3582,13 +3655,22 @@ function createInteractionCommandHandler(options = {}) {
 
           let panelMessage;
           try {
-            panelMessage = await targetChannel.send({
-              content: panelMessageText,
+            const payload = {
               components: panelComponents,
               allowedMentions: {
                 parse: [],
               },
-            });
+            };
+            if (panelMessageType === REACTION_ROLE_BUTTON_MESSAGE_TYPE_EMBED) {
+              payload.embeds = [
+                new EmbedBuilder()
+                  .setTitle(panelTitleInput || "Choose Roles")
+                  .setDescription(panelMessageText),
+              ];
+            } else {
+              payload.content = panelMessageText;
+            }
+            panelMessage = await targetChannel.send(payload);
           } catch (err) {
             logInteractionFailure(
               "reaction_role_button_panel_send_failed",
@@ -3614,6 +3696,8 @@ function createInteractionCommandHandler(options = {}) {
           const replyLines = [
             `Button role panel posted in <#${targetChannel.id}>.`,
             `Message: ${panelMessage.url}`,
+            `Type: ${panelMessageType}`,
+            `Color: ${formatReactionRoleButtonStyle(buttonStyle)}`,
             `Roles (${resolvedRoles.length}): ${roleMentions}`,
           ];
           if (warningLines.length > 0) {
@@ -3628,6 +3712,8 @@ function createInteractionCommandHandler(options = {}) {
           await postConfigurationLog(interaction, "Reaction Role Button Panel Posted", [
             `**Channel:** <#${targetChannel.id}>`,
             `**Message ID:** \`${panelMessage.id}\``,
+            `**Type:** ${panelMessageType}`,
+            `**Color:** ${formatReactionRoleButtonStyle(buttonStyle)}`,
             `**Roles (${resolvedRoles.length}):** ${roleMentions}`,
           ]);
           logInteractionDebug(
@@ -3638,8 +3724,173 @@ function createInteractionCommandHandler(options = {}) {
               action,
               channelId: targetChannel.id,
               messageId: panelMessage.id,
+              messageType: panelMessageType,
+              color: formatReactionRoleButtonStyle(buttonStyle),
               roleCount: resolvedRoles.length,
               roleIds: resolvedRoles.map((role) => role.id),
+            }
+          );
+          return;
+        }
+
+        if (action === "button_edit") {
+          const messageId = String(interaction.options.getString("message_id") || "").trim();
+          if (!isSnowflake(messageId)) {
+            await interaction.reply({
+              content: "Please provide a valid message ID.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          const requestedColor = String(interaction.options.getString("color") || "").trim();
+          const buttonStyle = parseReactionRoleButtonStyle(requestedColor);
+          if (!buttonStyle) {
+            await interaction.reply({
+              content: "Invalid color. Use one of: gray, blue, green, red.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          const channelInput = interaction.options.getChannel("channel");
+          const targetChannel = channelInput || interaction.channel;
+          if (
+            !targetChannel ||
+            !targetChannel.isTextBased() ||
+            typeof targetChannel.messages?.fetch !== "function"
+          ) {
+            await interaction.reply({
+              content: "Please select a valid text channel containing the panel message.",
+              ephemeral: true,
+            });
+            return;
+          }
+          if (targetChannel.guildId !== interaction.guildId) {
+            await interaction.reply({
+              content: "The selected channel must be in this server.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          const targetMessage = await targetChannel.messages.fetch(messageId).catch(() => null);
+          if (!targetMessage) {
+            await interaction.reply({
+              content: "Message not found in that channel.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          if (targetMessage.author?.id !== interaction.client?.user?.id) {
+            await interaction.reply({
+              content: "I can only edit button panels posted by this bot.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          const existingRows = Array.isArray(targetMessage.components)
+            ? targetMessage.components
+            : [];
+          if (existingRows.length === 0) {
+            await interaction.reply({
+              content: "That message has no components/buttons to update.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          let updatedButtonCount = 0;
+          const updatedComponents = existingRows.map((row) => {
+            const rowJson = row.toJSON();
+            if (!Array.isArray(rowJson.components)) {
+              return rowJson;
+            }
+
+            rowJson.components = rowJson.components.map((component) => {
+              if (component?.type !== ComponentType.Button) {
+                return component;
+              }
+              const customId = String(component?.custom_id || "").trim();
+              if (!customId) {
+                return component;
+              }
+              const buttonContext = parseReactionRoleButtonCustomId(customId);
+              if (!buttonContext || buttonContext.guildId !== interaction.guildId) {
+                return component;
+              }
+              updatedButtonCount += 1;
+              return {
+                ...component,
+                style: buttonStyle,
+              };
+            });
+
+            return rowJson;
+          });
+
+          if (updatedButtonCount === 0) {
+            await interaction.reply({
+              content:
+                "No button-role components were found on that message. Use `/rr button` to create one first.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          try {
+            await targetMessage.edit({
+              components: updatedComponents,
+            });
+          } catch (err) {
+            logInteractionFailure(
+              "reaction_role_button_panel_edit_failed",
+              "Failed updating reaction-role button panel colors.",
+              interaction,
+              err,
+              {
+                action,
+                channelId: targetChannel.id,
+                messageId,
+                color: formatReactionRoleButtonStyle(buttonStyle),
+              }
+            );
+            await interaction.reply({
+              content: err?.message || "Failed updating button panel colors.",
+              ephemeral: true,
+            });
+            return;
+          }
+
+          await interaction.reply({
+            content: [
+              `Updated button panel colors in <#${targetChannel.id}>.`,
+              `Message ID: \`${messageId}\``,
+              `Color: ${formatReactionRoleButtonStyle(buttonStyle)}`,
+              `Buttons updated: ${updatedButtonCount}`,
+            ].join("\n"),
+            ephemeral: true,
+            components: buildReactionRoleGuiComponents(interaction.user.id),
+          });
+
+          await postConfigurationLog(interaction, "Reaction Role Button Panel Recolored", [
+            `**Channel:** <#${targetChannel.id}>`,
+            `**Message ID:** \`${messageId}\``,
+            `**Color:** ${formatReactionRoleButtonStyle(buttonStyle)}`,
+            `**Buttons Updated:** ${updatedButtonCount}`,
+          ]);
+          logInteractionDebug(
+            "reaction_role_button_panel_recolored",
+            "Updated reaction-role button panel colors.",
+            interaction,
+            {
+              action,
+              channelId: targetChannel.id,
+              messageId,
+              color: formatReactionRoleButtonStyle(buttonStyle),
+              buttonCount: updatedButtonCount,
             }
           );
           return;
