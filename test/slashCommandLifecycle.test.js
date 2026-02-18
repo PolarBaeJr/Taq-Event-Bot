@@ -176,6 +176,17 @@ test("buildSlashCommands includes /reactionrole and /rr commands", () => {
   assert.ok(rrButtonOptionNames.has("message_type"));
   assert.ok(rrButtonOptionNames.has("title"));
   assert.ok(rrButtonOptionNames.has("color"));
+
+  const rrButtonEditSubcommand = (Array.isArray(rr.options) ? rr.options : []).find(
+    (option) => option.name === "button_edit"
+  );
+  const rrButtonEditOptionNames = new Set(
+    (Array.isArray(rrButtonEditSubcommand?.options) ? rrButtonEditSubcommand.options : []).map(
+      (option) => option.name
+    )
+  );
+  assert.ok(rrButtonEditOptionNames.has("color"));
+  assert.ok(rrButtonEditOptionNames.has("remove_top_text"));
 });
 
 test("buildSlashCommands keeps /useapprole legacy command", () => {

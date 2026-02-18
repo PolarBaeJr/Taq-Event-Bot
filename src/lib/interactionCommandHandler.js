@@ -3744,10 +3744,21 @@ function createInteractionCommandHandler(options = {}) {
           }
 
           const requestedColor = String(interaction.options.getString("color") || "").trim();
-          const buttonStyle = parseReactionRoleButtonStyle(requestedColor);
-          if (!buttonStyle) {
+          const hasColorUpdate = requestedColor.length > 0;
+          const removeTopText = Boolean(interaction.options.getBoolean("remove_top_text"));
+          const buttonStyle = hasColorUpdate
+            ? parseReactionRoleButtonStyle(requestedColor)
+            : null;
+          if (hasColorUpdate && !buttonStyle) {
             await interaction.reply({
               content: "Invalid color. Use one of: gray, blue, green, red.",
+              ephemeral: true,
+            });
+            return;
+          }
+          if (!hasColorUpdate && !removeTopText) {
+            await interaction.reply({
+              content: "Provide at least one update: `color` and/or `remove_top_text:true`.",
               ephemeral: true,
             });
             return;
@@ -3803,6 +3814,7 @@ function createInteractionCommandHandler(options = {}) {
           }
 
           let updatedButtonCount = 0;
+          let matchedButtonCount = 0;
           const updatedComponents = existingRows.map((row) => {
             const rowJson = row.toJSON();
             if (!Array.isArray(rowJson.components)) {
@@ -3821,17 +3833,18 @@ function createInteractionCommandHandler(options = {}) {
               if (!buttonContext || buttonContext.guildId !== interaction.guildId) {
                 return component;
               }
+              matchedButtonCount += 1;
+              if (!hasColorUpdate) {
+                return component;
+              }
               updatedButtonCount += 1;
-              return {
-                ...component,
-                style: buttonStyle,
-              };
+              return { ...component, style: buttonStyle };
             });
 
             return rowJson;
           });
 
-          if (updatedButtonCount === 0) {
+          if (matchedButtonCount === 0) {
             await interaction.reply({
               content:
                 "No button-role components were found on that message. Use `/rr button` to create one first.",
@@ -3841,55 +3854,74 @@ function createInteractionCommandHandler(options = {}) {
           }
 
           try {
-            await targetMessage.edit({
-              components: updatedComponents,
-            });
+            const editPayload = { components: updatedComponents };
+            if (removeTopText) {
+              editPayload.content = null;
+            }
+            await targetMessage.edit(editPayload);
           } catch (err) {
             logInteractionFailure(
               "reaction_role_button_panel_edit_failed",
-              "Failed updating reaction-role button panel colors.",
+              "Failed updating reaction-role button panel.",
               interaction,
               err,
               {
                 action,
                 channelId: targetChannel.id,
                 messageId,
-                color: formatReactionRoleButtonStyle(buttonStyle),
+                hasColorUpdate,
+                color: hasColorUpdate ? formatReactionRoleButtonStyle(buttonStyle) : null,
+                removeTopText,
               }
             );
             await interaction.reply({
-              content: err?.message || "Failed updating button panel colors.",
+              content: err?.message || "Failed updating button panel.",
               ephemeral: true,
             });
             return;
           }
 
+          const replyLines = [
+            `Updated button panel in <#${targetChannel.id}>.`,
+            `Message ID: \`${messageId}\``,
+          ];
+          if (hasColorUpdate) {
+            replyLines.push(`Color: ${formatReactionRoleButtonStyle(buttonStyle)}`);
+            replyLines.push(`Buttons updated: ${updatedButtonCount}`);
+          }
+          if (removeTopText) {
+            replyLines.push("Top message text removed.");
+          }
           await interaction.reply({
-            content: [
-              `Updated button panel colors in <#${targetChannel.id}>.`,
-              `Message ID: \`${messageId}\``,
-              `Color: ${formatReactionRoleButtonStyle(buttonStyle)}`,
-              `Buttons updated: ${updatedButtonCount}`,
-            ].join("\n"),
+            content: replyLines.join("\n"),
             ephemeral: true,
             components: buildReactionRoleGuiComponents(interaction.user.id),
           });
 
-          await postConfigurationLog(interaction, "Reaction Role Button Panel Recolored", [
+          const logLines = [
             `**Channel:** <#${targetChannel.id}>`,
             `**Message ID:** \`${messageId}\``,
-            `**Color:** ${formatReactionRoleButtonStyle(buttonStyle)}`,
-            `**Buttons Updated:** ${updatedButtonCount}`,
-          ]);
+          ];
+          if (hasColorUpdate) {
+            logLines.push(`**Color:** ${formatReactionRoleButtonStyle(buttonStyle)}`);
+            logLines.push(`**Buttons Updated:** ${updatedButtonCount}`);
+          }
+          if (removeTopText) {
+            logLines.push("**Top Text Removed:** yes");
+          }
+          await postConfigurationLog(interaction, "Reaction Role Button Panel Updated", logLines);
+
           logInteractionDebug(
-            "reaction_role_button_panel_recolored",
-            "Updated reaction-role button panel colors.",
+            "reaction_role_button_panel_updated",
+            "Updated reaction-role button panel.",
             interaction,
             {
               action,
               channelId: targetChannel.id,
               messageId,
-              color: formatReactionRoleButtonStyle(buttonStyle),
+              hasColorUpdate,
+              color: hasColorUpdate ? formatReactionRoleButtonStyle(buttonStyle) : null,
+              removeTopText,
               buttonCount: updatedButtonCount,
             }
           );

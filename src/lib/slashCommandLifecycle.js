@@ -384,7 +384,13 @@ function createSlashCommandLifecycle(options = {}) {
                     value: "danger",
                   }
                 )
-                .setRequired(true)
+                .setRequired(false)
+            )
+            .addBooleanOption((option) =>
+              option
+                .setName("remove_top_text")
+                .setDescription("Remove top message content above embed/buttons")
+                .setRequired(false)
             )
             .addChannelOption((option) =>
               option
