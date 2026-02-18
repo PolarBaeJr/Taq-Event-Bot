@@ -324,6 +324,40 @@ function createInteractionCommandHandler(options = {}) {
     return null;
   }
 
+  function summarizeExistingReactionRoleButtons(rows, guildId) {
+    const sourceRows = Array.isArray(rows) ? rows : [];
+    let count = 0;
+    let style = null;
+
+    for (const row of sourceRows) {
+      const rowJson =
+        row && typeof row.toJSON === "function" ? row.toJSON() : { ...(row || {}) };
+      const components = Array.isArray(rowJson?.components) ? rowJson.components : [];
+      for (const component of components) {
+        if (component?.type !== ComponentType.Button) {
+          continue;
+        }
+        const customId = String(component?.custom_id || "").trim();
+        if (!customId) {
+          continue;
+        }
+        const buttonContext = parseReactionRoleButtonCustomId(customId);
+        if (!buttonContext || buttonContext.guildId !== guildId) {
+          continue;
+        }
+        count += 1;
+        if (style === null && Number.isInteger(component?.style)) {
+          style = component.style;
+        }
+      }
+    }
+
+    return {
+      count,
+      style: Number.isInteger(style) ? style : ButtonStyle.Secondary,
+    };
+  }
+
   function buildAppRoleGuiCustomId(action, userId, trackKey = "") {
     const keyPart = String(trackKey || "").trim();
     return `${APPROLE_GUI_PREFIX}:${action}:${String(userId || "")}${keyPart ? `:${keyPart}` : ""}`;
@@ -3745,6 +3779,8 @@ function createInteractionCommandHandler(options = {}) {
 
           const requestedColor = String(interaction.options.getString("color") || "").trim();
           const hasColorUpdate = requestedColor.length > 0;
+          const replacementRoleIds = extractRoleIdsFromInteractionOptions(interaction).slice(0, 5);
+          const hasRoleUpdate = replacementRoleIds.length > 0;
           const removeTopText = Boolean(interaction.options.getBoolean("remove_top_text"));
           const buttonStyle = hasColorUpdate
             ? parseReactionRoleButtonStyle(requestedColor)
@@ -3756,9 +3792,10 @@ function createInteractionCommandHandler(options = {}) {
             });
             return;
           }
-          if (!hasColorUpdate && !removeTopText) {
+          if (!hasColorUpdate && !removeTopText && !hasRoleUpdate) {
             await interaction.reply({
-              content: "Provide at least one update: `color` and/or `remove_top_text:true`.",
+              content:
+                "Provide at least one update: `role` (up to `role_5`), `color`, or `remove_top_text:true`.",
               ephemeral: true,
             });
             return;
@@ -3813,44 +3850,111 @@ function createInteractionCommandHandler(options = {}) {
             return;
           }
 
-          let updatedButtonCount = 0;
-          let matchedButtonCount = 0;
-          const updatedComponents = existingRows.map((row) => {
-            const rowJson = row.toJSON();
-            if (!Array.isArray(rowJson.components)) {
-              return rowJson;
-            }
-
-            rowJson.components = rowJson.components.map((component) => {
-              if (component?.type !== ComponentType.Button) {
-                return component;
-              }
-              const customId = String(component?.custom_id || "").trim();
-              if (!customId) {
-                return component;
-              }
-              const buttonContext = parseReactionRoleButtonCustomId(customId);
-              if (!buttonContext || buttonContext.guildId !== interaction.guildId) {
-                return component;
-              }
-              matchedButtonCount += 1;
-              if (!hasColorUpdate) {
-                return component;
-              }
-              updatedButtonCount += 1;
-              return { ...component, style: buttonStyle };
-            });
-
-            return rowJson;
-          });
-
-          if (matchedButtonCount === 0) {
+          const existingSummary = summarizeExistingReactionRoleButtons(
+            existingRows,
+            interaction.guildId
+          );
+          if (existingSummary.count === 0) {
             await interaction.reply({
               content:
                 "No button-role components were found on that message. Use `/rr button` to create one first.",
               ephemeral: true,
             });
             return;
+          }
+
+          let roleUpdateMentions = "none";
+          let roleUpdateWarning = "";
+          let roleAssignabilityWarning = "";
+          let updatedButtonCount = 0;
+          let updatedComponents = null;
+          if (hasRoleUpdate) {
+            const resolvedRoles = [];
+            const missingRoleIds = [];
+            for (const roleId of replacementRoleIds) {
+              const role = await interaction.guild.roles.fetch(roleId).catch(() => null);
+              if (!role) {
+                missingRoleIds.push(roleId);
+                continue;
+              }
+              resolvedRoles.push(role);
+            }
+
+            if (resolvedRoles.length === 0) {
+              await interaction.reply({
+                content: "None of the provided roles were found in this server.",
+                ephemeral: true,
+              });
+              return;
+            }
+
+            const styleToUse = hasColorUpdate ? buttonStyle : existingSummary.style;
+            updatedComponents = buildReactionRoleButtonPanelComponents(
+              interaction.guildId,
+              resolvedRoles.map((role) => ({
+                roleId: role.id,
+                label: role.name,
+              })),
+              styleToUse
+            );
+            updatedButtonCount = resolvedRoles.length;
+            roleUpdateMentions = resolvedRoles.map((role) => `<@&${role.id}>`).join(", ");
+            if (missingRoleIds.length > 0) {
+              roleUpdateWarning = `Skipped missing roles: ${missingRoleIds
+                .map((id) => `\`${id}\``)
+                .join(", ")}.`;
+            }
+            try {
+              const me = await interaction.guild.members.fetchMe();
+              if (!me.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
+                roleAssignabilityWarning = "I do not currently have Manage Roles permission.";
+              } else {
+                const warnings = [];
+                for (const role of resolvedRoles) {
+                  if (me.roles.highest.comparePositionTo(role) <= 0) {
+                    warnings.push(`My top role must be above <@&${role.id}> to assign it.`);
+                  }
+                  if (role.managed) {
+                    warnings.push(
+                      `<@&${role.id}> is a managed/integration role and may not be assignable.`
+                    );
+                  }
+                }
+                if (warnings.length > 0) {
+                  roleAssignabilityWarning = warnings.join(" ");
+                }
+              }
+            } catch (err) {
+              roleAssignabilityWarning = `Could not fully validate role assignability (${err.message}).`;
+            }
+          } else {
+            updatedComponents = existingRows.map((row) => {
+              const rowJson = row.toJSON();
+              if (!Array.isArray(rowJson.components)) {
+                return rowJson;
+              }
+
+              rowJson.components = rowJson.components.map((component) => {
+                if (component?.type !== ComponentType.Button) {
+                  return component;
+                }
+                const customId = String(component?.custom_id || "").trim();
+                if (!customId) {
+                  return component;
+                }
+                const buttonContext = parseReactionRoleButtonCustomId(customId);
+                if (!buttonContext || buttonContext.guildId !== interaction.guildId) {
+                  return component;
+                }
+                if (!hasColorUpdate) {
+                  return component;
+                }
+                updatedButtonCount += 1;
+                return { ...component, style: buttonStyle };
+              });
+
+              return rowJson;
+            });
           }
 
           try {
@@ -3869,6 +3973,8 @@ function createInteractionCommandHandler(options = {}) {
                 action,
                 channelId: targetChannel.id,
                 messageId,
+                hasRoleUpdate,
+                roleIds: hasRoleUpdate ? replacementRoleIds : [],
                 hasColorUpdate,
                 color: hasColorUpdate ? formatReactionRoleButtonStyle(buttonStyle) : null,
                 removeTopText,
@@ -3885,12 +3991,21 @@ function createInteractionCommandHandler(options = {}) {
             `Updated button panel in <#${targetChannel.id}>.`,
             `Message ID: \`${messageId}\``,
           ];
+          if (hasRoleUpdate) {
+            replyLines.push(`Roles (${updatedButtonCount}): ${roleUpdateMentions}`);
+          }
           if (hasColorUpdate) {
             replyLines.push(`Color: ${formatReactionRoleButtonStyle(buttonStyle)}`);
             replyLines.push(`Buttons updated: ${updatedButtonCount}`);
           }
           if (removeTopText) {
             replyLines.push("Top message text removed.");
+          }
+          if (roleUpdateWarning) {
+            replyLines.push(`Warning: ${roleUpdateWarning}`);
+          }
+          if (roleAssignabilityWarning) {
+            replyLines.push(`Warning: ${roleAssignabilityWarning}`);
           }
           await interaction.reply({
             content: replyLines.join("\n"),
@@ -3902,12 +4017,21 @@ function createInteractionCommandHandler(options = {}) {
             `**Channel:** <#${targetChannel.id}>`,
             `**Message ID:** \`${messageId}\``,
           ];
+          if (hasRoleUpdate) {
+            logLines.push(`**Roles (${updatedButtonCount}):** ${roleUpdateMentions}`);
+          }
           if (hasColorUpdate) {
             logLines.push(`**Color:** ${formatReactionRoleButtonStyle(buttonStyle)}`);
             logLines.push(`**Buttons Updated:** ${updatedButtonCount}`);
           }
           if (removeTopText) {
             logLines.push("**Top Text Removed:** yes");
+          }
+          if (roleUpdateWarning) {
+            logLines.push(`**Role Warning:** ${roleUpdateWarning}`);
+          }
+          if (roleAssignabilityWarning) {
+            logLines.push(`**Assignability Warning:** ${roleAssignabilityWarning}`);
           }
           await postConfigurationLog(interaction, "Reaction Role Button Panel Updated", logLines);
 
@@ -3919,6 +4043,8 @@ function createInteractionCommandHandler(options = {}) {
               action,
               channelId: targetChannel.id,
               messageId,
+              hasRoleUpdate,
+              roleIds: hasRoleUpdate ? replacementRoleIds : [],
               hasColorUpdate,
               color: hasColorUpdate ? formatReactionRoleButtonStyle(buttonStyle) : null,
               removeTopText,

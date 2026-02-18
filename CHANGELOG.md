@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 ## [Unreleased]
 
 ### Added
+- Planned updates.
+
+### Changed
+- Planned updates.
+
+### Fixed
+- Planned updates.
+
+## [1.4.5] - 2026-02-18
+
+### Added
 - Operational alerting support via Discord webhook (`ALERT_WEBHOOK_URL`) for startup, retry, crash, and stop/restart actions.
 - Scheduled backup snapshots for bot state and exported config (`BACKUP_*` settings).
 - Maintenance manager for control-log rotation and crash-log retention cleanup.
@@ -16,6 +27,7 @@ All notable changes to this project are documented in this file.
 - New `/reactionrole button_edit` and `/rr button_edit` subcommand to recolor an existing button panel message.
 - `/reactionrole button` and `/rr button` now support `message_type:embed` plus optional embed `title` when creating panels.
 - `/reactionrole button_edit` and `/rr button_edit` now support `remove_top_text:true` to clear message content above the embed/buttons.
+- `/reactionrole button_edit` and `/rr button_edit` now support replacing the button role set (`role`..`role_5`) on existing panels.
 
 ### Changed
 - Startup config now includes env parsing for alerting, maintenance, and backup operations.

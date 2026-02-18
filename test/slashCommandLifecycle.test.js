@@ -185,6 +185,8 @@ test("buildSlashCommands includes /reactionrole and /rr commands", () => {
       (option) => option.name
     )
   );
+  assert.ok(rrButtonEditOptionNames.has("role"));
+  assert.ok(rrButtonEditOptionNames.has("role_5"));
   assert.ok(rrButtonEditOptionNames.has("color"));
   assert.ok(rrButtonEditOptionNames.has("remove_top_text"));
 });

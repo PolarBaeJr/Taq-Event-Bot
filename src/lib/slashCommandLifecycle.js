@@ -355,12 +355,42 @@ function createSlashCommandLifecycle(options = {}) {
         .addSubcommand((subcommand) =>
           subcommand
             .setName("button_edit")
-            .setDescription("Change color/style on an existing button role panel")
+            .setDescription("Change buttons/color/style on an existing button role panel")
             .addStringOption((option) =>
               option
                 .setName("message_id")
                 .setDescription("Button panel message ID")
                 .setRequired(true)
+            )
+            .addRoleOption((option) =>
+              option
+                .setName("role")
+                .setDescription("First role (replaces buttons when provided)")
+                .setRequired(false)
+            )
+            .addRoleOption((option) =>
+              option
+                .setName("role_2")
+                .setDescription("Second role")
+                .setRequired(false)
+            )
+            .addRoleOption((option) =>
+              option
+                .setName("role_3")
+                .setDescription("Third role")
+                .setRequired(false)
+            )
+            .addRoleOption((option) =>
+              option
+                .setName("role_4")
+                .setDescription("Fourth role")
+                .setRequired(false)
+            )
+            .addRoleOption((option) =>
+              option
+                .setName("role_5")
+                .setDescription("Fifth role")
+                .setRequired(false)
             )
             .addStringOption((option) =>
               option
