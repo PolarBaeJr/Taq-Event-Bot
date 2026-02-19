@@ -9,6 +9,7 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- Application threads are now auto-archived immediately after acceptance or denial (manual decisions and vote-driven decisions).
 
 ### Fixed
 

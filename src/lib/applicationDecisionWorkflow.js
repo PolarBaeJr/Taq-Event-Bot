@@ -144,6 +144,17 @@ function createApplicationDecisionWorkflow(options = {}) {
       try {
         const thread = await client.channels.fetch(application.threadId);
         if (thread && thread.isTextBased()) {
+          if (
+            "archived" in thread &&
+            thread.archived &&
+            typeof thread.setArchived === "function"
+          ) {
+            try {
+              await thread.setArchived(false, "Posting acceptance-blocked notice");
+            } catch {
+              // ignore and continue
+            }
+          }
           await thread.send({ content: summary, allowedMentions: { parse: [] } });
         }
       } catch (err) {
@@ -262,6 +273,17 @@ function createApplicationDecisionWorkflow(options = {}) {
       try {
         const thread = await client.channels.fetch(application.threadId);
         if (thread && thread.isTextBased()) {
+          if (
+            "archived" in thread &&
+            thread.archived &&
+            typeof thread.setArchived === "function"
+          ) {
+            try {
+              await thread.setArchived(false, "Posting application decision");
+            } catch {
+              // ignore and continue
+            }
+          }
           await thread.send({ content: summary, allowedMentions: { parse: [] } });
         }
       } catch (err) {
@@ -270,6 +292,39 @@ function createApplicationDecisionWorkflow(options = {}) {
           err.message
         );
       }
+    }
+  }
+
+  // archiveDecisionThread: handles archive decision thread.
+  async function archiveDecisionThread(application, decision) {
+    if (!application?.threadId) {
+      return;
+    }
+
+    try {
+      const thread = await client.channels.fetch(application.threadId);
+      if (
+        !thread ||
+        !thread.isTextBased() ||
+        typeof thread.setArchived !== "function"
+      ) {
+        return;
+      }
+
+      if ("archived" in thread && thread.archived) {
+        return;
+      }
+
+      const archiveReason =
+        decision === statusAccepted
+          ? "Application accepted - archiving discussion thread"
+          : "Application denied - archiving discussion thread";
+      await thread.setArchived(true, archiveReason);
+    } catch (err) {
+      console.error(
+        `Failed auto-archiving decision thread ${application.threadId}:`,
+        err.message
+      );
     }
   }
 
@@ -420,6 +475,17 @@ function createApplicationDecisionWorkflow(options = {}) {
       try {
         const thread = await client.channels.fetch(application.threadId);
         if (thread && thread.isTextBased()) {
+          if (
+            "archived" in thread &&
+            thread.archived &&
+            typeof thread.setArchived === "function"
+          ) {
+            try {
+              await thread.setArchived(false, "Application reopened");
+            } catch {
+              // ignore and continue
+            }
+          }
           await thread.send({ content: summary, allowedMentions: { parse: [] } });
         }
       } catch (err) {
@@ -663,6 +729,7 @@ function createApplicationDecisionWorkflow(options = {}) {
     await postDecisionUpdate(application, decision, decisionReason);
     await postForcedDecisionTemplateToThread(application, decision, decisionReason);
     await postClosureLog(application);
+    await archiveDecisionThread(application, decision);
 
     return { ok: true, application };
   }
