@@ -20,3 +20,4 @@ control-actions.log
 *.log
 backups/
 .DS_Store
+CLAUDE.md

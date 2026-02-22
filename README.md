@@ -186,7 +186,7 @@ Release helper:
 
 ```bash
 npm run release -- patch
-npm run release -- 1.1.2 --push --all
+npm run release -- 1.4.6 --push --all
 ```
 
 Apply branch protection for `main` (requires admin token):
@@ -459,17 +459,17 @@ pm2 save
 
 Sync them from your local machine:
 ```bash
-scp -i ~/.ssh/Discordbot.key \
-  /path/to/your/project/.env \
-  /path/to/your/project/service-account.json \
-  /path/to/your/project/.bot-state.json \
-  opc@159.54.167.100:~/Taq-Event-Bot/
+scp -i ~/.ssh/{yourkey}.key \
+  /path/to/your/{project}/.env \
+  /path/to/your/{project}/service-account.json \
+  /path/to/your/{project}/.bot-state.json \
+  (user)@{publicip}:~/{your folder's path/
 ```
 
 Then on server:
 ```bash
-chmod 600 ~/Taq-Event-Bot/.env ~/Taq-Event-Bot/service-account.json
-pm2 restart taq-event-bot --update-env
+chmod 600 ~/{bot}/.env ~/{bot}/service-account.json
+pm2 restart {botname} --update-env
 ```
 
 ## Notes
