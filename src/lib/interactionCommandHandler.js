@@ -27,6 +27,7 @@ const APPROLE_GUI_ACTION_TRACK = "track";
 const APPROLE_GUI_ACTION_ROLES = "roles";
 const ACCEPT_RESOLVE_MODAL_PREFIX = "acceptresolve";
 const ACCEPT_RESOLVE_MODAL_FIELD_APPLICANT = "applicant_hint";
+const APPLY_MODAL_PREFIX = "apply_modal";
 const ACCEPT_RESOLVE_PROMPT_TTL_MS = 10 * 60 * 1000;
 const COMMAND_OPTION_TYPE_SUBCOMMAND = 1;
 const COMMAND_OPTION_TYPE_SUBCOMMAND_GROUP = 2;
@@ -173,6 +174,14 @@ function createInteractionCommandHandler(options = {}) {
     : 40;
   const getTrackKeyForChannelId = options.getTrackKeyForChannelId;
   const getActiveChannelId = options.getActiveChannelId;
+  const getApplicationDisplayId =
+    typeof options.getApplicationDisplayId === "function"
+      ? options.getApplicationDisplayId
+      : (app) => app?.applicationId || app?.jobId || app?.messageId || "unknown";
+  const enqueueModalApplication =
+    typeof options.enqueueModalApplication === "function"
+      ? options.enqueueModalApplication
+      : null;
   const logger =
     options.logger &&
     typeof options.logger.error === "function" &&
@@ -185,6 +194,47 @@ function createInteractionCommandHandler(options = {}) {
       : null;
   const pendingAcceptResolvePrompts = new Map();
   let acceptResolvePromptCounter = 0;
+
+  function buildApplyModal(trackKey, trackLabel) {
+    const modal = new ModalBuilder()
+      .setCustomId(`${APPLY_MODAL_PREFIX}:${trackKey}`)
+      .setTitle(`Apply for ${trackLabel}`);
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("ign")
+          .setLabel("In-Game Name / Username")
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setMaxLength(100)
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("why")
+          .setLabel("Why do you want to join?")
+          .setStyle(TextInputStyle.Paragraph)
+          .setRequired(true)
+          .setMaxLength(500)
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("experience")
+          .setLabel("Relevant experience")
+          .setStyle(TextInputStyle.Paragraph)
+          .setRequired(false)
+          .setMaxLength(500)
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("extra")
+          .setLabel("Anything else to add? (optional)")
+          .setStyle(TextInputStyle.Paragraph)
+          .setRequired(false)
+          .setMaxLength(300)
+      )
+    );
+    return modal;
+  }
 
   // "Manage roles config" is intentionally stricter than plain ManageGuild to avoid accidental role edits.
   function hasManageRolesConfigPermission(memberPerms) {
@@ -1424,6 +1474,36 @@ function createInteractionCommandHandler(options = {}) {
           return;
         }
 
+        if (interaction.customId.startsWith(`${APPLY_MODAL_PREFIX}:`)) {
+          const parts = interaction.customId.split(":");
+          const trackKey = parts.slice(1).join(":");
+          const ign = (interaction.fields.getTextInputValue("ign") || "").trim();
+          const why = (interaction.fields.getTextInputValue("why") || "").trim();
+          const experience = (interaction.fields.getTextInputValue("experience") || "").trim();
+          const extra = (interaction.fields.getTextInputValue("extra") || "").trim();
+          if (!enqueueModalApplication) {
+            await interaction.reply({
+              content: "Application submission is currently unavailable. Please try again later.",
+              ephemeral: true,
+            });
+            return;
+          }
+          const jobId = enqueueModalApplication({
+            trackKey,
+            discordUsername: interaction.user.username,
+            discordUserId: interaction.user.id,
+            ign,
+            whyApply: why,
+            experience,
+            extra,
+          });
+          await interaction.reply({
+            content: `Your application has been submitted! (Job ID: \`${jobId}\`) Our team will review it shortly.`,
+            ephemeral: true,
+          });
+          return;
+        }
+
         const guiContext = parseReactionRoleGuiCustomId(interaction.customId);
         if (!guiContext) {
           return;
@@ -1701,7 +1781,9 @@ function createInteractionCommandHandler(options = {}) {
             interaction.commandName === "debug" ||
             interaction.commandName === "track" ||
             interaction.commandName === "settings" ||
-            interaction.commandName === "repostapps");
+            interaction.commandName === "repostapps" ||
+            interaction.commandName === "lookup" ||
+            interaction.commandName === "apply");
 
         if (!supportsTrackAutocomplete) {
           await interaction.respond([]);
@@ -1854,6 +1936,8 @@ function createInteractionCommandHandler(options = {}) {
       const isDebug = interaction.commandName === "debug";
       const isStop = interaction.commandName === "stop";
       const isRestart = interaction.commandName === "restart";
+      const isLookup = interaction.commandName === "lookup";
+      const isApply = interaction.commandName === "apply";
       if (
         !isAccept &&
         !isDeny &&
@@ -1880,7 +1964,9 @@ function createInteractionCommandHandler(options = {}) {
         !isSuggestions &&
         !isDebug &&
         !isStop &&
-        !isRestart
+        !isRestart &&
+        !isLookup &&
+        !isApply
       ) {
         return;
       }
@@ -2128,6 +2214,7 @@ function createInteractionCommandHandler(options = {}) {
           const numerator = interaction.options.getInteger("numerator");
           const denominator = interaction.options.getInteger("denominator");
           const minimumVotes = interaction.options.getInteger("minimum_votes");
+          const rawDeadlineHours = interaction.options.getInteger("deadline_hours");
           if (track === null || numerator === null || denominator === null) {
             await interaction.reply({
               content: "For `/settings vote`, provide `track`, `numerator`, and `denominator`.",
@@ -2136,13 +2223,17 @@ function createInteractionCommandHandler(options = {}) {
             return;
           }
 
+          // Build update object — only include deadlineHours if the option was explicitly provided.
+          // rawDeadlineHours === null means option was not provided (keep existing).
+          // rawDeadlineHours === 0 means disable.
+          const voteRuleUpdate = { numerator, denominator, minimumVotes };
+          if (rawDeadlineHours !== null) {
+            voteRuleUpdate.deadlineHours = rawDeadlineHours === 0 ? null : rawDeadlineHours;
+          }
+
           let update;
           try {
-            update = setTrackVoteRule(track, {
-              numerator,
-              denominator,
-              minimumVotes,
-            });
+            update = setTrackVoteRule(track, voteRuleUpdate);
           } catch (err) {
             await interaction.reply({
               content: err.message || "Failed updating vote settings.",
@@ -4556,6 +4647,94 @@ function createInteractionCommandHandler(options = {}) {
         });
 
         setTimeout(() => process.exit(0), 500);
+        return;
+      }
+
+      if (isLookup) {
+        if (!canManageServer) {
+          await interaction.reply({
+            content: "You need Manage Server permission (or Administrator) to use /lookup.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        const targetUser = interaction.options.getUser("user");
+        if (!targetUser) {
+          await interaction.reply({ content: "Please provide a user.", ephemeral: true });
+          return;
+        }
+        const trackFilter = interaction.options.getString("track");
+        const normalizedTrackFilter = trackFilter ? normalizeTrackKey(trackFilter) : null;
+        const state = readState();
+        let apps = Object.values(state.applications || {}).filter(
+          (app) => app?.applicantUserId === targetUser.id
+        );
+        if (!apps.length) {
+          // Fallback: match by username (case-insensitive)
+          const usernameLower = (targetUser.username || "").toLowerCase();
+          apps = Object.values(state.applications || {}).filter(
+            (app) =>
+              app?.applicantName &&
+              String(app.applicantName).toLowerCase().includes(usernameLower)
+          );
+        }
+        if (normalizedTrackFilter) {
+          apps = apps.filter((app) => normalizeTrackKey(app?.trackKey) === normalizedTrackFilter);
+        }
+        apps.sort((a, b) => {
+          const aMs = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const bMs = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
+          return bMs - aMs;
+        });
+
+        if (apps.length === 0) {
+          await interaction.reply({
+            content: `No applications found for **${targetUser.tag}**${normalizedTrackFilter ? ` in ${getTrackLabel(normalizedTrackFilter)}` : ""}.`,
+            ephemeral: true,
+          });
+          return;
+        }
+
+        const statusIcon = (status) => {
+          if (status === "accepted") return "✅";
+          if (status === "denied") return "❌";
+          return "⏳";
+        };
+
+        const fields = apps.slice(0, 25).map((app) => {
+          const appId = getApplicationDisplayId(app) || app.messageId || "unknown";
+          const track = getTrackLabel(app.trackKey);
+          const status = app.status || "pending";
+          const submitted = app.createdAt ? `<t:${Math.floor(new Date(app.createdAt).getTime() / 1000)}:d>` : "unknown";
+          const decided = app.decidedAt ? `<t:${Math.floor(new Date(app.decidedAt).getTime() / 1000)}:d>` : "—";
+          return {
+            name: `${track} — ${appId}`,
+            value: `${statusIcon(status)} **${status.toUpperCase()}** | Submitted: ${submitted} | Decided: ${decided}`,
+            inline: false,
+          };
+        });
+
+        const embed = new EmbedBuilder()
+          .setTitle(`Application History: @${targetUser.username}`)
+          .setColor(0x5865f2)
+          .addFields(fields)
+          .setFooter({ text: `Showing ${Math.min(apps.length, 25)} of ${apps.length} application(s)` });
+
+        await interaction.reply({ embeds: [embed], ephemeral: true });
+        return;
+      }
+
+      if (isApply) {
+        const trackKey = interaction.options.getString("track");
+        const normalized = normalizeTrackKey(trackKey);
+        if (!normalized) {
+          await interaction.reply({ content: "Unknown track. Please select a valid track.", ephemeral: true });
+          return;
+        }
+        const trackLabel = getTrackLabel(normalized);
+        const modal = buildApplyModal(normalized, trackLabel);
+        await interaction.showModal(modal);
         return;
       }
 
