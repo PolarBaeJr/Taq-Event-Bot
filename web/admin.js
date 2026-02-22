@@ -15,6 +15,9 @@ const {
   removeCustomQuestion,
   moveCustomQuestion,
   resetCustomQuestions,
+  editCustomQuestion,
+  updateApplication,
+  deleteApplication,
 } = require("./auth");
 
 const STATE_FILE = process.env.STATE_FILE || path.join(__dirname, "../.bot-state.json");
@@ -204,25 +207,21 @@ router.get("/dashboard", requireAuth, (req, res) => {
 });
 
 // Questions
-router.get("/questions", requireAuth, (req, res) => {
-  const state = readRawState();
-  const builtinTrackKeys = ["tester", "builder", "cmd"];
-  const customTracks = Array.isArray(state?.settings?.customTracks) ? state.settings.customTracks : [];
-  const allTracks = [
-    ...builtinTrackKeys.map((k) => ({ key: k, label: k.charAt(0).toUpperCase() + k.slice(1) })),
-    ...customTracks.map((t) => ({ key: t.key, label: t.label || t.key })),
-  ];
-  const customQuestions = loadCustomQuestions();
+function buildQuestionSection(key, label, questions, { isDefault = false } = {}) {
+  const slugId = (suffix) => `qs-${key.replace(/[^a-z0-9]/gi, "_")}-${suffix}`;
 
-  const trackSections = allTracks.map(({ key, label }) => {
-    const questions = Array.isArray(customQuestions[key]) ? customQuestions[key] : [];
-    const rows = questions.map((q, i) => `
+  const rows = questions.map((q, i) => {
+    const editId = slugId(`edit-${i}`);
+    const typeOpts = ["text", "textarea", "select"].map((t) =>
+      `<option value="${t}" ${q.type === t ? "selected" : ""}>${t}</option>`
+    ).join("");
+    return `
       <tr>
-        <td>${escHtml(q.id)}</td>
+        <td><code>${escHtml(q.id)}</code></td>
         <td>${escHtml(q.label)}</td>
         <td>${escHtml(q.type)}</td>
         <td>${q.required ? "Yes" : "No"}</td>
-        <td>${escHtml((q.options || []).join(", "))}</td>
+        <td class="muted-note">${escHtml((q.options || []).join(", "))}</td>
         <td class="actions-cell">
           ${i > 0 ? `<form method="POST" action="/admin/questions/${escHtml(key)}/move" style="display:inline">
             <input type="hidden" name="id" value="${escHtml(q.id)}"/>
@@ -234,83 +233,153 @@ router.get("/questions", requireAuth, (req, res) => {
             <input type="hidden" name="direction" value="down"/>
             <button type="submit" class="btn-sm">↓</button>
           </form>` : ""}
-          <form method="POST" action="/admin/questions/${escHtml(key)}/remove" style="display:inline" onsubmit="return confirm('Remove this question?')">
+          <button type="button" class="btn-sm" onclick="toggleEl('${editId}')">Edit</button>
+          <form method="POST" action="/admin/questions/${escHtml(key)}/remove" style="display:inline"
+            onsubmit="return confirm('Remove this question?')">
             <input type="hidden" name="id" value="${escHtml(q.id)}"/>
             <button type="submit" class="btn-sm btn-danger">Remove</button>
           </form>
         </td>
-      </tr>`).join("");
-
-    const table = questions.length > 0 ? `
-      <table class="admin-table">
-        <thead><tr><th>ID</th><th>Label</th><th>Type</th><th>Required</th><th>Options</th><th>Actions</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>` : `<p class="muted-note">No custom questions for this track.</p>`;
-
-    return `
-      <section class="track-section">
-        <div class="track-section-header">
-          <h2>${escHtml(label)} <code>(${escHtml(key)})</code></h2>
-          <form method="POST" action="/admin/questions/${escHtml(key)}/reset" style="display:inline"
-            onsubmit="return confirm('Remove ALL custom questions for ${escHtml(label)}?')">
-            <button type="submit" class="btn-sm btn-danger">Reset All</button>
-          </form>
-        </div>
-        ${table}
-        <details class="add-form-wrap">
-          <summary>+ Add question</summary>
-          <form method="POST" action="/admin/questions/${escHtml(key)}/add" class="inline-form">
+      </tr>
+      <tr id="${editId}" class="edit-row" style="display:none">
+        <td colspan="6">
+          <form method="POST" action="/admin/questions/${escHtml(key)}/edit" class="inline-form edit-inline-form">
+            <input type="hidden" name="originalId" value="${escHtml(q.id)}"/>
             <div class="form-row">
               <div class="field">
-                <label>ID (no spaces)</label>
-                <input type="text" name="id" required pattern="[A-Za-z0-9_\\-]+" title="Letters, numbers, underscores, hyphens only"/>
-              </div>
-              <div class="field">
                 <label>Label</label>
-                <input type="text" name="label" required/>
+                <input type="text" name="label" value="${escHtml(q.label)}" required/>
               </div>
               <div class="field">
                 <label>Sheet Header</label>
-                <input type="text" name="sheetHeader" required/>
+                <input type="text" name="sheetHeader" value="${escHtml(q.sheetHeader || q.label)}" required/>
+              </div>
+              <div class="field">
+                <label>Placeholder</label>
+                <input type="text" name="placeholder" value="${escHtml(q.placeholder || "")}"/>
               </div>
             </div>
             <div class="form-row">
               <div class="field">
                 <label>Type</label>
-                <select name="type">
-                  <option value="text">text</option>
-                  <option value="textarea">textarea</option>
-                  <option value="select">select</option>
-                </select>
+                <select name="type">${typeOpts}</select>
               </div>
               <div class="field">
                 <label>Required?</label>
                 <select name="required">
-                  <option value="false">No</option>
-                  <option value="true">Yes</option>
+                  <option value="false" ${!q.required ? "selected" : ""}>No</option>
+                  <option value="true" ${q.required ? "selected" : ""}>Yes</option>
                 </select>
               </div>
               <div class="field">
-                <label>Options (comma-sep, for select)</label>
-                <input type="text" name="options" placeholder="Yes, No, Maybe"/>
+                <label>Options (comma-sep)</label>
+                <input type="text" name="options" value="${escHtml((q.options || []).join(", "))}"/>
               </div>
             </div>
-            <div class="form-row">
-              <div class="field" style="flex:1">
-                <label>Placeholder</label>
-                <input type="text" name="placeholder"/>
-              </div>
-            </div>
-            <button type="submit" class="btn-primary">Add Question</button>
+            <button type="submit" class="btn-primary">Save</button>
+            <button type="button" class="btn-sm" onclick="toggleEl('${editId}')">Cancel</button>
           </form>
-        </details>
-      </section>`;
-  }).join("\n");
+        </td>
+      </tr>`;
+  }).join("");
+
+  const table = questions.length > 0 ? `
+    <table class="admin-table">
+      <thead><tr><th>ID</th><th>Label</th><th>Type</th><th>Required</th><th>Options</th><th>Actions</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>` : `<p class="muted-note">No questions defined yet.</p>`;
+
+  const headerNote = isDefault
+    ? `<span class="muted-note" style="font-size:0.8rem;font-weight:400"> — appears on every track's form</span>`
+    : "";
+
+  return `
+    <section class="track-section${isDefault ? " track-section-default" : ""}">
+      <div class="track-section-header">
+        <h2>${escHtml(label)}${headerNote}</h2>
+        <form method="POST" action="/admin/questions/${escHtml(key)}/reset" style="display:inline"
+          onsubmit="return confirm('Remove ALL questions for ${escHtml(label)}?')">
+          <button type="submit" class="btn-sm btn-danger">Reset All</button>
+        </form>
+      </div>
+      ${table}
+      <details class="add-form-wrap">
+        <summary>+ Add question</summary>
+        <form method="POST" action="/admin/questions/${escHtml(key)}/add" class="inline-form">
+          <div class="form-row">
+            <div class="field">
+              <label>ID (no spaces)</label>
+              <input type="text" name="id" required pattern="[A-Za-z0-9_\\-]+" title="Letters, numbers, underscores, hyphens only"/>
+            </div>
+            <div class="field">
+              <label>Label</label>
+              <input type="text" name="label" required/>
+            </div>
+            <div class="field">
+              <label>Sheet Header</label>
+              <input type="text" name="sheetHeader" required/>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="field">
+              <label>Type</label>
+              <select name="type">
+                <option value="text">text</option>
+                <option value="textarea">textarea</option>
+                <option value="select">select</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Required?</label>
+              <select name="required">
+                <option value="false">No</option>
+                <option value="true">Yes</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Options (comma-sep, for select)</label>
+              <input type="text" name="options" placeholder="Yes, No, Maybe"/>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="field" style="flex:1">
+              <label>Placeholder</label>
+              <input type="text" name="placeholder"/>
+            </div>
+          </div>
+          <button type="submit" class="btn-primary">Add Question</button>
+        </form>
+      </details>
+    </section>`;
+}
+
+router.get("/questions", requireAuth, (req, res) => {
+  const state = readRawState();
+  const builtinTrackKeys = ["tester", "builder", "cmd"];
+  const customTracks = Array.isArray(state?.settings?.customTracks) ? state.settings.customTracks : [];
+  const allTracks = [
+    ...builtinTrackKeys.map((k) => ({ key: k, label: k.charAt(0).toUpperCase() + k.slice(1) })),
+    ...customTracks.map((t) => ({ key: t.key, label: t.label || t.key })),
+  ];
+  const customQuestions = loadCustomQuestions();
+
+  const defaultSection = buildQuestionSection(
+    "__default__",
+    "All Tracks (Default)",
+    Array.isArray(customQuestions["__default__"]) ? customQuestions["__default__"] : [],
+    { isDefault: true }
+  );
+
+  const trackSections = allTracks.map(({ key, label }) =>
+    buildQuestionSection(key, label, Array.isArray(customQuestions[key]) ? customQuestions[key] : [])
+  ).join("\n");
 
   res.send(adminLayout("Question Management", `
     ${flash(req)}
-    <p class="muted-note">Custom questions are appended after each track's default questions.</p>
+    <p class="muted-note">Default questions appear on all tracks. Track questions are appended after built-in questions.</p>
+    ${defaultSection}
     ${trackSections}
+    <script>function toggleEl(id){var el=document.getElementById(id);el.style.display=el.style.display==='none'?'':'none';}</script>
   `, req.session.username));
 });
 
@@ -367,6 +436,26 @@ router.post("/questions/:track/reset", requireAuth, (req, res) => {
   res.redirect("/admin/questions");
 });
 
+router.post("/questions/:track/edit", requireAuth, (req, res) => {
+  const trackKey = req.params.track;
+  const { originalId, label, sheetHeader, type, required, options, placeholder } = req.body;
+  try {
+    const optArr = options ? options.split(",").map((s) => s.trim()).filter(Boolean) : [];
+    editCustomQuestion(trackKey, originalId, {
+      label: String(label || "").trim(),
+      sheetHeader: String(sheetHeader || label || "").trim(),
+      type: ["textarea", "select"].includes(type) ? type : "text",
+      required: required === "true",
+      options: optArr,
+      placeholder: String(placeholder || "").trim(),
+    });
+    setFlash(req, "ok", `Question '${originalId}' updated.`);
+  } catch (err) {
+    setFlash(req, "error", err.message);
+  }
+  res.redirect("/admin/questions");
+});
+
 // Applications
 function renderApplicationsPage(req, res, { lockedTrack = null } = {}) {
   const state = readRawState();
@@ -403,9 +492,10 @@ function renderApplicationsPage(req, res, { lockedTrack = null } = {}) {
     const fields = Array.isArray(a.submittedFields)
       ? a.submittedFields.slice(0, 3).map((f) => escHtml(String(f))).join("<br>")
       : "";
+    const editUrl = `/admin/applications/${escHtml(a.trackKey || "_")}/${escHtml(a.id)}`;
     return `
       <tr>
-        <td><code>${escHtml(a.id)}</code></td>
+        <td><a href="${editUrl}" class="track-link"><code>${escHtml(a.id)}</code></a></td>
         <td>${escHtml(a.applicantName || "—")}</td>
         <td><a href="/admin/applications/${escHtml(a.trackKey || "")}" class="track-link"><code>${escHtml(a.trackKey || "—")}</code></a></td>
         <td>${statusBadge(a.status || "pending")}</td>
@@ -575,6 +665,120 @@ router.post("/users/password", requireAuth, (req, res) => {
     setFlash(req, "error", err.message);
   }
   res.redirect("/admin/users");
+});
+
+// Application detail / edit
+router.get("/applications/:track/:id", requireAuth, (req, res) => {
+  const appId = req.params.id;
+  const state = readRawState();
+  const app = state.applications?.[appId];
+  if (!app) {
+    setFlash(req, "error", `Application '${appId}' not found.`);
+    return res.redirect("/admin/applications");
+  }
+
+  const allTrackKeys = [
+    "tester", "builder", "cmd",
+    ...((state.settings?.customTracks || []).map((t) => t.key)),
+  ];
+
+  const trackOpts = allTrackKeys.map((k) =>
+    `<option value="${escHtml(k)}" ${app.trackKey === k ? "selected" : ""}>${escHtml(k)}</option>`
+  ).join("");
+
+  const statusOpts = ["pending", "accepted", "denied"].map((s) =>
+    `<option value="${s}" ${(app.status || "pending") === s ? "selected" : ""}>${s}</option>`
+  ).join("");
+
+  const fieldsText = Array.isArray(app.submittedFields)
+    ? app.submittedFields.join("\n")
+    : "";
+
+  const backUrl = `/admin/applications/${escHtml(req.params.track)}`;
+
+  res.send(adminLayout(`Edit Application`, `
+    ${flash(req)}
+    <a href="${backUrl}" class="back-link" style="display:inline-flex;margin-bottom:20px">← Back</a>
+    <div class="card" style="margin-bottom:16px">
+      <div style="display:flex;gap:24px;flex-wrap:wrap;font-size:0.85rem;color:var(--muted)">
+        <span><strong>ID:</strong> <code>${escHtml(appId)}</code></span>
+        <span><strong>Created:</strong> ${escHtml(app.createdAt || "—")}</span>
+        <span><strong>Job:</strong> ${escHtml(app.jobId || "—")}</span>
+        <span><strong>Row:</strong> ${escHtml(String(app.rowIndex || "—"))}</span>
+        <span><strong>Discord ID:</strong> ${escHtml(app.applicantUserId || "—")}</span>
+      </div>
+    </div>
+    <form method="POST" action="/admin/applications/${escHtml(req.params.track)}/${escHtml(appId)}" class="card">
+      <h2>Application Fields</h2>
+      <div class="form-row" style="margin-bottom:12px">
+        <div class="field">
+          <label>Applicant Name</label>
+          <input type="text" name="applicantName" value="${escHtml(app.applicantName || "")}"/>
+        </div>
+        <div class="field">
+          <label>Track</label>
+          <select name="trackKey">${trackOpts}</select>
+        </div>
+        <div class="field">
+          <label>Status</label>
+          <select name="status">${statusOpts}</select>
+        </div>
+      </div>
+      <div class="form-row" style="margin-bottom:12px">
+        <div class="field">
+          <label>Decided At (ISO)</label>
+          <input type="text" name="decidedAt" value="${escHtml(app.decidedAt || "")}" placeholder="2025-01-01T00:00:00.000Z"/>
+        </div>
+        <div class="field">
+          <label>Decided By</label>
+          <input type="text" name="decidedBy" value="${escHtml(app.decidedBy || "")}"/>
+        </div>
+      </div>
+      <div class="field" style="margin-bottom:16px">
+        <label>Submitted Fields <span class="muted-note">(one per line)</span></label>
+        <textarea name="submittedFields" rows="12" style="font-family:ui-monospace,monospace;font-size:0.82rem">${escHtml(fieldsText)}</textarea>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center">
+        <button type="submit" class="btn-primary">Save Changes</button>
+        <a href="${backUrl}" class="btn-sm">Cancel</a>
+      </div>
+    </form>
+    <form method="POST" action="/admin/applications/${escHtml(req.params.track)}/${escHtml(appId)}/delete"
+      style="margin-top:16px" onsubmit="return confirm('Permanently delete this application?')">
+      <button type="submit" class="btn-sm btn-danger">Delete Application</button>
+    </form>
+  `, req.session.username));
+});
+
+router.post("/applications/:track/:id", requireAuth, (req, res) => {
+  const appId = req.params.id;
+  const { applicantName, trackKey, status, decidedAt, decidedBy, submittedFields } = req.body;
+  try {
+    const fields = String(submittedFields || "").split("\n").map((l) => l.trimEnd()).filter(Boolean);
+    updateApplication(appId, {
+      applicantName: String(applicantName || "").trim(),
+      trackKey: String(trackKey || "").trim(),
+      status: ["pending", "accepted", "denied"].includes(status) ? status : "pending",
+      decidedAt: String(decidedAt || "").trim() || null,
+      decidedBy: String(decidedBy || "").trim() || null,
+      submittedFields: fields,
+    });
+    setFlash(req, "ok", "Application saved.");
+  } catch (err) {
+    setFlash(req, "error", err.message);
+  }
+  res.redirect(`/admin/applications/${encodeURIComponent(req.params.track)}/${encodeURIComponent(appId)}`);
+});
+
+router.post("/applications/:track/:id/delete", requireAuth, (req, res) => {
+  const appId = req.params.id;
+  try {
+    deleteApplication(appId);
+    setFlash(req, "ok", `Application '${appId}' deleted.`);
+  } catch (err) {
+    setFlash(req, "error", err.message);
+  }
+  res.redirect(`/admin/applications/${encodeURIComponent(req.params.track)}`);
 });
 
 // Logs

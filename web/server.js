@@ -132,11 +132,13 @@ function loadHttpsOptions() {
   return null;
 }
 
-// Returns all fields for a track: common + built-in track questions + custom questions.
+// Returns all fields for a track: common + default custom + built-in track questions + track custom.
 function buildAllFields(trackKey) {
+  const cq = loadCustomQuestions();
+  const defaultCustom = cq["__default__"] || [];
   const defaults = TRACK_QUESTIONS[trackKey] || [];
-  const custom = loadCustomQuestions()[trackKey] || [];
-  return [...COMMON_FIELDS, ...defaults, ...custom];
+  const custom = cq[trackKey] || [];
+  return [...COMMON_FIELDS, ...defaultCustom, ...defaults, ...custom];
 }
 
 // Build a sheet row from form data, respecting the existing header column order.

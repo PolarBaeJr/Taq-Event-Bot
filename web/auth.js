@@ -217,6 +217,32 @@ function resetCustomQuestions(trackKey) {
   saveCustomQuestions(all);
 }
 
+function editCustomQuestion(trackKey, questionId, updates) {
+  const all = loadCustomQuestions();
+  if (!Array.isArray(all[trackKey])) throw new Error(`No custom questions for track '${trackKey}'.`);
+  const q = all[trackKey].find((q) => q.id === questionId);
+  if (!q) throw new Error(`Question '${questionId}' not found.`);
+  Object.assign(q, updates);
+  saveCustomQuestions(all);
+  return q;
+}
+
+// ── Application I/O ───────────────────────────────────────────────────────────
+
+function updateApplication(appId, updates) {
+  const state = readRawState();
+  if (!state.applications?.[appId]) throw new Error(`Application '${appId}' not found.`);
+  Object.assign(state.applications[appId], updates);
+  writeRawState(state);
+}
+
+function deleteApplication(appId) {
+  const state = readRawState();
+  if (!state.applications?.[appId]) throw new Error(`Application '${appId}' not found.`);
+  delete state.applications[appId];
+  writeRawState(state);
+}
+
 // ── requireAuth middleware ─────────────────────────────────────────────────────
 
 function requireAuth(req, res, next) {
@@ -242,5 +268,8 @@ module.exports = {
   removeCustomQuestion,
   moveCustomQuestion,
   resetCustomQuestions,
+  editCustomQuestion,
+  updateApplication,
+  deleteApplication,
   requireAuth,
 };

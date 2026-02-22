@@ -414,6 +414,24 @@ code {
   border-radius: 4px;
 }
 
+/* ── Edit row ──────────────────────────────────────────────────── */
+.edit-row td {
+  background: var(--bg2);
+  padding: 14px 16px;
+}
+
+.edit-inline-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ── Default track section ─────────────────────────────────────── */
+.track-section-default {
+  border-color: var(--accent);
+  background: linear-gradient(135deg, rgba(14,165,233,0.04) 0%, var(--surface) 60%);
+}
+
 /* ── Crash log ─────────────────────────────────────────────────── */
 .crash-entry {
   background: var(--surface);
