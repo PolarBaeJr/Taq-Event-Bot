@@ -29,6 +29,29 @@ const HTTPS_KEY_FILE = process.env.HTTPS_KEY_FILE;
 const HTTPS_CERT_FILE = process.env.HTTPS_CERT_FILE;
 const HTTPS_KEY_PEM = process.env.HTTPS_KEY_PEM;
 const HTTPS_CERT_PEM = process.env.HTTPS_CERT_PEM;
+const STATE_FILE = process.env.STATE_FILE || path.join(__dirname, "../.bot-state.json");
+
+// ── Custom tracks (from bot state) ────────────────────────────────────────────
+
+function loadCustomTracks() {
+  try {
+    const raw = fs.readFileSync(STATE_FILE, "utf8");
+    const state = JSON.parse(raw);
+    const customTracks = state?.settings?.customTracks;
+    if (Array.isArray(customTracks)) return customTracks;
+  } catch { /* state file missing or unreadable — use built-in tracks only */ }
+  return [];
+}
+
+function getAllTrackLabels() {
+  const labels = { ...TRACK_LABELS };
+  for (const track of loadCustomTracks()) {
+    if (track.key && track.label && !labels[track.key]) {
+      labels[track.key] = track.label;
+    }
+  }
+  return labels;
+}
 
 // ── Google Sheets auth ────────────────────────────────────────────────────────
 
@@ -121,7 +144,7 @@ function buildRow(headers, trackKey, formData) {
   }
 
   const timestamp = new Date().toISOString();
-  const trackLabel = TRACK_LABELS[trackKey] || trackKey;
+  const trackLabel = getAllTrackLabels()[trackKey] || trackKey;
 
   // Special columns: Timestamp and "Applying For" / track column.
   const specialValues = {
@@ -248,7 +271,7 @@ function renderField(field) {
 }
 
 function indexPage() {
-  const trackCards = Object.entries(TRACK_LABELS)
+  const trackCards = Object.entries(getAllTrackLabels())
     .map(([key, label]) => `
       <a class="track-card" href="/apply/${escHtml(key)}">
         <span class="track-name">${escHtml(label)}</span>
@@ -310,19 +333,21 @@ app.get("/", (_req, res) => {
 
 app.get("/apply/:track", (req, res) => {
   const trackKey = req.params.track;
-  if (!TRACK_LABELS[trackKey]) {
+  const allTrackLabels = getAllTrackLabels();
+  if (!allTrackLabels[trackKey]) {
     return res.status(404).send(layout("Not Found", "<p>Track not found. <a href='/'>Go back</a></p>"));
   }
-  res.send(formPage(trackKey, TRACK_LABELS[trackKey], null));
+  res.send(formPage(trackKey, allTrackLabels[trackKey], null));
 });
 
 app.post("/apply/:track", async (req, res) => {
   const trackKey = req.params.track;
-  if (!TRACK_LABELS[trackKey]) {
+  const allTrackLabels = getAllTrackLabels();
+  if (!allTrackLabels[trackKey]) {
     return res.status(404).send(layout("Not Found", "<p>Track not found. <a href='/'>Go back</a></p>"));
   }
 
-  const trackLabel = TRACK_LABELS[trackKey];
+  const trackLabel = allTrackLabels[trackKey];
 
   // Basic server-side required field check.
   const allFields = [...COMMON_FIELDS, ...(TRACK_QUESTIONS[trackKey] || [])];
@@ -348,7 +373,7 @@ app.post("/apply/:track", async (req, res) => {
 
 app.get("/success", (req, res) => {
   const trackKey = req.query.track;
-  const trackLabel = TRACK_LABELS[trackKey] || "the team";
+  const trackLabel = getAllTrackLabels()[trackKey] || "the team";
   res.send(successPage(trackLabel));
 });
 
