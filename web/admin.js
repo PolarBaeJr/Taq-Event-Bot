@@ -6,6 +6,7 @@ const express = require("express");
 const {
   requireAuth,
   loadUsers,
+  findUser,
   addUser,
   removeUser,
   changePassword,
@@ -18,6 +19,10 @@ const {
   editCustomQuestion,
   updateApplication,
   deleteApplication,
+  getEffectiveRole,
+  elevateUser,
+  revokeElevation,
+  setUserRole,
 } = require("./auth");
 
 const STATE_FILE = process.env.STATE_FILE || path.join(__dirname, "../.bot-state.json");
@@ -107,6 +112,13 @@ function flash(req) {
 
 function setFlash(req, type, text) {
   req.session.flash = { type, text };
+}
+
+function requireAdmin(req, res, next) {
+  const user = findUser(req.session?.username);
+  if (getEffectiveRole(user) === "admin") return next();
+  setFlash(req, "error", "Admin access required.");
+  return res.redirect("/admin/dashboard");
 }
 
 // ── State helpers ─────────────────────────────────────────────────────────────
@@ -383,7 +395,7 @@ router.get("/questions", requireAuth, (req, res) => {
   `, req.session.username));
 });
 
-router.post("/questions/:track/add", requireAuth, (req, res) => {
+router.post("/questions/:track/add", requireAuth, requireAdmin, (req, res) => {
   const trackKey = req.params.track;
   const { id, label, sheetHeader, type, required, options, placeholder } = req.body;
   try {
@@ -406,7 +418,7 @@ router.post("/questions/:track/add", requireAuth, (req, res) => {
   res.redirect("/admin/questions");
 });
 
-router.post("/questions/:track/remove", requireAuth, (req, res) => {
+router.post("/questions/:track/remove", requireAuth, requireAdmin, (req, res) => {
   const trackKey = req.params.track;
   const { id } = req.body;
   try {
@@ -418,7 +430,7 @@ router.post("/questions/:track/remove", requireAuth, (req, res) => {
   res.redirect("/admin/questions");
 });
 
-router.post("/questions/:track/move", requireAuth, (req, res) => {
+router.post("/questions/:track/move", requireAuth, requireAdmin, (req, res) => {
   const trackKey = req.params.track;
   const { id, direction } = req.body;
   try {
@@ -429,14 +441,14 @@ router.post("/questions/:track/move", requireAuth, (req, res) => {
   res.redirect("/admin/questions");
 });
 
-router.post("/questions/:track/reset", requireAuth, (req, res) => {
+router.post("/questions/:track/reset", requireAuth, requireAdmin, (req, res) => {
   const trackKey = req.params.track;
   resetCustomQuestions(trackKey);
   setFlash(req, "ok", `Cleared all custom questions for ${trackKey}.`);
   res.redirect("/admin/questions");
 });
 
-router.post("/questions/:track/edit", requireAuth, (req, res) => {
+router.post("/questions/:track/edit", requireAuth, requireAdmin, (req, res) => {
   const trackKey = req.params.track;
   const { originalId, label, sheetHeader, type, required, options, placeholder } = req.body;
   try {
@@ -568,29 +580,87 @@ router.get("/applications/:track", requireAuth, (req, res) => {
 // Users
 router.get("/users", requireAuth, (req, res) => {
   const users = loadUsers();
-  const rows = users.map((u) => `
-    <tr>
-      <td>${escHtml(u.username)}</td>
-      <td class="muted-note">${escHtml(u.createdAt ? u.createdAt.slice(0, 10) : "—")}</td>
-      <td class="actions-cell">
-        ${u.username !== req.session.username ? `
-          <form method="POST" action="/admin/users/remove" style="display:inline"
+  const currentUser = findUser(req.session.username);
+  const currentRole = getEffectiveRole(currentUser);
+
+  const roleBadge = (u) => {
+    const stored = u.role || "admin";
+    const effective = getEffectiveRole(u);
+    const isElevated = stored === "moderator" && effective === "admin";
+    if (isElevated) {
+      const until = new Date(u.elevatedUntil).toLocaleString();
+      return `<span class="badge badge-pending" title="Elevated until ${escHtml(until)}">admin (temp)</span>`;
+    }
+    return stored === "admin"
+      ? `<span class="badge badge-ok">admin</span>`
+      : `<span class="badge badge-pending">moderator</span>`;
+  };
+
+  const rows = users.map((u) => {
+    const storedRole = u.role || "admin";
+    const isElevated = storedRole === "moderator" && getEffectiveRole(u) === "admin";
+    const isCurrentUser = u.username === req.session.username;
+
+    let actions = "";
+    if (isCurrentUser) {
+      actions = '<span class="muted-note">(you)</span>';
+    } else if (currentRole === "admin") {
+      // Permanent role change
+      const roleOpts = ["admin", "moderator"].map((r) =>
+        `<option value="${r}" ${storedRole === r ? "selected" : ""}>${r}</option>`
+      ).join("");
+      actions += `
+        <form method="POST" action="/admin/users/role" style="display:inline">
+          <input type="hidden" name="username" value="${escHtml(u.username)}"/>
+          <select name="role" style="font-size:0.78rem;padding:2px 6px">${roleOpts}</select>
+          <button type="submit" class="btn-sm">Set</button>
+        </form>`;
+
+      // Temporary elevation (moderators only, not already elevated)
+      if (storedRole === "moderator" && !isElevated) {
+        actions += `
+          <form method="POST" action="/admin/users/elevate" style="display:inline;margin-left:4px">
+            <input type="hidden" name="username" value="${escHtml(u.username)}"/>
+            <select name="hours" style="font-size:0.78rem;padding:2px 6px">
+              <option value="1">1h</option>
+              <option value="4">4h</option>
+              <option value="8">8h</option>
+              <option value="24">24h</option>
+            </select>
+            <button type="submit" class="btn-sm">Elevate</button>
+          </form>`;
+      }
+      if (isElevated) {
+        actions += `
+          <form method="POST" action="/admin/users/revoke-elevation" style="display:inline;margin-left:4px">
+            <input type="hidden" name="username" value="${escHtml(u.username)}"/>
+            <button type="submit" class="btn-sm btn-danger">Revoke</button>
+          </form>`;
+      }
+
+      // Remove (moderators only — demote first to remove an admin)
+      if (storedRole === "moderator") {
+        actions += `
+          <form method="POST" action="/admin/users/remove" style="display:inline;margin-left:4px"
             onsubmit="return confirm('Remove user ${escHtml(u.username)}?')">
             <input type="hidden" name="username" value="${escHtml(u.username)}"/>
             <button type="submit" class="btn-sm btn-danger">Remove</button>
-          </form>` : '<span class="muted-note">(you)</span>'}
-      </td>
-    </tr>`).join("");
+          </form>`;
+      }
+    }
 
-  res.send(adminLayout("Users", `
-    ${flash(req)}
-    <table class="admin-table">
-      <thead><tr><th>Username</th><th>Created</th><th>Actions</th></tr></thead>
-      <tbody>${rows || '<tr><td colspan="3" class="muted-note">No users.</td></tr>'}</tbody>
-    </table>
+    return `
+      <tr>
+        <td>${escHtml(u.username)}</td>
+        <td>${roleBadge(u)}</td>
+        <td class="muted-note">${escHtml(u.createdAt ? u.createdAt.slice(0, 10) : "—")}</td>
+        <td class="actions-cell">${actions || "—"}</td>
+      </tr>`;
+  }).join("");
 
+  const addModeratorHtml = currentRole === "admin" ? `
     <section class="card" style="margin-top:32px">
-      <h2>Add User</h2>
+      <h2>Add Moderator</h2>
       <form method="POST" action="/admin/users/add" class="inline-form">
         <div class="form-row">
           <div class="field">
@@ -602,10 +672,17 @@ router.get("/users", requireAuth, (req, res) => {
             <input type="password" name="password" required/>
           </div>
         </div>
-        <button type="submit" class="btn-primary">Add User</button>
+        <button type="submit" class="btn-primary">Add Moderator</button>
       </form>
-    </section>
+    </section>` : "";
 
+  res.send(adminLayout("Users", `
+    ${flash(req)}
+    <table class="admin-table">
+      <thead><tr><th>Username</th><th>Role</th><th>Created</th><th>Actions</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="4" class="muted-note">No users.</td></tr>'}</tbody>
+    </table>
+    ${addModeratorHtml}
     <section class="card" style="margin-top:24px">
       <h2>Change My Password</h2>
       <form method="POST" action="/admin/users/password" class="inline-form">
@@ -625,27 +702,70 @@ router.get("/users", requireAuth, (req, res) => {
   `, req.session.username));
 });
 
-router.post("/users/add", requireAuth, (req, res) => {
+router.post("/users/add", requireAuth, requireAdmin, (req, res) => {
   const { username, password } = req.body;
   try {
     if (!username || !password) throw new Error("Username and password are required.");
-    addUser(username, password);
-    setFlash(req, "ok", `User '${username}' added.`);
+    addUser(username, password, "moderator");
+    setFlash(req, "ok", `Moderator '${username}' added.`);
   } catch (err) {
     setFlash(req, "error", err.message);
   }
   res.redirect("/admin/users");
 });
 
-router.post("/users/remove", requireAuth, (req, res) => {
+router.post("/users/remove", requireAuth, requireAdmin, (req, res) => {
   const { username } = req.body;
   if (username === req.session.username) {
     setFlash(req, "error", "You cannot remove your own account.");
     return res.redirect("/admin/users");
   }
+  const target = findUser(username);
+  if (target && (target.role || "admin") === "admin") {
+    setFlash(req, "error", "Admin accounts cannot be removed from the web panel.");
+    return res.redirect("/admin/users");
+  }
   try {
     removeUser(username);
     setFlash(req, "ok", `User '${username}' removed.`);
+  } catch (err) {
+    setFlash(req, "error", err.message);
+  }
+  res.redirect("/admin/users");
+});
+
+router.post("/users/role", requireAuth, requireAdmin, (req, res) => {
+  const { username, role } = req.body;
+  if (username === req.session.username) {
+    setFlash(req, "error", "You cannot change your own role.");
+    return res.redirect("/admin/users");
+  }
+  try {
+    setUserRole(username, role);
+    setFlash(req, "ok", `'${username}' is now a ${role}.`);
+  } catch (err) {
+    setFlash(req, "error", err.message);
+  }
+  res.redirect("/admin/users");
+});
+
+router.post("/users/elevate", requireAuth, requireAdmin, (req, res) => {
+  const { username, hours } = req.body;
+  const h = Math.min(168, Math.max(1, parseInt(hours, 10) || 1));
+  try {
+    const until = elevateUser(username, h);
+    setFlash(req, "ok", `'${username}' elevated to admin until ${new Date(until).toLocaleString()}.`);
+  } catch (err) {
+    setFlash(req, "error", err.message);
+  }
+  res.redirect("/admin/users");
+});
+
+router.post("/users/revoke-elevation", requireAuth, requireAdmin, (req, res) => {
+  const { username } = req.body;
+  try {
+    revokeElevation(username);
+    setFlash(req, "ok", `Elevation revoked for '${username}'.`);
   } catch (err) {
     setFlash(req, "error", err.message);
   }
@@ -750,7 +870,7 @@ router.get("/applications/:track/:id", requireAuth, (req, res) => {
   `, req.session.username));
 });
 
-router.post("/applications/:track/:id", requireAuth, (req, res) => {
+router.post("/applications/:track/:id", requireAuth, requireAdmin, (req, res) => {
   const appId = req.params.id;
   const { applicantName, trackKey, status, decidedAt, decidedBy, submittedFields } = req.body;
   try {
@@ -770,7 +890,7 @@ router.post("/applications/:track/:id", requireAuth, (req, res) => {
   res.redirect(`/admin/applications/${encodeURIComponent(req.params.track)}/${encodeURIComponent(appId)}`);
 });
 
-router.post("/applications/:track/:id/delete", requireAuth, (req, res) => {
+router.post("/applications/:track/:id/delete", requireAuth, requireAdmin, (req, res) => {
   const appId = req.params.id;
   try {
     deleteApplication(appId);

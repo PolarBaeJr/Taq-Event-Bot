@@ -75,13 +75,39 @@ function findUser(username) {
   return loadUsers().find((u) => u.username === username) || null;
 }
 
-function addUser(username, password) {
+// Returns "admin" or "moderator". Checks temporary elevation expiry.
+function getEffectiveRole(user) {
+  if (!user) return null;
+  if (user.role === "admin") return "admin";
+  if (user.elevatedUntil && new Date(user.elevatedUntil) > new Date()) return "admin";
+  return user.role || "admin"; // backwards compat: users without role field = admin
+}
+
+function addUser(username, password, role = "moderator") {
   const users = loadUsers();
   if (users.some((u) => u.username === username)) {
     throw new Error(`User '${username}' already exists.`);
   }
   const { salt, hash } = hashPassword(password);
-  users.push({ username, hash, salt, createdAt: new Date().toISOString() });
+  users.push({ username, hash, salt, role, createdAt: new Date().toISOString() });
+  saveUsers(users);
+}
+
+function elevateUser(username, hours) {
+  const users = loadUsers();
+  const user = users.find((u) => u.username === username);
+  if (!user) throw new Error(`User '${username}' not found.`);
+  if (user.role === "admin") throw new Error("User is already a permanent admin.");
+  user.elevatedUntil = new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
+  saveUsers(users);
+  return user.elevatedUntil;
+}
+
+function revokeElevation(username) {
+  const users = loadUsers();
+  const user = users.find((u) => u.username === username);
+  if (!user) throw new Error(`User '${username}' not found.`);
+  delete user.elevatedUntil;
   saveUsers(users);
 }
 
@@ -92,6 +118,16 @@ function removeUser(username) {
     throw new Error(`User '${username}' not found.`);
   }
   saveUsers(filtered);
+}
+
+function setUserRole(username, role) {
+  const users = loadUsers();
+  const user = users.find((u) => u.username === username);
+  if (!user) throw new Error(`User '${username}' not found.`);
+  if (!["admin", "moderator"].includes(role)) throw new Error("Invalid role.");
+  user.role = role;
+  if (role === "admin") delete user.elevatedUntil; // clear temp elevation when making permanent admin
+  saveUsers(users);
 }
 
 function changePassword(username, newPassword) {
@@ -129,13 +165,15 @@ function bootstrapAdminIfNeeded() {
         if (!username || !password) continue;
         const existing = users.find((u) => u.username === username);
         const { salt, hash } = hashPassword(password);
+        const role = String(entry.role || "admin");
         if (existing) {
-          // Always update password from seed file so it acts as source of truth
+          // Always update password AND role from seed file so it acts as source of truth
           existing.hash = hash;
           existing.salt = salt;
+          existing.role = role;
           console.log(`[web/auth] Updated password from users.seed.json: ${username}`);
         } else {
-          users.push({ username, hash, salt, createdAt: new Date().toISOString() });
+          users.push({ username, hash, salt, role, createdAt: new Date().toISOString() });
           console.log(`[web/auth] Seeded user from users.seed.json: ${username}`);
         }
         changed = true;
@@ -149,7 +187,7 @@ function bootstrapAdminIfNeeded() {
     const adminPass = process.env.WEB_ADMIN_PASSWORD;
     if (adminUser && adminPass) {
       const { salt, hash } = hashPassword(adminPass);
-      users.push({ username: adminUser, hash, salt, createdAt: new Date().toISOString() });
+      users.push({ username: adminUser, hash, salt, role: "admin", createdAt: new Date().toISOString() });
       console.log(`[web/auth] Seeded admin user from env: ${adminUser}`);
       changed = true;
     }
@@ -300,4 +338,8 @@ module.exports = {
   updateApplication,
   deleteApplication,
   requireAuth,
+  getEffectiveRole,
+  elevateUser,
+  revokeElevation,
+  setUserRole,
 };
