@@ -158,6 +158,33 @@ function bootstrapAdminIfNeeded() {
   if (changed) saveUsers(users);
 }
 
+// ── Seed questions from questions.js defaults ─────────────────────────────────
+
+function seedQuestionsFromDefaults() {
+  const { COMMON_FIELDS, TRACK_QUESTIONS } = require("./questions");
+  const all = loadCustomQuestions();
+  let changed = false;
+
+  // Seed __default__ from COMMON_FIELDS if not yet set
+  if (!Array.isArray(all["__default__"])) {
+    all["__default__"] = COMMON_FIELDS.map((q) => ({ ...q }));
+    changed = true;
+  }
+
+  // Seed each built-in track if not yet set
+  for (const [trackKey, questions] of Object.entries(TRACK_QUESTIONS)) {
+    if (!Array.isArray(all[trackKey])) {
+      all[trackKey] = questions.map((q) => ({ ...q }));
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    saveCustomQuestions(all);
+    console.log("[web/auth] Seeded custom questions from questions.js defaults");
+  }
+}
+
 // ── Custom questions I/O ──────────────────────────────────────────────────────
 
 function loadCustomQuestions() {
@@ -261,6 +288,7 @@ module.exports = {
   changePassword,
   authenticateUser,
   bootstrapAdminIfNeeded,
+  seedQuestionsFromDefaults,
   loadCustomQuestions,
   saveCustomQuestions,
   getTrackCustomQuestions,

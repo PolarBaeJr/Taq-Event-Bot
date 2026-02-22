@@ -11,7 +11,7 @@ const express = require("express");
 const session = require("express-session");
 const { google } = require("googleapis");
 const { COMMON_FIELDS, TRACK_QUESTIONS, TRACK_LABELS } = require("./questions");
-const { loadCustomQuestions, bootstrapAdminIfNeeded } = require("./auth");
+const { loadCustomQuestions, bootstrapAdminIfNeeded, seedQuestionsFromDefaults } = require("./auth");
 const adminRouter = require("./admin");
 
 function resolvePort() {
@@ -132,13 +132,13 @@ function loadHttpsOptions() {
   return null;
 }
 
-// Returns all fields for a track: common + default custom + built-in track questions + track custom.
+// Returns all fields for a track using custom questions as the primary source.
+// Falls back to hardcoded defaults if not yet seeded (e.g. first run before state file exists).
 function buildAllFields(trackKey) {
   const cq = loadCustomQuestions();
-  const defaultCustom = cq["__default__"] || [];
-  const defaults = TRACK_QUESTIONS[trackKey] || [];
-  const custom = cq[trackKey] || [];
-  return [...COMMON_FIELDS, ...defaultCustom, ...defaults, ...custom];
+  const commonPart = Array.isArray(cq["__default__"]) ? cq["__default__"] : COMMON_FIELDS;
+  const trackPart = Array.isArray(cq[trackKey]) ? cq[trackKey] : (TRACK_QUESTIONS[trackKey] || []);
+  return [...commonPart, ...trackPart];
 }
 
 // Build a sheet row from form data, respecting the existing header column order.
@@ -330,6 +330,7 @@ function successPage(trackLabel) {
 // ── Express app ───────────────────────────────────────────────────────────────
 
 bootstrapAdminIfNeeded();
+seedQuestionsFromDefaults();
 
 const app = express();
 app.use(express.static(path.join(__dirname, "public")));
