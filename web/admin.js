@@ -368,12 +368,11 @@ router.post("/questions/:track/reset", requireAuth, (req, res) => {
 });
 
 // Applications
-router.get("/applications", requireAuth, (req, res) => {
+function renderApplicationsPage(req, res, { lockedTrack = null } = {}) {
   const state = readRawState();
   const allApps = Object.entries(state.applications || {}).map(([id, a]) => ({ id, ...a }));
 
-  // Filters
-  const filterTrack = req.query.track || "";
+  const filterTrack = lockedTrack || req.query.track || "";
   const filterStatus = req.query.status || "";
   const page = Math.max(1, parseInt(req.query.page, 10) || 1);
   const pageSize = 25;
@@ -382,7 +381,6 @@ router.get("/applications", requireAuth, (req, res) => {
   if (filterTrack) filtered = filtered.filter((a) => a.trackKey === filterTrack);
   if (filterStatus) filtered = filtered.filter((a) => a.status === filterStatus);
 
-  // Sort newest first
   filtered.sort((a, b) => {
     const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
     const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
@@ -394,12 +392,7 @@ router.get("/applications", requireAuth, (req, res) => {
   const current = Math.min(page, totalPages);
   const slice = filtered.slice((current - 1) * pageSize, current * pageSize);
 
-  // Track list for filter dropdown
   const allTrackKeys = [...new Set(allApps.map((a) => a.trackKey).filter(Boolean))].sort();
-
-  const trackOptions = allTrackKeys.map(
-    (k) => `<option value="${escHtml(k)}" ${filterTrack === k ? "selected" : ""}>${escHtml(k)}</option>`
-  ).join("");
 
   const statusBadge = (s) => {
     const cls = s === "accepted" ? "badge-ok" : s === "denied" ? "badge-err" : "badge-pending";
@@ -414,7 +407,7 @@ router.get("/applications", requireAuth, (req, res) => {
       <tr>
         <td><code>${escHtml(a.id)}</code></td>
         <td>${escHtml(a.applicantName || "—")}</td>
-        <td><code>${escHtml(a.trackKey || "—")}</code></td>
+        <td><a href="/admin/applications/${escHtml(a.trackKey || "")}" class="track-link"><code>${escHtml(a.trackKey || "—")}</code></a></td>
         <td>${statusBadge(a.status || "pending")}</td>
         <td class="muted-note">${a.createdAt ? escHtml(a.createdAt.slice(0, 10)) : "—"}</td>
         <td class="muted-note">${a.decidedAt ? escHtml(a.decidedAt.slice(0, 10)) : "—"}</td>
@@ -422,25 +415,37 @@ router.get("/applications", requireAuth, (req, res) => {
       </tr>`;
   }).join("");
 
+  // Base URL for pagination/filter links
+  const baseUrl = lockedTrack
+    ? `/admin/applications/${escHtml(lockedTrack)}`
+    : "/admin/applications";
+
   const qs = (extra = {}) => {
-    const params = new URLSearchParams({ ...(filterTrack && { track: filterTrack }), ...(filterStatus && { status: filterStatus }), ...extra });
+    const params = new URLSearchParams({ ...((!lockedTrack && filterTrack) && { track: filterTrack }), ...(filterStatus && { status: filterStatus }), ...extra });
     return params.toString() ? `?${params}` : "";
   };
 
   const pagination = totalPages > 1 ? `
     <div class="pagination">
-      ${current > 1 ? `<a href="/admin/applications${qs({ page: current - 1 })}">← Prev</a>` : ""}
+      ${current > 1 ? `<a href="${baseUrl}${qs({ page: current - 1 })}">← Prev</a>` : ""}
       <span>Page ${current} of ${totalPages} (${total} total)</span>
-      ${current < totalPages ? `<a href="/admin/applications${qs({ page: current + 1 })}">Next →</a>` : ""}
+      ${current < totalPages ? `<a href="${baseUrl}${qs({ page: current + 1 })}">Next →</a>` : ""}
     </div>` : `<p class="muted-note">${total} application${total !== 1 ? "s" : ""}</p>`;
 
-  res.send(adminLayout("Applications", `
-    ${flash(req)}
-    <form method="GET" action="/admin/applications" class="filter-bar">
-      <select name="track">
+  // Track filter: locked tracks show a back link instead of dropdown
+  const trackFilterHtml = lockedTrack
+    ? `<a href="/admin/applications" class="btn-sm">← All tracks</a>`
+    : `<select name="track">
         <option value="">All tracks</option>
-        ${trackOptions}
-      </select>
+        ${allTrackKeys.map((k) => `<option value="${escHtml(k)}" ${filterTrack === k ? "selected" : ""}>${escHtml(k)}</option>`).join("")}
+      </select>`;
+
+  const title = lockedTrack ? `Applications — ${escHtml(lockedTrack)}` : "Applications";
+
+  res.send(adminLayout(title, `
+    ${flash(req)}
+    <form method="GET" action="${baseUrl}" class="filter-bar">
+      ${trackFilterHtml}
       <select name="status">
         <option value="" ${!filterStatus ? "selected" : ""}>All statuses</option>
         <option value="pending" ${filterStatus === "pending" ? "selected" : ""}>Pending</option>
@@ -448,7 +453,7 @@ router.get("/applications", requireAuth, (req, res) => {
         <option value="denied" ${filterStatus === "denied" ? "selected" : ""}>Denied</option>
       </select>
       <button type="submit" class="btn-primary">Filter</button>
-      <a href="/admin/applications" class="btn-sm">Clear</a>
+      ${!lockedTrack ? `<a href="/admin/applications" class="btn-sm">Clear</a>` : ""}
     </form>
     <table class="admin-table">
       <thead>
@@ -460,6 +465,14 @@ router.get("/applications", requireAuth, (req, res) => {
     </table>
     ${pagination}
   `, req.session.username));
+}
+
+router.get("/applications", requireAuth, (req, res) => {
+  renderApplicationsPage(req, res);
+});
+
+router.get("/applications/:track", requireAuth, (req, res) => {
+  renderApplicationsPage(req, res, { lockedTrack: req.params.track });
 });
 
 // Users

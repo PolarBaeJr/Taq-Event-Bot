@@ -392,6 +392,14 @@
   white-space: nowrap;
 }
 
+.track-link {
+  color: inherit;
+  text-decoration: none;
+}
+.track-link:hover code {
+  color: var(--accent);
+}
+
 /* ── Misc ──────────────────────────────────────────────────────── */
 .muted-note {
   color: var(--muted);
