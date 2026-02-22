@@ -57,6 +57,46 @@ function verifyPassword(password, storedHash, storedSalt) {
   }
 }
 
+// ── Seed file sync ────────────────────────────────────────────────────────────
+// Keep users.seed.json in sync with web-panel changes so users survive state resets.
+
+function readSeedFile() {
+  try {
+    const raw = fs.readFileSync(SEED_FILE, "utf8");
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch { return null; } // null = file missing or unreadable
+}
+
+function writeSeedFile(seeds) {
+  try {
+    fs.writeFileSync(SEED_FILE, JSON.stringify(seeds, null, 2) + "\n");
+  } catch { /* seed file not writable — skip silently */ }
+}
+
+function seedFileAddUser(username, password, role) {
+  const seeds = readSeedFile();
+  if (!seeds) return; // no seed file present, skip
+  if (!seeds.find((s) => s.username === username)) {
+    seeds.push({ username, password, role });
+    writeSeedFile(seeds);
+  }
+}
+
+function seedFileRemoveUser(username) {
+  const seeds = readSeedFile();
+  if (!seeds) return;
+  const filtered = seeds.filter((s) => s.username !== username);
+  if (filtered.length !== seeds.length) writeSeedFile(filtered);
+}
+
+function seedFileSetRole(username, role) {
+  const seeds = readSeedFile();
+  if (!seeds) return;
+  const entry = seeds.find((s) => s.username === username);
+  if (entry) { entry.role = role; writeSeedFile(seeds); }
+}
+
 // ── User management ───────────────────────────────────────────────────────────
 
 function loadUsers() {
@@ -91,6 +131,7 @@ function addUser(username, password, role = "moderator") {
   const { salt, hash } = hashPassword(password);
   users.push({ username, hash, salt, role, createdAt: new Date().toISOString() });
   saveUsers(users);
+  seedFileAddUser(username, password, role);
 }
 
 function elevateUser(username, hours) {
@@ -118,6 +159,7 @@ function removeUser(username) {
     throw new Error(`User '${username}' not found.`);
   }
   saveUsers(filtered);
+  seedFileRemoveUser(username);
 }
 
 function setUserRole(username, role) {
@@ -128,6 +170,7 @@ function setUserRole(username, role) {
   user.role = role;
   if (role === "admin") delete user.elevatedUntil; // clear temp elevation when making permanent admin
   saveUsers(users);
+  seedFileSetRole(username, role);
 }
 
 function changePassword(username, newPassword) {
