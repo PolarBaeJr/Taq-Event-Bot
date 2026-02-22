@@ -27,7 +27,6 @@ const APPROLE_GUI_ACTION_TRACK = "track";
 const APPROLE_GUI_ACTION_ROLES = "roles";
 const ACCEPT_RESOLVE_MODAL_PREFIX = "acceptresolve";
 const ACCEPT_RESOLVE_MODAL_FIELD_APPLICANT = "applicant_hint";
-const APPLY_MODAL_PREFIX = "apply_modal";
 const ACCEPT_RESOLVE_PROMPT_TTL_MS = 10 * 60 * 1000;
 const COMMAND_OPTION_TYPE_SUBCOMMAND = 1;
 const COMMAND_OPTION_TYPE_SUBCOMMAND_GROUP = 2;
@@ -178,10 +177,6 @@ function createInteractionCommandHandler(options = {}) {
     typeof options.getApplicationDisplayId === "function"
       ? options.getApplicationDisplayId
       : (app) => app?.applicationId || app?.jobId || app?.messageId || "unknown";
-  const enqueueModalApplication =
-    typeof options.enqueueModalApplication === "function"
-      ? options.enqueueModalApplication
-      : null;
   const logger =
     options.logger &&
     typeof options.logger.error === "function" &&
@@ -194,47 +189,6 @@ function createInteractionCommandHandler(options = {}) {
       : null;
   const pendingAcceptResolvePrompts = new Map();
   let acceptResolvePromptCounter = 0;
-
-  function buildApplyModal(trackKey, trackLabel) {
-    const modal = new ModalBuilder()
-      .setCustomId(`${APPLY_MODAL_PREFIX}:${trackKey}`)
-      .setTitle(`Apply for ${trackLabel}`);
-    modal.addComponents(
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId("ign")
-          .setLabel("In-Game Name / Username")
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true)
-          .setMaxLength(100)
-      ),
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId("why")
-          .setLabel("Why do you want to join?")
-          .setStyle(TextInputStyle.Paragraph)
-          .setRequired(true)
-          .setMaxLength(500)
-      ),
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId("experience")
-          .setLabel("Relevant experience")
-          .setStyle(TextInputStyle.Paragraph)
-          .setRequired(false)
-          .setMaxLength(500)
-      ),
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId("extra")
-          .setLabel("Anything else to add? (optional)")
-          .setStyle(TextInputStyle.Paragraph)
-          .setRequired(false)
-          .setMaxLength(300)
-      )
-    );
-    return modal;
-  }
 
   // "Manage roles config" is intentionally stricter than plain ManageGuild to avoid accidental role edits.
   function hasManageRolesConfigPermission(memberPerms) {
@@ -1474,36 +1428,6 @@ function createInteractionCommandHandler(options = {}) {
           return;
         }
 
-        if (interaction.customId.startsWith(`${APPLY_MODAL_PREFIX}:`)) {
-          const parts = interaction.customId.split(":");
-          const trackKey = parts.slice(1).join(":");
-          const ign = (interaction.fields.getTextInputValue("ign") || "").trim();
-          const why = (interaction.fields.getTextInputValue("why") || "").trim();
-          const experience = (interaction.fields.getTextInputValue("experience") || "").trim();
-          const extra = (interaction.fields.getTextInputValue("extra") || "").trim();
-          if (!enqueueModalApplication) {
-            await interaction.reply({
-              content: "Application submission is currently unavailable. Please try again later.",
-              ephemeral: true,
-            });
-            return;
-          }
-          const jobId = enqueueModalApplication({
-            trackKey,
-            discordUsername: interaction.user.username,
-            discordUserId: interaction.user.id,
-            ign,
-            whyApply: why,
-            experience,
-            extra,
-          });
-          await interaction.reply({
-            content: `Your application has been submitted! (Job ID: \`${jobId}\`) Our team will review it shortly.`,
-            ephemeral: true,
-          });
-          return;
-        }
-
         const guiContext = parseReactionRoleGuiCustomId(interaction.customId);
         if (!guiContext) {
           return;
@@ -1782,8 +1706,7 @@ function createInteractionCommandHandler(options = {}) {
             interaction.commandName === "track" ||
             interaction.commandName === "settings" ||
             interaction.commandName === "repostapps" ||
-            interaction.commandName === "lookup" ||
-            interaction.commandName === "apply");
+            interaction.commandName === "lookup");
 
         if (!supportsTrackAutocomplete) {
           await interaction.respond([]);
@@ -1937,7 +1860,6 @@ function createInteractionCommandHandler(options = {}) {
       const isStop = interaction.commandName === "stop";
       const isRestart = interaction.commandName === "restart";
       const isLookup = interaction.commandName === "lookup";
-      const isApply = interaction.commandName === "apply";
       if (
         !isAccept &&
         !isDeny &&
@@ -1965,8 +1887,7 @@ function createInteractionCommandHandler(options = {}) {
         !isDebug &&
         !isStop &&
         !isRestart &&
-        !isLookup &&
-        !isApply
+        !isLookup
       ) {
         return;
       }
@@ -4725,18 +4646,6 @@ function createInteractionCommandHandler(options = {}) {
         return;
       }
 
-      if (isApply) {
-        const trackKey = interaction.options.getString("track");
-        const normalized = normalizeTrackKey(trackKey);
-        if (!normalized) {
-          await interaction.reply({ content: "Unknown track. Please select a valid track.", ephemeral: true });
-          return;
-        }
-        const trackLabel = getTrackLabel(normalized);
-        const modal = buildApplyModal(normalized, trackLabel);
-        await interaction.showModal(modal);
-        return;
-      }
 
       if (isSetDefault) {
         if (!canManageServer) {

@@ -3107,51 +3107,6 @@ const { processQueuedPostJobs, pollOnce } = createPollingPipeline({
   logger: pipelineLogger,
 });
 
-function enqueueModalApplication({ trackKey, discordUsername, discordUserId, ign, whyApply, experience, extra }) {
-  const state = readState();
-  const headers = [
-    "Timestamp",
-    "Discord Username",
-    "In-Game Name",
-    "Applying For",
-    "Why do you want to join",
-    "Experience",
-    "Additional Notes",
-  ];
-  const row = [
-    new Date().toISOString(),
-    discordUserId ? `${discordUsername} (<@${discordUserId}>)` : discordUsername,
-    ign,
-    trackKey,
-    whyApply,
-    experience || "",
-    extra || "",
-  ];
-  const normalizedHeaders = headers.map((h) => String(h));
-  const normalizedRow = row.map((v) => String(v || ""));
-  const trackKeys = normalizeTrackKeys(trackKey);
-  const jobId = allocateNextJobId(state);
-  const job = {
-    jobId,
-    type: JOB_TYPE_POST_APPLICATION,
-    rowIndex: -1,
-    trackKeys,
-    postedTrackKeys: [],
-    responseKey: buildResponseKey(normalizedHeaders, normalizedRow),
-    headers: normalizedHeaders,
-    row: normalizedRow,
-    createdAt: new Date().toISOString(),
-    attempts: 0,
-    lastAttemptAt: null,
-    lastError: null,
-  };
-  if (!Array.isArray(state.postJobs)) state.postJobs = [];
-  state.postJobs.push(job);
-  sortPostJobsInPlace(state.postJobs);
-  writeState(state);
-  return jobId;
-}
-
 const {
   buildSlashCommands,
   registerSlashCommands,
@@ -3276,7 +3231,6 @@ const onInteractionCreate = createInteractionCommandHandler({
   getTrackKeyForChannelId,
   getActiveChannelId,
   getApplicationDisplayId,
-  enqueueModalApplication,
   refreshSlashCommandsForGuild,
   logger: interactionLogger,
 });

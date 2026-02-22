@@ -1379,16 +1379,6 @@ function createSlashCommandLifecycle(options = {}) {
       new SlashCommandBuilder()
         .setName("restart")
         .setDescription("Restart the bot process"),
-      new SlashCommandBuilder()
-        .setName("apply")
-        .setDescription("Submit an application directly in Discord")
-        .addStringOption((option) =>
-          option
-            .setName("track")
-            .setDescription("Track to apply for")
-            .setAutocomplete(true)
-            .setRequired(true)
-        ),
     ].map((command) => command.toJSON());
   }
 
