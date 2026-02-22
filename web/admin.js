@@ -546,7 +546,7 @@ function renderApplicationsPage(req, res, { lockedTrack = null } = {}) {
 
   res.send(adminLayout(title, `
     ${flash(req)}
-    <form method="GET" action="${baseUrl}" class="filter-bar">
+    <form method="GET" action="${baseUrl}" class="filter-bar" style="display:flex;flex-direction:row;flex-wrap:wrap;gap:10px;align-items:center">
       ${trackFilterHtml}
       <select name="status">
         <option value="" ${!filterStatus ? "selected" : ""}>All statuses</option>
