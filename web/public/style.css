@@ -54,6 +54,12 @@ body {
   font-size: 16px;
   line-height: 1.6;
   min-height: 100vh;
+  overflow-x: hidden;
+}
+
+img {
+  max-width: 100%;
+  display: block;
 }
 
 /* ── Top nav bar ──────────────────────────────────────────────── */
@@ -68,6 +74,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   padding: 0 32px;
   height: 60px;
 }
@@ -83,7 +90,7 @@ body {
 
 .topbar-logo-img {
   width: 34px;
-  height: 34px;
+  height: auto;
   object-fit: contain;
   filter: drop-shadow(0 0 8px rgba(56, 169, 207, 0.45));
 }
@@ -100,8 +107,15 @@ body {
 .topbar-links {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
+
+.topbar-links::-webkit-scrollbar { display: none; }
 
 .topbar-links a {
   color: var(--muted);
@@ -112,6 +126,7 @@ body {
   border-radius: var(--radius-sm);
   transition: color 0.15s, background 0.15s;
   white-space: nowrap;
+  flex: 0 0 auto;
 }
 
 .topbar-links a:hover {
@@ -121,6 +136,7 @@ body {
 
 /* ── Page layout ──────────────────────────────────────────────── */
 .page {
+  width: min(100%, 680px);
   max-width: 680px;
   margin: 0 auto;
   padding: 48px 20px 100px;
@@ -169,7 +185,12 @@ header .subtitle {
   background: linear-gradient(90deg, transparent, var(--border), transparent);
 }
 
-main { display: flex; flex-direction: column; gap: 28px; }
+main {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  min-width: 0;
+}
 
 footer {
   text-align: center;
@@ -232,6 +253,7 @@ footer {
   font-size: 1.05rem;
   font-weight: 600;
   position: relative;
+  overflow-wrap: anywhere;
 }
 
 .track-arrow {
@@ -273,6 +295,7 @@ label {
   font-size: 0.88rem;
   font-weight: 500;
   color: var(--text);
+  line-height: 1.35;
 }
 
 .req { color: var(--error); margin-left: 3px; }
@@ -382,8 +405,20 @@ select option { background: var(--surface); color: var(--text); }
 
 /* ── Responsive ───────────────────────────────────────────────── */
 @media (max-width: 640px) {
-  .site-topbar { padding: 0 16px; }
+  .site-topbar {
+    padding: 0 16px;
+    height: 56px;
+  }
+  .topbar-logo-name { font-size: 0.92rem; }
   .topbar-links { display: none; }
+}
+
+@media (max-width: 860px) {
+  .site-topbar { padding: 0 16px; }
+  .topbar-links a {
+    font-size: 0.82rem;
+    padding: 5px 10px;
+  }
 }
 
 @media (max-width: 500px) {

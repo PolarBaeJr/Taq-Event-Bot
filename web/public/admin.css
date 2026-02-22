@@ -35,7 +35,7 @@
 
 .nav-logo-img {
   width: 30px;
-  height: 30px;
+  height: auto;
   object-fit: contain;
   filter: drop-shadow(0 0 6px rgba(56, 169, 207, 0.4));
   display: block;
