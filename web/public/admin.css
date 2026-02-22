@@ -93,7 +93,6 @@
   min-width: 0;          /* allow flex item to shrink and scroll instead of overflow */
   display: block;        /* override global: main { display: flex } from style.css */
   padding: 40px 48px 80px;
-  max-width: 1100px;
   overflow-x: auto;
 }
 
