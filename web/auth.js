@@ -110,18 +110,45 @@ function authenticateUser(username, password) {
   return verifyPassword(password, user.hash, user.salt);
 }
 
-// ── Bootstrap first admin ─────────────────────────────────────────────────────
+// ── Bootstrap users from seed file and/or env vars ───────────────────────────
+
+const SEED_FILE = path.join(__dirname, "users.seed.json");
 
 function bootstrapAdminIfNeeded() {
-  const adminUser = process.env.WEB_ADMIN_USER;
-  const adminPass = process.env.WEB_ADMIN_PASSWORD;
-  if (!adminUser || !adminPass) return;
-  const users = loadUsers();
-  if (users.length > 0) return;
-  const { salt, hash } = hashPassword(adminPass);
-  users.push({ username: adminUser, hash, salt, createdAt: new Date().toISOString() });
-  saveUsers(users);
-  console.log(`[web/auth] Seeded first admin user: ${adminUser}`);
+  let users = loadUsers();
+  let changed = false;
+
+  // Read seed file if present — create any users not already in the list
+  try {
+    const raw = fs.readFileSync(SEED_FILE, "utf8");
+    const seeds = JSON.parse(raw);
+    if (Array.isArray(seeds)) {
+      for (const entry of seeds) {
+        const username = String(entry.username || "").trim();
+        const password = String(entry.password || "").trim();
+        if (!username || !password) continue;
+        if (users.some((u) => u.username === username)) continue;
+        const { salt, hash } = hashPassword(password);
+        users.push({ username, hash, salt, createdAt: new Date().toISOString() });
+        console.log(`[web/auth] Seeded user from users.seed.json: ${username}`);
+        changed = true;
+      }
+    }
+  } catch { /* seed file missing or invalid — skip */ }
+
+  // Fallback: env var single-user bootstrap (only if still no users)
+  if (users.length === 0) {
+    const adminUser = process.env.WEB_ADMIN_USER;
+    const adminPass = process.env.WEB_ADMIN_PASSWORD;
+    if (adminUser && adminPass) {
+      const { salt, hash } = hashPassword(adminPass);
+      users.push({ username: adminUser, hash, salt, createdAt: new Date().toISOString() });
+      console.log(`[web/auth] Seeded admin user from env: ${adminUser}`);
+      changed = true;
+    }
+  }
+
+  if (changed) saveUsers(users);
 }
 
 // ── Custom questions I/O ──────────────────────────────────────────────────────
