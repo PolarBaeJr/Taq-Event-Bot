@@ -127,10 +127,17 @@ function bootstrapAdminIfNeeded() {
         const username = String(entry.username || "").trim();
         const password = String(entry.password || "").trim();
         if (!username || !password) continue;
-        if (users.some((u) => u.username === username)) continue;
+        const existing = users.find((u) => u.username === username);
         const { salt, hash } = hashPassword(password);
-        users.push({ username, hash, salt, createdAt: new Date().toISOString() });
-        console.log(`[web/auth] Seeded user from users.seed.json: ${username}`);
+        if (existing) {
+          // Always update password from seed file so it acts as source of truth
+          existing.hash = hash;
+          existing.salt = salt;
+          console.log(`[web/auth] Updated password from users.seed.json: ${username}`);
+        } else {
+          users.push({ username, hash, salt, createdAt: new Date().toISOString() });
+          console.log(`[web/auth] Seeded user from users.seed.json: ${username}`);
+        }
         changed = true;
       }
     }
