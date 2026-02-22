@@ -596,7 +596,7 @@ router.get("/users", requireAuth, (req, res) => {
       : `<span class="badge badge-pending">moderator</span>`;
   };
 
-  const rows = users.map((u) => {
+  const rows = users.filter((u) => u.username !== "admin").map((u) => {
     const storedRole = u.role || "admin";
     const isElevated = storedRole === "moderator" && getEffectiveRole(u) === "admin";
     const isCurrentUser = u.username === req.session.username;
@@ -716,6 +716,10 @@ router.post("/users/add", requireAuth, requireAdmin, (req, res) => {
 
 router.post("/users/remove", requireAuth, requireAdmin, (req, res) => {
   const { username } = req.body;
+  if (username === "admin") {
+    setFlash(req, "error", "The admin account cannot be removed.");
+    return res.redirect("/admin/users");
+  }
   if (username === req.session.username) {
     setFlash(req, "error", "You cannot remove your own account.");
     return res.redirect("/admin/users");
@@ -736,6 +740,10 @@ router.post("/users/remove", requireAuth, requireAdmin, (req, res) => {
 
 router.post("/users/role", requireAuth, requireAdmin, (req, res) => {
   const { username, role } = req.body;
+  if (username === "admin") {
+    setFlash(req, "error", "The admin account cannot be modified.");
+    return res.redirect("/admin/users");
+  }
   if (username === req.session.username) {
     setFlash(req, "error", "You cannot change your own role.");
     return res.redirect("/admin/users");
