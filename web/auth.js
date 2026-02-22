@@ -237,6 +237,34 @@ function bootstrapAdminIfNeeded() {
   }
 
   if (changed) saveUsers(users);
+
+  // Strip spaces from any existing usernames (migration for old accounts)
+  migrateUsernameSpaces();
+}
+
+function migrateUsernameSpaces() {
+  const users = loadUsers();
+  let changed = false;
+  for (const u of users) {
+    const fixed = u.username.replace(/\s+/g, "");
+    if (fixed !== u.username) {
+      console.log(`[web/auth] Migrated username with spaces: '${u.username}' → '${fixed}'`);
+      u.username = fixed;
+      changed = true;
+    }
+  }
+  if (changed) {
+    saveUsers(users);
+    // Also fix seed file
+    const seeds = readSeedFile();
+    if (seeds) {
+      for (const s of seeds) {
+        const fixed = s.username.replace(/\s+/g, "");
+        if (fixed !== s.username) { s.username = fixed; }
+      }
+      writeSeedFile(seeds);
+    }
+  }
 }
 
 // ── Seed questions from questions.js defaults ─────────────────────────────────

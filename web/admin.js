@@ -507,13 +507,13 @@ function renderApplicationsPage(req, res, { lockedTrack = null } = {}) {
     const editUrl = `/admin/applications/${escHtml(a.trackKey || "_")}/${escHtml(a.id)}`;
     return `
       <tr>
-        <td><a href="${editUrl}" class="track-link"><code>${escHtml(a.id)}</code></a></td>
-        <td>${escHtml(a.applicantName || "—")}</td>
-        <td><a href="/admin/applications/${escHtml(a.trackKey || "")}" class="track-link"><code>${escHtml(a.trackKey || "—")}</code></a></td>
-        <td>${statusBadge(a.status || "pending")}</td>
-        <td class="muted-note">${a.createdAt ? escHtml(a.createdAt.slice(0, 10)) : "—"}</td>
-        <td class="muted-note">${a.decidedAt ? escHtml(a.decidedAt.slice(0, 10)) : "—"}</td>
-        <td class="field-preview">${fields}</td>
+        <td data-label="ID"><a href="${editUrl}" class="track-link"><code>${escHtml(a.id)}</code></a></td>
+        <td data-label="Applicant">${escHtml(a.applicantName || "—")}</td>
+        <td data-label="Track"><a href="/admin/applications/${escHtml(a.trackKey || "")}" class="track-link"><code>${escHtml(a.trackKey || "—")}</code></a></td>
+        <td data-label="Status">${statusBadge(a.status || "pending")}</td>
+        <td data-label="Created" class="muted-note">${a.createdAt ? escHtml(a.createdAt.slice(0, 10)) : "—"}</td>
+        <td data-label="Decided" class="muted-note">${a.decidedAt ? escHtml(a.decidedAt.slice(0, 10)) : "—"}</td>
+        <td data-label="Fields" class="field-preview">${fields}</td>
       </tr>`;
   }).join("");
 
@@ -651,10 +651,10 @@ router.get("/users", requireAuth, (req, res) => {
 
     return `
       <tr>
-        <td>${escHtml(u.username)}</td>
-        <td>${roleBadge(u)}</td>
-        <td class="muted-note">${escHtml(u.createdAt ? u.createdAt.slice(0, 10) : "—")}</td>
-        <td class="actions-cell">${actions || "—"}</td>
+        <td data-label="Username">${escHtml(u.username)}</td>
+        <td data-label="Role">${roleBadge(u)}</td>
+        <td data-label="Created" class="muted-note">${escHtml(u.createdAt ? u.createdAt.slice(0, 10) : "—")}</td>
+        <td data-label="Actions" class="actions-cell">${actions || "—"}</td>
       </tr>`;
   }).join("");
 
@@ -665,7 +665,7 @@ router.get("/users", requireAuth, (req, res) => {
         <div class="form-row">
           <div class="field">
             <label>Username</label>
-            <input type="text" name="username" required/>
+            <input type="text" name="username" required pattern="[^\s]+" title="No spaces allowed"/>
           </div>
           <div class="field">
             <label>Password</label>
@@ -714,6 +714,7 @@ router.post("/users/add", requireAuth, requireAdmin, (req, res) => {
   const assignedRole = role === "admin" ? "admin" : "moderator";
   try {
     if (!username || !password) throw new Error("Username and password are required.");
+    if (/\s/.test(username)) throw new Error("Username cannot contain spaces.");
     addUser(username, password, assignedRole);
     setFlash(req, "ok", `User '${username}' added as ${assignedRole}.`);
   } catch (err) {

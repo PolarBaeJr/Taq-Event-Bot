@@ -15,6 +15,8 @@
   position: sticky;
   top: 0;
   height: 100vh;
+  align-self: flex-start; /* don't stretch to match main content height */
+  overflow-y: auto;
 }
 
 .nav-logo {
@@ -88,6 +90,8 @@
 
 .admin-main {
   flex: 1;
+  min-width: 0;          /* allow flex item to shrink and scroll instead of overflow */
+  display: block;        /* override global: main { display: flex } from style.css */
   padding: 40px 48px 80px;
   max-width: 1100px;
   overflow-x: auto;
@@ -392,6 +396,11 @@
   white-space: nowrap;
 }
 
+/* Inline selects inside table cells should not stretch to 100% width */
+.actions-cell select {
+  width: auto;
+}
+
 .track-link {
   color: inherit;
   text-decoration: none;
@@ -466,16 +475,25 @@ code {
 }
 
 /* ── Responsive ────────────────────────────────────────────────── */
-@media (max-width: 768px) {
+@media (max-width: 900px) {
   .admin-nav {
     width: 180px;
   }
   .admin-main {
     padding: 24px 20px 60px;
   }
+  .admin-table {
+    font-size: 0.82rem;
+  }
+  .stats-grid {
+    gap: 10px;
+  }
+  .stat-card {
+    padding: 16px 18px;
+  }
 }
 
-@media (max-width: 560px) {
+@media (max-width: 640px) {
   .admin-page {
     flex-direction: column;
   }
@@ -483,15 +501,99 @@ code {
     width: 100%;
     height: auto;
     position: static;
+    align-self: auto;
     flex-direction: row;
     flex-wrap: wrap;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+  .nav-logo {
+    padding: 14px 16px;
+    border-bottom: none;
+    border-right: 1px solid var(--border);
   }
   .admin-nav nav {
     flex-direction: row;
     flex-wrap: wrap;
     padding: 8px;
+    gap: 2px;
+  }
+  .nav-footer {
+    width: 100%;
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    border-top: 1px solid var(--border);
+  }
+  .logout-btn {
+    width: auto;
   }
   .admin-main {
-    padding: 20px 16px 60px;
+    padding: 16px 12px 60px;
+    max-width: 100%;
+  }
+  /* Stack table into card-style rows on very small screens */
+  .admin-table,
+  .admin-table thead,
+  .admin-table tbody,
+  .admin-table th,
+  .admin-table td,
+  .admin-table tr {
+    display: block;
+  }
+  .admin-table thead {
+    display: none;
+  }
+  .admin-table td {
+    padding: 6px 10px;
+    border-bottom: none;
+  }
+  .admin-table td::before {
+    content: attr(data-label);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    display: block;
+    margin-bottom: 2px;
+  }
+  .admin-table tr {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    margin-bottom: 10px;
+    padding: 6px 4px;
+  }
+  .admin-table tr:hover td {
+    background: transparent;
+  }
+  .actions-cell {
+    white-space: normal;
+  }
+  .actions-cell select {
+    max-width: 120px;
+  }
+  .form-row {
+    flex-direction: column;
+  }
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+  .stat-card {
+    padding: 12px 8px;
+  }
+  .stat-val {
+    font-size: 1.5rem;
+  }
+  .filter-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .filter-bar select,
+  .filter-bar button,
+  .filter-bar a {
+    width: 100%;
   }
 }
