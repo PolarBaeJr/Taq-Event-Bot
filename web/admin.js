@@ -612,7 +612,7 @@ router.get("/users", requireAuth, (req, res) => {
       actions += `
         <form method="POST" action="/admin/users/role" style="display:inline">
           <input type="hidden" name="username" value="${escHtml(u.username)}"/>
-          <select name="role" style="font-size:0.78rem;padding:2px 6px">${roleOpts}</select>
+          <select name="role" style="font-size:0.78rem;padding:2px 6px;width:auto">${roleOpts}</select>
           <button type="submit" class="btn-sm">Set</button>
         </form>`;
 
@@ -621,7 +621,7 @@ router.get("/users", requireAuth, (req, res) => {
         actions += `
           <form method="POST" action="/admin/users/elevate" style="display:inline;margin-left:4px">
             <input type="hidden" name="username" value="${escHtml(u.username)}"/>
-            <select name="hours" style="font-size:0.78rem;padding:2px 6px">
+            <select name="hours" style="font-size:0.78rem;padding:2px 6px;width:auto">
               <option value="1">1h</option>
               <option value="4">4h</option>
               <option value="8">8h</option>
