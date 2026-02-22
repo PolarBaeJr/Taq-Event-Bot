@@ -658,9 +658,9 @@ router.get("/users", requireAuth, (req, res) => {
       </tr>`;
   }).join("");
 
-  const addModeratorHtml = currentRole === "admin" ? `
+  const addUserHtml = currentRole === "admin" ? `
     <section class="card" style="margin-top:32px">
-      <h2>Add Moderator</h2>
+      <h2>Add User</h2>
       <form method="POST" action="/admin/users/add" class="inline-form">
         <div class="form-row">
           <div class="field">
@@ -671,8 +671,15 @@ router.get("/users", requireAuth, (req, res) => {
             <label>Password</label>
             <input type="password" name="password" required/>
           </div>
+          <div class="field">
+            <label>Role</label>
+            <select name="role">
+              <option value="moderator">Moderator</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
         </div>
-        <button type="submit" class="btn-primary">Add Moderator</button>
+        <button type="submit" class="btn-primary">Add User</button>
       </form>
     </section>` : "";
 
@@ -682,7 +689,7 @@ router.get("/users", requireAuth, (req, res) => {
       <thead><tr><th>Username</th><th>Role</th><th>Created</th><th>Actions</th></tr></thead>
       <tbody>${rows || '<tr><td colspan="4" class="muted-note">No users.</td></tr>'}</tbody>
     </table>
-    ${addModeratorHtml}
+    ${addUserHtml}
     <section class="card" style="margin-top:24px">
       <h2>Change My Password</h2>
       <form method="POST" action="/admin/users/password" class="inline-form">
@@ -703,11 +710,12 @@ router.get("/users", requireAuth, (req, res) => {
 });
 
 router.post("/users/add", requireAuth, requireAdmin, (req, res) => {
-  const { username, password } = req.body;
+  const { username, password, role } = req.body;
+  const assignedRole = role === "admin" ? "admin" : "moderator";
   try {
     if (!username || !password) throw new Error("Username and password are required.");
-    addUser(username, password, "moderator");
-    setFlash(req, "ok", `Moderator '${username}' added.`);
+    addUser(username, password, assignedRole);
+    setFlash(req, "ok", `User '${username}' added as ${assignedRole}.`);
   } catch (err) {
     setFlash(req, "error", err.message);
   }
