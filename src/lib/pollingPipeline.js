@@ -482,7 +482,6 @@ function createPollingPipeline(options = {}) {
         allowEmpty: true,
         fallback: [],
       });
-      writeState(state);
 
       try {
         onApplicationCreated({

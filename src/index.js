@@ -200,6 +200,7 @@ const LOG_EMBED_COLOR = 0xed4245;
 const APPLICATION_LOG_ACCEPT_COLOR = 0x57f287;
 const APPLICATION_LOG_DENY_COLOR = 0xed4245;
 const APPLICATION_LOG_PROCESSING_COLOR = 0xfee75c;
+const APPLICATION_LOG_LEAVE_COLOR = 0xe67e22;
 const REQUIRED_CHANNEL_PERMISSIONS = [
   ["ViewChannel", PermissionsBitField.Flags.ViewChannel],
   ["ReadMessageHistory", PermissionsBitField.Flags.ReadMessageHistory],
@@ -375,10 +376,16 @@ function normalizeVoteRule(rawRule) {
     fallback: DEFAULT_VOTE_RULE.minimumVotes,
   });
 
+  const deadlineHours =
+    Number.isFinite(rawRule?.deadlineHours) && rawRule.deadlineHours > 0
+      ? Math.floor(rawRule.deadlineHours)
+      : null;
+
   return {
     numerator,
     denominator: denominator < numerator ? numerator : denominator,
     minimumVotes,
+    deadlineHours,
   };
 }
 
@@ -701,7 +708,12 @@ function setTrackVoteRule(trackKey, rawRule) {
 
   const state = readState();
   const settings = ensureExtendedSettingsContainers(state);
-  const voteRule = normalizeVoteRule(rawRule);
+  // Preserve existing deadlineHours if not explicitly provided in rawRule.
+  const mergedRule =
+    rawRule && typeof rawRule === "object" && !Object.prototype.hasOwnProperty.call(rawRule, "deadlineHours")
+      ? { ...rawRule, deadlineHours: settings.voteRules[normalizedTrack]?.deadlineHours }
+      : rawRule;
+  const voteRule = normalizeVoteRule(mergedRule);
   settings.voteRules[normalizedTrack] = voteRule;
   writeState(state);
   return {
@@ -1343,7 +1355,8 @@ function buildSubmittedFieldsFingerprintFromLines(submittedFields) {
 
 function formatVoteRule(rule) {
   const normalized = normalizeVoteRule(rule);
-  return `${normalized.numerator}/${normalized.denominator} (min ${normalized.minimumVotes})`;
+  const base = `${normalized.numerator}/${normalized.denominator} (min ${normalized.minimumVotes})`;
+  return normalized.deadlineHours ? `${base}, deadline ${normalized.deadlineHours}h` : base;
 }
 
 function computeVoteThreshold(eligibleCount, trackKey) {
@@ -2224,6 +2237,27 @@ async function maybeSendPendingReminders() {
   }
 }
 
+async function maybeApplyVotingDeadlines() {
+  const state = readState();
+  const nowMs = Date.now();
+  for (const [messageId, app] of Object.entries(state.applications || {})) {
+    if (!app || app.status !== STATUS_PENDING) continue;
+    const rule = getActiveVoteRule(app.trackKey);
+    if (!rule.deadlineHours) continue;
+    const createdAtMs = parseIsoTimeMs(app.createdAt);
+    if (!Number.isFinite(createdAtMs)) continue;
+    if (nowMs - createdAtMs < rule.deadlineHours * 3600000) continue;
+    await finalizeApplication(messageId, STATUS_DENIED, "deadline", client.user.id, {
+      reason: "Voting deadline expired",
+    }).catch((err) =>
+      logger.error("deadline_auto_deny_failed", "Failed auto-denying application at deadline.", {
+        messageId,
+        error: err.message,
+      })
+    );
+  }
+}
+
 async function maybeSendDailyDigest() {
   const state = readState();
   const settings = ensureExtendedSettingsContainers(state);
@@ -3073,6 +3107,51 @@ const { processQueuedPostJobs, pollOnce } = createPollingPipeline({
   logger: pipelineLogger,
 });
 
+function enqueueModalApplication({ trackKey, discordUsername, discordUserId, ign, whyApply, experience, extra }) {
+  const state = readState();
+  const headers = [
+    "Timestamp",
+    "Discord Username",
+    "In-Game Name",
+    "Applying For",
+    "Why do you want to join",
+    "Experience",
+    "Additional Notes",
+  ];
+  const row = [
+    new Date().toISOString(),
+    discordUserId ? `${discordUsername} (<@${discordUserId}>)` : discordUsername,
+    ign,
+    trackKey,
+    whyApply,
+    experience || "",
+    extra || "",
+  ];
+  const normalizedHeaders = headers.map((h) => String(h));
+  const normalizedRow = row.map((v) => String(v || ""));
+  const trackKeys = normalizeTrackKeys(trackKey);
+  const jobId = allocateNextJobId(state);
+  const job = {
+    jobId,
+    type: JOB_TYPE_POST_APPLICATION,
+    rowIndex: -1,
+    trackKeys,
+    postedTrackKeys: [],
+    responseKey: buildResponseKey(normalizedHeaders, normalizedRow),
+    headers: normalizedHeaders,
+    row: normalizedRow,
+    createdAt: new Date().toISOString(),
+    attempts: 0,
+    lastAttemptAt: null,
+    lastError: null,
+  };
+  if (!Array.isArray(state.postJobs)) state.postJobs = [];
+  state.postJobs.push(job);
+  sortPostJobsInPlace(state.postJobs);
+  writeState(state);
+  return jobId;
+}
+
 const {
   buildSlashCommands,
   registerSlashCommands,
@@ -3196,6 +3275,8 @@ const onInteractionCreate = createInteractionCommandHandler({
   reactionRoleListMaxLines: DEFAULT_REACTION_ROLE_LIST_MAX_LINES,
   getTrackKeyForChannelId,
   getActiveChannelId,
+  getApplicationDisplayId,
+  enqueueModalApplication,
   refreshSlashCommandsForGuild,
   logger: interactionLogger,
 });
@@ -3311,6 +3392,38 @@ client.on("guildCreate", async (guild) => {
   }
 });
 
+client.on("guildMemberRemove", async (member) => {
+  if (member.user?.bot) return;
+  const state = readState();
+  const matches = Object.values(state.applications || {}).filter(
+    (app) => app?.status === STATUS_ACCEPTED && app?.applicantUserId === member.id
+  );
+  if (matches.length === 0) return;
+  const leftAt = new Date().toISOString();
+  for (const app of matches) {
+    app.memberLeftAt = leftAt;
+  }
+  writeState(state);
+  const botLogChannelId = getActiveBotLogsChannelId();
+  if (!botLogChannelId) return;
+  for (const app of matches) {
+    const embed = {
+      color: APPLICATION_LOG_LEAVE_COLOR,
+      title: "Team Member Left Server",
+      fields: [
+        { name: "Application ID", value: getApplicationDisplayId(app) || app.messageId || "unknown", inline: true },
+        { name: "Track", value: getTrackLabel(app.trackKey), inline: true },
+        { name: "Accepted At", value: app.decidedAt ? `<t:${Math.floor(new Date(app.decidedAt).getTime() / 1000)}:f>` : "unknown", inline: true },
+        { name: "User", value: member.user ? `${member.user.tag} (<@${member.id}>)` : `<@${member.id}>`, inline: false },
+      ],
+      timestamp: new Date().toISOString(),
+    };
+    await sendChannelMessage(botLogChannelId, { embeds: [embed] }).catch((err) => {
+      logger.error("member_leave_log_failed", "Failed posting member-left embed.", { error: err.message });
+    });
+  }
+});
+
 async function main() {
   await client.login(config.botToken);
   await auditBotPermissions();
@@ -3374,6 +3487,11 @@ async function main() {
       error: err.message,
     });
   });
+  await maybeApplyVotingDeadlines().catch((err) => {
+    logger.error("startup_initial_deadline_failed", "Initial deadline pass failed.", {
+      error: err.message,
+    });
+  });
   await maybeSendDailyDigest().catch((err) => {
     logger.error("startup_initial_digest_failed", "Initial digest pass failed.", {
       error: err.message,
@@ -3384,6 +3502,7 @@ async function main() {
     try {
       await pollOnce();
       await maybeSendPendingReminders();
+      await maybeApplyVotingDeadlines();
       await maybeSendDailyDigest();
     } catch (err) {
       logger.error("poll_cycle_failed", "Poll cycle failed.", {

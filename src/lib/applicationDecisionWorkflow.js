@@ -2,6 +2,8 @@
   Core module for application decision workflow.
 */
 
+const MEMBER_CACHE_TTL_MS = 5 * 60 * 1000;
+
 function createApplicationDecisionWorkflow(options = {}) {
   const client = options.client;
   const PermissionsBitField = options.PermissionsBitField;
@@ -166,9 +168,21 @@ function createApplicationDecisionWorkflow(options = {}) {
     }
   }
 
+  const memberCacheByGuild = new Map();
+
+  async function getCachedGuildMembers(guild) {
+    const cached = memberCacheByGuild.get(guild.id);
+    if (cached && Date.now() - cached.cachedAt < MEMBER_CACHE_TTL_MS) {
+      return cached.members;
+    }
+    const members = await guild.members.fetch();
+    memberCacheByGuild.set(guild.id, { members, cachedAt: Date.now() });
+    return members;
+  }
+
   // getReviewersWithChannelAccess: handles get reviewers with channel access.
   async function getReviewersWithChannelAccess(channel, trackKey) {
-    const members = await channel.guild.members.fetch();
+    const members = await getCachedGuildMembers(channel.guild);
     const reviewers = new Set();
     const voterRoleIds = new Set(getTrackVoterRoleIds(trackKey));
     const enforceRoleFilter = voterRoleIds.size > 0;

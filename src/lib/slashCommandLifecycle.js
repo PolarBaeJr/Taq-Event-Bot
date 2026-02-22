@@ -1041,6 +1041,22 @@ function createSlashCommandLifecycle(options = {}) {
             .setRequired(false)
         ),
       new SlashCommandBuilder()
+        .setName("lookup")
+        .setDescription("Show all application history for a Discord user")
+        .addUserOption((option) =>
+          option
+            .setName("user")
+            .setDescription("Discord user to look up")
+            .setRequired(true)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("track")
+            .setDescription("Filter by track (optional)")
+            .setAutocomplete(true)
+            .setRequired(false)
+        ),
+      new SlashCommandBuilder()
         .setName("reopen")
         .setDescription("Reopen a previously accepted/denied application")
         .addStringOption((option) =>
@@ -1126,6 +1142,14 @@ function createSlashCommandLifecycle(options = {}) {
                 .setDescription("Minimum YES/NO votes")
                 .setMinValue(1)
                 .setMaxValue(200)
+                .setRequired(false)
+            )
+            .addIntegerOption((option) =>
+              option
+                .setName("deadline_hours")
+                .setDescription("Auto-deny deadline in hours (1–720). Set 0 to disable.")
+                .setMinValue(0)
+                .setMaxValue(720)
                 .setRequired(false)
             )
         )
@@ -1355,6 +1379,16 @@ function createSlashCommandLifecycle(options = {}) {
       new SlashCommandBuilder()
         .setName("restart")
         .setDescription("Restart the bot process"),
+      new SlashCommandBuilder()
+        .setName("apply")
+        .setDescription("Submit an application directly in Discord")
+        .addStringOption((option) =>
+          option
+            .setName("track")
+            .setDescription("Track to apply for")
+            .setAutocomplete(true)
+            .setRequired(true)
+        ),
     ].map((command) => command.toJSON());
   }
 
