@@ -12,6 +12,10 @@ credentials*.json
 *.pem
 *.p12
 *.key
+web/certs/*.crt
+web/certs/*.cer
+web/certs/*cert*.txt
+web/certs/*key*.txt
 .bot-state.json
 .bot-state.*.json
 .bot.pid

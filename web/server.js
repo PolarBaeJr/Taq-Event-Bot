@@ -1,5 +1,8 @@
 "use strict";
 
+const fs = require("node:fs");
+const http = require("node:http");
+const https = require("node:https");
 const path = require("node:path");
 const dotenv = require("dotenv");
 dotenv.config({ path: path.join(__dirname, "../.env") });
@@ -8,11 +11,24 @@ const express = require("express");
 const { google } = require("googleapis");
 const { COMMON_FIELDS, TRACK_QUESTIONS, TRACK_LABELS } = require("./questions");
 
-const PORT = Number(process.env.WEB_PORT) || 3000;
+function resolvePort() {
+  const raw = process.env.PORT ?? process.env.WEB_PORT;
+  const parsed = Number(raw);
+  if (Number.isInteger(parsed) && parsed >= 0 && parsed <= 65535) {
+    return parsed;
+  }
+  return 3000;
+}
+
+const PORT = resolvePort();
 const SPREADSHEET_ID = process.env.GOOGLE_SPREADSHEET_ID;
 const SHEET_NAME = process.env.GOOGLE_SHEET_NAME;
 const SERVICE_ACCOUNT_FILE = process.env.GOOGLE_SERVICE_ACCOUNT_KEY_FILE;
 const SERVICE_ACCOUNT_JSON = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+const HTTPS_KEY_FILE = process.env.HTTPS_KEY_FILE;
+const HTTPS_CERT_FILE = process.env.HTTPS_CERT_FILE;
+const HTTPS_KEY_PEM = process.env.HTTPS_KEY_PEM;
+const HTTPS_CERT_PEM = process.env.HTTPS_CERT_PEM;
 
 // ── Google Sheets auth ────────────────────────────────────────────────────────
 
@@ -53,6 +69,41 @@ async function appendRow(sheets, rowValues) {
     insertDataOption: "INSERT_ROWS",
     requestBody: { values: [rowValues] },
   });
+}
+
+function normalizePem(value) {
+  return String(value || "").replace(/\\n/g, "\n");
+}
+
+function loadHttpsOptions() {
+  const hasPemEnv = Boolean(HTTPS_KEY_PEM || HTTPS_CERT_PEM);
+  const hasFileEnv = Boolean(HTTPS_KEY_FILE || HTTPS_CERT_FILE);
+
+  if (hasPemEnv && hasFileEnv) {
+    throw new Error("Use either HTTPS_*_PEM or HTTPS_*_FILE variables, not both.");
+  }
+
+  if (hasPemEnv) {
+    if (!HTTPS_KEY_PEM || !HTTPS_CERT_PEM) {
+      throw new Error("Both HTTPS_KEY_PEM and HTTPS_CERT_PEM are required for HTTPS.");
+    }
+    return {
+      key: normalizePem(HTTPS_KEY_PEM),
+      cert: normalizePem(HTTPS_CERT_PEM),
+    };
+  }
+
+  if (hasFileEnv) {
+    if (!HTTPS_KEY_FILE || !HTTPS_CERT_FILE) {
+      throw new Error("Both HTTPS_KEY_FILE and HTTPS_CERT_FILE are required for HTTPS.");
+    }
+    return {
+      key: fs.readFileSync(path.resolve(HTTPS_KEY_FILE)),
+      cert: fs.readFileSync(path.resolve(HTTPS_CERT_FILE)),
+    };
+  }
+
+  return null;
 }
 
 // Build a sheet row from form data, respecting the existing header column order.
@@ -301,6 +352,40 @@ app.get("/success", (req, res) => {
   res.send(successPage(trackLabel));
 });
 
-app.listen(PORT, () => {
-  console.log(`TAq application portal running on http://localhost:${PORT}`);
+let tlsOptions = null;
+try {
+  tlsOptions = loadHttpsOptions();
+} catch (err) {
+  console.error(`HTTPS configuration error: ${err.message}`);
+  process.exit(1);
+}
+
+const server = tlsOptions
+  ? https.createServer(tlsOptions, app)
+  : http.createServer(app);
+
+server.listen(PORT, () => {
+  const protocol = tlsOptions ? "https" : "http";
+  console.log(`TAq application portal running on ${protocol}://localhost:${PORT}`);
+  if (!tlsOptions && PORT === 443) {
+    console.warn("Port 443 is configured without TLS. Set HTTPS_KEY_FILE/HTTPS_CERT_FILE to serve HTTPS directly.");
+  }
+});
+
+server.on("error", (err) => {
+  if (err && err.code === "EACCES" && PORT < 1024) {
+    console.error(
+      `Cannot bind to port ${PORT} without elevated privileges. ` +
+      "Use a reverse proxy (Nginx/Cloudflare) or run with the required permissions."
+    );
+    process.exit(1);
+  }
+
+  if (err && err.code === "EADDRINUSE") {
+    console.error(`Port ${PORT} is already in use.`);
+    process.exit(1);
+  }
+
+  console.error("Web server failed to start:", err);
+  process.exit(1);
 });
