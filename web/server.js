@@ -8,8 +8,11 @@ const dotenv = require("dotenv");
 dotenv.config({ path: path.join(__dirname, "../.env") });
 
 const express = require("express");
+const session = require("express-session");
 const { google } = require("googleapis");
 const { COMMON_FIELDS, TRACK_QUESTIONS, TRACK_LABELS } = require("./questions");
+const { loadCustomQuestions, bootstrapAdminIfNeeded } = require("./auth");
+const adminRouter = require("./admin");
 
 function resolvePort() {
   const raw = process.env.PORT ?? process.env.WEB_PORT;
@@ -129,13 +132,17 @@ function loadHttpsOptions() {
   return null;
 }
 
+// Returns all fields for a track: common + built-in track questions + custom questions.
+function buildAllFields(trackKey) {
+  const defaults = TRACK_QUESTIONS[trackKey] || [];
+  const custom = loadCustomQuestions()[trackKey] || [];
+  return [...COMMON_FIELDS, ...defaults, ...custom];
+}
+
 // Build a sheet row from form data, respecting the existing header column order.
 // New columns not already in the sheet are appended at the end.
 function buildRow(headers, trackKey, formData) {
-  const allFields = [
-    ...COMMON_FIELDS,
-    ...(TRACK_QUESTIONS[trackKey] || []),
-  ];
+  const allFields = buildAllFields(trackKey);
 
   // Map field id → value from form submission.
   const valueById = {};
@@ -289,10 +296,7 @@ function indexPage() {
 }
 
 function formPage(trackKey, trackLabel, error) {
-  const allFields = [
-    ...COMMON_FIELDS,
-    ...(TRACK_QUESTIONS[trackKey] || []),
-  ];
+  const allFields = buildAllFields(trackKey);
   const fieldHtml = allFields.map(renderField).join("");
   const errorHtml = error
     ? `<div class="error-banner">${escHtml(error)}</div>`
@@ -323,9 +327,19 @@ function successPage(trackLabel) {
 
 // ── Express app ───────────────────────────────────────────────────────────────
 
+bootstrapAdminIfNeeded();
+
 const app = express();
 app.use(express.static(path.join(__dirname, "public")));
 app.use(express.urlencoded({ extended: true }));
+app.use(session({
+  secret: process.env.SESSION_SECRET || "change-me-in-production",
+  resave: false,
+  saveUninitialized: false,
+  cookie: { maxAge: 7 * 24 * 60 * 60 * 1000 }, // 7 days
+}));
+
+app.use("/admin", adminRouter);
 
 app.get("/", (_req, res) => {
   res.send(indexPage());
@@ -350,7 +364,7 @@ app.post("/apply/:track", async (req, res) => {
   const trackLabel = allTrackLabels[trackKey];
 
   // Basic server-side required field check.
-  const allFields = [...COMMON_FIELDS, ...(TRACK_QUESTIONS[trackKey] || [])];
+  const allFields = buildAllFields(trackKey);
   const missing = allFields
     .filter((f) => f.required && !String(req.body[f.id] || "").trim())
     .map((f) => f.label);

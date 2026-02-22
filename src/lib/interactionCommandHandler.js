@@ -53,6 +53,18 @@ function createInteractionCommandHandler(options = {}) {
   const upsertCustomTrack = options.upsertCustomTrack;
   const editCustomTrack = options.editCustomTrack;
   const removeCustomTrack = options.removeCustomTrack;
+  const getTrackCustomQuestions = typeof options.getTrackCustomQuestions === "function"
+    ? options.getTrackCustomQuestions
+    : () => [];
+  const addTrackCustomQuestion = typeof options.addTrackCustomQuestion === "function"
+    ? options.addTrackCustomQuestion
+    : () => { throw new Error("addTrackCustomQuestion not configured."); };
+  const removeTrackCustomQuestion = typeof options.removeTrackCustomQuestion === "function"
+    ? options.removeTrackCustomQuestion
+    : () => { throw new Error("removeTrackCustomQuestion not configured."); };
+  const resetTrackCustomQuestions = typeof options.resetTrackCustomQuestions === "function"
+    ? options.resetTrackCustomQuestions
+    : () => { throw new Error("resetTrackCustomQuestions not configured."); };
   const postConfigurationLog = options.postConfigurationLog;
   const userDisplayName = options.userDisplayName;
   const debugModeReport = options.debugModeReport;
@@ -2618,6 +2630,92 @@ function createInteractionCommandHandler(options = {}) {
             content: "You need Manage Server permission (or Administrator) to manage tracks.",
             ephemeral: true,
           });
+          return;
+        }
+
+        // Handle /track questions subcommand group
+        const trackSubGroup = safeGetSubcommandGroup(interaction);
+        if (trackSubGroup === "questions") {
+          const qAction = safeGetSubcommand(interaction);
+          const trackKey = interaction.options.getString("track", true);
+          const normalizedTrackForQ = normalizeTrackKey(trackKey) || trackKey;
+
+          if (qAction === "list") {
+            const questions = getTrackCustomQuestions(normalizedTrackForQ);
+            if (questions.length === 0) {
+              await interaction.reply({
+                content: `No custom questions for track \`${normalizedTrackForQ}\`.`,
+                ephemeral: true,
+              });
+              return;
+            }
+            const lines = questions.map((q, i) =>
+              `${i + 1}. \`${q.id}\` — ${q.label} [${q.type}${q.required ? ", required" : ""}]`
+            );
+            await interaction.reply({
+              content: `**Custom questions for \`${normalizedTrackForQ}\`:**\n${lines.join("\n")}`,
+              ephemeral: true,
+            });
+            return;
+          }
+
+          if (qAction === "add") {
+            const label = interaction.options.getString("label", true);
+            const type = interaction.options.getString("type") || "text";
+            const required = interaction.options.getBoolean("required") ?? false;
+            const optionsRaw = interaction.options.getString("options") || "";
+            const placeholder = interaction.options.getString("placeholder") || "";
+
+            // Generate id from label
+            const id = label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40) || "question";
+            const optArr = optionsRaw
+              ? optionsRaw.split(",").map((s) => s.trim()).filter(Boolean)
+              : [];
+
+            try {
+              addTrackCustomQuestion(normalizedTrackForQ, {
+                id,
+                label,
+                sheetHeader: label,
+                type: ["textarea", "select"].includes(type) ? type : "text",
+                required,
+                options: optArr,
+                placeholder,
+              });
+              await interaction.reply({
+                content: `Question added to \`${normalizedTrackForQ}\`: **${label}** (id: \`${id}\`, type: ${type})`,
+                ephemeral: true,
+              });
+            } catch (err) {
+              await interaction.reply({ content: err.message || "Failed adding question.", ephemeral: true });
+            }
+            return;
+          }
+
+          if (qAction === "remove") {
+            const questionId = interaction.options.getString("id", true);
+            try {
+              removeTrackCustomQuestion(normalizedTrackForQ, questionId);
+              await interaction.reply({
+                content: `Question \`${questionId}\` removed from \`${normalizedTrackForQ}\`.`,
+                ephemeral: true,
+              });
+            } catch (err) {
+              await interaction.reply({ content: err.message || "Failed removing question.", ephemeral: true });
+            }
+            return;
+          }
+
+          if (qAction === "reset") {
+            resetTrackCustomQuestions(normalizedTrackForQ);
+            await interaction.reply({
+              content: `All custom questions cleared for \`${normalizedTrackForQ}\`.`,
+              ephemeral: true,
+            });
+            return;
+          }
+
+          await interaction.reply({ content: `Unknown questions action: ${qAction}`, ephemeral: true });
           return;
         }
 

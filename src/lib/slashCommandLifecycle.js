@@ -1022,6 +1022,100 @@ function createSlashCommandLifecycle(options = {}) {
                 .setAutocomplete(true)
                 .setRequired(true)
             )
+        )
+        .addSubcommandGroup((group) =>
+          group
+            .setName("questions")
+            .setDescription("Manage custom form questions for a track")
+            .addSubcommand((subcommand) =>
+              subcommand
+                .setName("list")
+                .setDescription("List custom questions for a track")
+                .addStringOption((option) =>
+                  option
+                    .setName("track")
+                    .setDescription("Track key")
+                    .setAutocomplete(true)
+                    .setRequired(true)
+                )
+            )
+            .addSubcommand((subcommand) =>
+              subcommand
+                .setName("add")
+                .setDescription("Add a custom question to a track")
+                .addStringOption((option) =>
+                  option
+                    .setName("track")
+                    .setDescription("Track key")
+                    .setAutocomplete(true)
+                    .setRequired(true)
+                )
+                .addStringOption((option) =>
+                  option
+                    .setName("label")
+                    .setDescription("Question label shown to applicants")
+                    .setRequired(true)
+                )
+                .addStringOption((option) =>
+                  option
+                    .setName("type")
+                    .setDescription("Field type: text, textarea, or select")
+                    .addChoices(
+                      { name: "text", value: "text" },
+                      { name: "textarea", value: "textarea" },
+                      { name: "select", value: "select" }
+                    )
+                    .setRequired(false)
+                )
+                .addBooleanOption((option) =>
+                  option
+                    .setName("required")
+                    .setDescription("Is this field required?")
+                    .setRequired(false)
+                )
+                .addStringOption((option) =>
+                  option
+                    .setName("options")
+                    .setDescription("Comma-separated choices (for select type)")
+                    .setRequired(false)
+                )
+                .addStringOption((option) =>
+                  option
+                    .setName("placeholder")
+                    .setDescription("Placeholder text for the input")
+                    .setRequired(false)
+                )
+            )
+            .addSubcommand((subcommand) =>
+              subcommand
+                .setName("remove")
+                .setDescription("Remove a custom question from a track")
+                .addStringOption((option) =>
+                  option
+                    .setName("track")
+                    .setDescription("Track key")
+                    .setAutocomplete(true)
+                    .setRequired(true)
+                )
+                .addStringOption((option) =>
+                  option
+                    .setName("id")
+                    .setDescription("Question ID to remove")
+                    .setRequired(true)
+                )
+            )
+            .addSubcommand((subcommand) =>
+              subcommand
+                .setName("reset")
+                .setDescription("Remove all custom questions for a track")
+                .addStringOption((option) =>
+                  option
+                    .setName("track")
+                    .setDescription("Track key")
+                    .setAutocomplete(true)
+                    .setRequired(true)
+                )
+            )
         ),
       new SlashCommandBuilder()
         .setName("dashboard")

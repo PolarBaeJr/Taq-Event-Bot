@@ -700,6 +700,55 @@ function removeCustomTrack(track) {
   return existing;
 }
 
+// ── Track custom question management ──────────────────────────────────────────
+
+function getTrackCustomQuestions(trackKey) {
+  const state = readState();
+  const customQuestions = state?.settings?.trackCustomQuestions;
+  if (!customQuestions || typeof customQuestions !== "object") return [];
+  return Array.isArray(customQuestions[trackKey]) ? customQuestions[trackKey] : [];
+}
+
+function addTrackCustomQuestion(trackKey, question) {
+  const state = readState();
+  ensureExtendedSettingsContainers(state);
+  if (!state.settings.trackCustomQuestions || typeof state.settings.trackCustomQuestions !== "object") {
+    state.settings.trackCustomQuestions = {};
+  }
+  const cq = state.settings.trackCustomQuestions;
+  if (!Array.isArray(cq[trackKey])) cq[trackKey] = [];
+  const id = String(question.id || "").trim();
+  if (!id) throw new Error("Question id is required.");
+  if (cq[trackKey].some((q) => q.id === id)) {
+    throw new Error(`Question id '${id}' already exists for track '${trackKey}'.`);
+  }
+  cq[trackKey].push(question);
+  writeState(state);
+}
+
+function removeTrackCustomQuestion(trackKey, questionId) {
+  const state = readState();
+  ensureExtendedSettingsContainers(state);
+  if (!state.settings.trackCustomQuestions || typeof state.settings.trackCustomQuestions !== "object") {
+    throw new Error(`No custom questions for track '${trackKey}'.`);
+  }
+  const cq = state.settings.trackCustomQuestions;
+  if (!Array.isArray(cq[trackKey])) throw new Error(`No custom questions for track '${trackKey}'.`);
+  const before = cq[trackKey].length;
+  cq[trackKey] = cq[trackKey].filter((q) => q.id !== questionId);
+  if (cq[trackKey].length === before) throw new Error(`Question '${questionId}' not found.`);
+  writeState(state);
+}
+
+function resetTrackCustomQuestions(trackKey) {
+  const state = readState();
+  ensureExtendedSettingsContainers(state);
+  if (state.settings.trackCustomQuestions && typeof state.settings.trackCustomQuestions === "object") {
+    delete state.settings.trackCustomQuestions[trackKey];
+  }
+  writeState(state);
+}
+
 function setTrackVoteRule(trackKey, rawRule) {
   const normalizedTrack = normalizeTrackKey(trackKey);
   if (!normalizedTrack) {
@@ -3164,6 +3213,10 @@ const onInteractionCreate = createInteractionCommandHandler({
   upsertCustomTrack,
   editCustomTrack,
   removeCustomTrack,
+  getTrackCustomQuestions,
+  addTrackCustomQuestion,
+  removeTrackCustomQuestion,
+  resetTrackCustomQuestions,
   postConfigurationLog,
   userDisplayName,
   debugModeReport: DEBUG_MODE_REPORT,
