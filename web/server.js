@@ -336,7 +336,12 @@ app.use(session({
   secret: process.env.SESSION_SECRET || "change-me-in-production",
   resave: false,
   saveUninitialized: false,
-  cookie: { maxAge: 7 * 24 * 60 * 60 * 1000 }, // 7 days
+  cookie: {
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    httpOnly: true,    // not accessible via document.cookie (blocks XSS theft)
+    sameSite: "strict", // not sent on cross-site requests (blocks CSRF)
+    secure: Boolean(HTTPS_KEY_PEM || HTTPS_CERT_PEM || HTTPS_KEY_FILE || HTTPS_CERT_FILE), // HTTPS-only when TLS is configured
+  },
 }));
 
 app.use("/admin", adminRouter);

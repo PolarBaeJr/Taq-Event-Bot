@@ -18,6 +18,8 @@ const {
 } = require("./auth");
 
 const STATE_FILE = process.env.STATE_FILE || path.join(__dirname, "../.bot-state.json");
+const CONTROL_LOG_FILE = process.env.CONTROL_LOG_FILE || path.join(__dirname, "../logs/control-actions.log");
+const CRASH_LOG_DIR = process.env.CRASH_LOG_DIR || path.join(__dirname, "../crashlog");
 
 const router = express.Router();
 
@@ -52,6 +54,7 @@ function adminLayout(title, body, username) {
         <a href="/admin/dashboard">Dashboard</a>
         <a href="/admin/questions">Questions</a>
         <a href="/admin/applications">Applications</a>
+        <a href="/admin/logs">Logs</a>
         <a href="/admin/users">Users</a>
       </nav>
       <div class="nav-footer">
@@ -146,8 +149,12 @@ router.post("/login", (req, res) => {
     setFlash(req, "error", "Invalid credentials.");
     return res.redirect("/admin/login");
   }
-  req.session.username = username;
-  res.redirect("/admin/dashboard");
+  // Regenerate session ID on login to prevent session fixation attacks.
+  req.session.regenerate((err) => {
+    if (err) return res.redirect("/admin/login");
+    req.session.username = username;
+    req.session.save(() => res.redirect("/admin/dashboard"));
+  });
 });
 
 router.post("/logout", (req, res) => {
@@ -555,6 +562,85 @@ router.post("/users/password", requireAuth, (req, res) => {
     setFlash(req, "error", err.message);
   }
   res.redirect("/admin/users");
+});
+
+// Logs
+router.get("/logs", requireAuth, (req, res) => {
+  // ── Control log ──────────────────────────────────────────────────────────────
+  const CONTROL_LOG_LINES = 200;
+  let controlRows = "";
+  try {
+    const raw = fs.readFileSync(CONTROL_LOG_FILE, "utf8");
+    const lines = raw.trim().split("\n").filter(Boolean).slice(-CONTROL_LOG_LINES).reverse();
+    controlRows = lines.map((line) => {
+      let obj;
+      try { obj = JSON.parse(line); } catch { obj = { raw: line }; }
+      const at = obj.at ? escHtml(new Date(obj.at).toLocaleString()) : "—";
+      const action = escHtml(obj.action || obj.raw || "");
+      const user = escHtml(obj.username || obj.globalName || "");
+      const extra = Object.entries(obj)
+        .filter(([k]) => !["action", "at", "userId", "username", "globalName", "guildId", "guildName"].includes(k))
+        .map(([k, v]) => `${escHtml(k)}: ${escHtml(String(v))}`)
+        .join(", ");
+      return `<tr>
+        <td class="muted-note" style="white-space:nowrap">${at}</td>
+        <td><strong>${action}</strong></td>
+        <td>${user}</td>
+        <td class="muted-note">${extra}</td>
+      </tr>`;
+    }).join("");
+  } catch {
+    controlRows = `<tr><td colspan="4" class="muted-note">Could not read control log (${escHtml(CONTROL_LOG_FILE)}).</td></tr>`;
+  }
+
+  // ── Crash logs ───────────────────────────────────────────────────────────────
+  let crashHtml = "";
+  try {
+    const files = fs.readdirSync(CRASH_LOG_DIR)
+      .filter((f) => f.endsWith(".log"))
+      .sort()
+      .reverse()
+      .slice(0, 20); // show 20 most recent
+
+    if (files.length === 0) {
+      crashHtml = `<p class="muted-note">No crash logs found.</p>`;
+    } else {
+      crashHtml = files.map((filename) => {
+        let obj;
+        try {
+          obj = JSON.parse(fs.readFileSync(path.join(CRASH_LOG_DIR, filename), "utf8"));
+        } catch {
+          obj = null;
+        }
+        const at = obj?.at ? escHtml(new Date(obj.at).toLocaleString()) : escHtml(filename);
+        const kind = escHtml(obj?.kind || "unknown");
+        const msg = escHtml(obj?.reason?.message || obj?.reason || "");
+        const stack = escHtml(obj?.reason?.stack || "");
+        return `<details class="crash-entry">
+          <summary>
+            <span class="badge badge-err">${kind}</span>
+            <span style="margin-left:8px">${at}</span>
+            ${msg ? `<span class="muted-note" style="margin-left:8px">— ${msg}</span>` : ""}
+          </summary>
+          ${stack ? `<pre class="crash-stack">${stack}</pre>` : `<pre class="crash-stack">${escHtml(JSON.stringify(obj, null, 2))}</pre>`}
+        </details>`;
+      }).join("\n");
+    }
+  } catch {
+    crashHtml = `<p class="muted-note">Could not read crash log directory (${escHtml(CRASH_LOG_DIR)}).</p>`;
+  }
+
+  res.send(adminLayout("Logs", `
+    ${flash(req)}
+    <h2 style="font-size:1.1rem;font-weight:700;margin-bottom:12px">Control Log <span class="muted-note">(last ${CONTROL_LOG_LINES} entries)</span></h2>
+    <table class="admin-table">
+      <thead><tr><th>Time</th><th>Action</th><th>User</th><th>Details</th></tr></thead>
+      <tbody>${controlRows || '<tr><td colspan="4" class="muted-note">No entries.</td></tr>'}</tbody>
+    </table>
+
+    <h2 style="font-size:1.1rem;font-weight:700;margin-top:36px;margin-bottom:12px">Crash Logs <span class="muted-note">(20 most recent)</span></h2>
+    ${crashHtml}
+  `, req.session.username));
 });
 
 module.exports = router;
