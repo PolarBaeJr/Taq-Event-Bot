@@ -921,7 +921,10 @@ router.post("/applications/:track/:id/delete", requireAuth, requireAdmin, (req, 
 // Logs
 router.get("/logs", requireAuth, (req, res) => {
   // ── Control log ──────────────────────────────────────────────────────────────
-  const CONTROL_LOG_LINES = 200;
+  const LOG_LINE_OPTIONS = [50, 100, 200, 500, 1000];
+  const CONTROL_LOG_LINES = LOG_LINE_OPTIONS.includes(Number(req.query.lines))
+    ? Number(req.query.lines)
+    : 200;
   let controlRows = "";
   try {
     const raw = fs.readFileSync(CONTROL_LOG_FILE, "utf8");
@@ -986,7 +989,18 @@ router.get("/logs", requireAuth, (req, res) => {
 
   res.send(adminLayout("Logs", `
     ${flash(req)}
-    <h2 style="font-size:1.1rem;font-weight:700;margin-bottom:12px">Control Log <span class="muted-note">(last ${CONTROL_LOG_LINES} entries)</span></h2>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap">
+      <h2 style="font-size:1.1rem;font-weight:700;margin:0">Control Log</h2>
+      <form method="GET" action="/admin/logs" style="display:flex;flex-direction:row;align-items:center;gap:8px;margin:0">
+        <label style="font-size:0.82rem;color:var(--muted)">Show last</label>
+        <select name="lines" style="width:auto;font-size:0.82rem;padding:4px 10px" onchange="this.form.submit()">
+          ${[50,100,200,500,1000].map((n) =>
+            `<option value="${n}" ${CONTROL_LOG_LINES === n ? "selected" : ""}>${n}</option>`
+          ).join("")}
+        </select>
+        <span style="font-size:0.82rem;color:var(--muted)">entries</span>
+      </form>
+    </div>
     <table class="admin-table">
       <thead><tr><th>Time</th><th>Action</th><th>User</th><th>Details</th></tr></thead>
       <tbody>${controlRows || '<tr><td colspan="4" class="muted-note">No entries.</td></tr>'}</tbody>
