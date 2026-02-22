@@ -365,17 +365,49 @@ function editCustomQuestion(trackKey, questionId, updates) {
 
 // ── Application I/O ───────────────────────────────────────────────────────────
 
+function addPendingAdminAction(action) {
+  const state = readRawState();
+  if (!Array.isArray(state.pendingAdminActions)) state.pendingAdminActions = [];
+  state.pendingAdminActions.push({
+    id: crypto.randomBytes(8).toString("hex"),
+    requestedAt: new Date().toISOString(),
+    ...action,
+  });
+  writeRawState(state);
+}
+
 function updateApplication(appId, updates) {
   const state = readRawState();
   if (!state.applications?.[appId]) throw new Error(`Application '${appId}' not found.`);
   Object.assign(state.applications[appId], updates);
   writeRawState(state);
+  return state.applications[appId];
 }
 
 function deleteApplication(appId) {
   const state = readRawState();
   if (!state.applications?.[appId]) throw new Error(`Application '${appId}' not found.`);
   delete state.applications[appId];
+  writeRawState(state);
+}
+
+// Archives an application: marks it locally + queues a Discord thread archive action.
+function archiveApplication(appId) {
+  const state = readRawState();
+  const app = state.applications?.[appId];
+  if (!app) throw new Error(`Application '${appId}' not found.`);
+  app.adminArchived = true;
+  app.adminArchivedAt = new Date().toISOString();
+  if (!Array.isArray(state.pendingAdminActions)) state.pendingAdminActions = [];
+  state.pendingAdminActions.push({
+    id: crypto.randomBytes(8).toString("hex"),
+    type: "archive_thread",
+    appId,
+    messageId: app.messageId || null,
+    channelId: app.channelId || null,
+    threadId: app.threadId || null,
+    requestedAt: new Date().toISOString(),
+  });
   writeRawState(state);
 }
 
@@ -408,6 +440,8 @@ module.exports = {
   editCustomQuestion,
   updateApplication,
   deleteApplication,
+  archiveApplication,
+  addPendingAdminAction,
   requireAuth,
   getEffectiveRole,
   elevateUser,

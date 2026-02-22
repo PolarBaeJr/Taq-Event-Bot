@@ -56,6 +56,7 @@ const logger = createStructuredLogger({
     service: "taq-event-team-bot",
     pid: process.pid,
   },
+  errorLogFile: process.env.BOT_ERROR_LOG_FILE || "logs/bot-errors.log",
 });
 const startupConfig = loadStartupConfig({
   env: process.env,
@@ -1161,6 +1162,8 @@ function readState() {
         parsed.threads && typeof parsed.threads === "object" ? parsed.threads : {},
       controlActions:
         Array.isArray(parsed.controlActions) ? parsed.controlActions : [],
+      pendingAdminActions:
+        Array.isArray(parsed.pendingAdminActions) ? parsed.pendingAdminActions : [],
       nextJobId,
       postJobs,
       settings: {
@@ -3431,6 +3434,67 @@ client.on("guildMemberRemove", async (member) => {
   }
 });
 
+// ── Admin panel action processor ──────────────────────────────────────────────
+// Processes actions queued by the web admin panel (archive thread, edit message embed).
+async function processPendingAdminActions() {
+  const state = readState();
+  const actions = Array.isArray(state.pendingAdminActions) ? [...state.pendingAdminActions] : [];
+  if (actions.length === 0) return;
+
+  const remaining = [];
+  for (const action of actions) {
+    try {
+      if (action.type === "archive_thread") {
+        if (action.threadId) {
+          const thread = await client.channels.fetch(action.threadId).catch(() => null);
+          if (thread && typeof thread.setArchived === "function" && !thread.archived) {
+            await thread.setArchived(true, "Archived via admin panel");
+          }
+        }
+        logger.info("admin_action_archive_thread", "Admin panel: archived Discord thread.", {
+          appId: action.appId,
+          threadId: action.threadId,
+        });
+      } else if (action.type === "edit_message") {
+        if (action.messageId && action.channelId) {
+          const channel = await client.channels.fetch(action.channelId).catch(() => null);
+          if (channel) {
+            const message = await channel.messages.fetch(action.messageId).catch(() => null);
+            if (message && message.embeds.length > 0) {
+              const fields = Array.isArray(action.submittedFields) ? action.submittedFields : [];
+              const detailsText = fields.join("\n\n");
+              const updatedEmbed = {
+                ...(message.embeds[0].toJSON?.() ?? {}),
+                description: toCodeBlock(detailsText),
+              };
+              await message.edit({ embeds: [updatedEmbed, ...message.embeds.slice(1).map((e) => e.toJSON?.() ?? e)] });
+            }
+          }
+        }
+        logger.info("admin_action_edit_message", "Admin panel: updated Discord message embed.", {
+          appId: action.appId,
+          messageId: action.messageId,
+        });
+      } else {
+        // Unknown action type — drop silently
+      }
+    } catch (err) {
+      const retries = (action.retries || 0) + 1;
+      logger.error("admin_action_failed", `Admin panel action '${action.type}' failed (attempt ${retries}).`, {
+        actionId: action.id,
+        type: action.type,
+        error: err.message,
+      });
+      if (retries < 5) {
+        remaining.push({ ...action, retries });
+      }
+    }
+  }
+
+  state.pendingAdminActions = remaining;
+  writeState(state);
+}
+
 async function main() {
   await client.login(config.botToken);
   await auditBotPermissions();
@@ -3504,6 +3568,11 @@ async function main() {
       error: err.message,
     });
   });
+  await processPendingAdminActions().catch((err) => {
+    logger.error("startup_admin_actions_failed", "Initial admin actions pass failed.", {
+      error: err.message,
+    });
+  });
 
   setInterval(async () => {
     try {
@@ -3511,6 +3580,7 @@ async function main() {
       await maybeSendPendingReminders();
       await maybeApplyVotingDeadlines();
       await maybeSendDailyDigest();
+      await processPendingAdminActions();
     } catch (err) {
       logger.error("poll_cycle_failed", "Poll cycle failed.", {
         error: err.message,

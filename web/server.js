@@ -7,6 +7,41 @@ const path = require("node:path");
 const dotenv = require("dotenv");
 dotenv.config({ path: path.join(__dirname, "../.env") });
 
+// ── Web error logger ──────────────────────────────────────────────────────────
+const WEB_ERROR_LOG_FILE = path.resolve(
+  process.env.WEB_ERROR_LOG_FILE || path.join(__dirname, "../logs/web-errors.log")
+);
+
+function appendWebError(entry) {
+  try {
+    const dir = path.dirname(WEB_ERROR_LOG_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(WEB_ERROR_LOG_FILE, JSON.stringify(entry) + "\n");
+  } catch { /* never throw from error logger */ }
+}
+
+function logWebError(source, err, extra = {}) {
+  appendWebError({
+    timestamp: new Date().toISOString(),
+    level: "error",
+    source,
+    message: err?.message || String(err),
+    stack: err?.stack || null,
+    ...extra,
+  });
+}
+
+// Capture unhandled web process errors
+process.on("uncaughtException", (err) => {
+  logWebError("uncaughtException", err);
+  console.error("[web] uncaughtException:", err);
+});
+process.on("unhandledRejection", (reason) => {
+  const err = reason instanceof Error ? reason : new Error(String(reason));
+  logWebError("unhandledRejection", err);
+  console.error("[web] unhandledRejection:", reason);
+});
+
 const express = require("express");
 const session = require("express-session");
 const { google } = require("googleapis");
@@ -224,8 +259,24 @@ function layout(title, body) {
   <link rel="stylesheet" href="/style.css"/>
 </head>
 <body>
+  <nav class="site-topbar">
+    <a href="https://www.the-aquarium.com/" class="topbar-logo" target="_blank" rel="noopener noreferrer">
+      <img src="https://www.the-aquarium.com/images/guildimages/icontransparent.png" alt="The Aquarium" class="topbar-logo-img"/>
+      <span class="topbar-logo-name">The Aquarium</span>
+    </a>
+    <div class="topbar-links">
+      <a href="https://www.the-aquarium.com/members" target="_blank" rel="noopener noreferrer">Members</a>
+      <a href="https://www.the-aquarium.com/leaderboard" target="_blank" rel="noopener noreferrer">Leaderboard</a>
+      <a href="https://www.the-aquarium.com/graid-event" target="_blank" rel="noopener noreferrer">Graid Event</a>
+      <a href="https://www.the-aquarium.com/map" target="_blank" rel="noopener noreferrer">Map</a>
+      <a href="https://www.the-aquarium.com/lootpools" target="_blank" rel="noopener noreferrer">Lootpools</a>
+    </div>
+  </nav>
   <div class="page">
     <header>
+      <a href="https://www.the-aquarium.com/" target="_blank" rel="noopener noreferrer">
+        <img src="https://www.the-aquarium.com/images/guildimages/icontransparent.png" alt="The Aquarium" class="header-logo"/>
+      </a>
       <h1>TAq Event Team</h1>
       <p class="subtitle">Application Portal</p>
     </header>
@@ -399,6 +450,17 @@ app.get("/success", (req, res) => {
   res.send(successPage(trackLabel));
 });
 
+// Express error handler — catches errors thrown by route handlers
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  logWebError("express_route", err, {
+    method: req.method,
+    url: req.originalUrl,
+  });
+  console.error("[web] Express route error:", err);
+  res.status(500).send("Internal server error.");
+});
+
 let tlsOptions = null;
 try {
   tlsOptions = loadHttpsOptions();
@@ -420,6 +482,8 @@ server.listen(PORT, () => {
 });
 
 server.on("error", (err) => {
+  logWebError("server_bind", err, { port: PORT });
+
   if (err && err.code === "EACCES" && PORT < 1024) {
     console.error(
       `Cannot bind to port ${PORT} without elevated privileges. ` +

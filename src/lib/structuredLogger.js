@@ -2,6 +2,9 @@
   Core module for structured logger.
 */
 
+const fs = require("node:fs");
+const path = require("node:path");
+
 function normalizeContext(context) {
   if (!context || typeof context !== "object" || Array.isArray(context)) {
     return {};
@@ -26,9 +29,24 @@ function serializeError(error) {
   };
 }
 
+// appendToLogFile: safely appends a JSON line to a log file, creating dirs as needed.
+function appendToLogFile(filePath, line) {
+  try {
+    const dir = path.dirname(path.resolve(filePath));
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(filePath, line + "\n");
+  } catch {
+    // Never throw from a logger
+  }
+}
+
 // createStructuredLogger: handles create structured logger.
 function createStructuredLogger(options = {}) {
   const baseContext = normalizeContext(options.baseContext);
+  // When set, error and warn level entries are also written to this file (NDJSON).
+  const errorLogFile = typeof options.errorLogFile === "string" && options.errorLogFile.trim()
+    ? options.errorLogFile.trim()
+    : null;
 
   // emit: handles emit.
   function emit(level, event, message, context = {}) {
@@ -44,10 +62,12 @@ function createStructuredLogger(options = {}) {
 
     if (payload.level === "error") {
       console.error(line);
+      if (errorLogFile) appendToLogFile(errorLogFile, line);
       return payload;
     }
     if (payload.level === "warn") {
       console.warn(line);
+      if (errorLogFile) appendToLogFile(errorLogFile, line);
       return payload;
     }
     console.log(line);
@@ -65,12 +85,13 @@ function createStructuredLogger(options = {}) {
     error(event, message, context = {}) {
       return emit("error", event, message, context);
     },
-    child(context = {}) {
+    child(childContext = {}) {
       return createStructuredLogger({
         baseContext: {
           ...baseContext,
-          ...normalizeContext(context),
+          ...normalizeContext(childContext),
         },
+        errorLogFile,
       });
     },
   };

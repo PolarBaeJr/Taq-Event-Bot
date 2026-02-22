@@ -19,6 +19,8 @@ const {
   editCustomQuestion,
   updateApplication,
   deleteApplication,
+  archiveApplication,
+  addPendingAdminAction,
   getEffectiveRole,
   elevateUser,
   revokeElevation,
@@ -28,6 +30,8 @@ const {
 const STATE_FILE = process.env.STATE_FILE || path.join(__dirname, "../.bot-state.json");
 const CONTROL_LOG_FILE = process.env.CONTROL_LOG_FILE || path.join(__dirname, "../logs/control-actions.log");
 const CRASH_LOG_DIR = process.env.CRASH_LOG_DIR || path.join(__dirname, "../crashlog");
+const BOT_ERROR_LOG_FILE = process.env.BOT_ERROR_LOG_FILE || path.join(__dirname, "../logs/bot-errors.log");
+const WEB_ERROR_LOG_FILE = process.env.WEB_ERROR_LOG_FILE || path.join(__dirname, "../logs/web-errors.log");
 
 const router = express.Router();
 
@@ -56,6 +60,9 @@ function adminLayout(title, body, username) {
   <div class="admin-page">
     <aside class="admin-nav">
       <div class="nav-logo">
+        <a href="https://www.the-aquarium.com/" class="nav-logo-link" target="_blank" rel="noopener noreferrer">
+          <img src="https://www.the-aquarium.com/images/guildimages/icontransparent.png" alt="The Aquarium" class="nav-logo-img"/>
+        </a>
         <span class="nav-logo-text">TAq Admin</span>
       </div>
       <nav>
@@ -94,6 +101,11 @@ function loginLayout(body) {
 <body>
   <div class="login-wrap">
     <div class="login-box">
+      <div class="login-logo-wrap">
+        <a href="https://www.the-aquarium.com/" target="_blank" rel="noopener noreferrer">
+          <img src="https://www.the-aquarium.com/images/guildimages/icontransparent.png" alt="The Aquarium" class="login-logo-img"/>
+        </a>
+      </div>
       <h1 class="login-title">TAq Admin</h1>
       ${body}
     </div>
@@ -180,9 +192,11 @@ router.post("/logout", (req, res) => {
 router.get("/dashboard", requireAuth, (req, res) => {
   const state = readRawState();
   const apps = Object.values(state.applications || {});
-  const pending = apps.filter((a) => a.status === "pending").length;
-  const accepted = apps.filter((a) => a.status === "accepted").length;
-  const denied = apps.filter((a) => a.status === "denied").length;
+  const active = apps.filter((a) => !a.adminArchived);
+  const pending = active.filter((a) => a.status === "pending").length;
+  const accepted = active.filter((a) => a.status === "accepted").length;
+  const denied = active.filter((a) => a.status === "denied").length;
+  const archived = apps.filter((a) => a.adminArchived).length;
   const customTracks = state?.settings?.customTracks;
   const trackCount = Array.isArray(customTracks) ? customTracks.length : 0;
   const userCount = loadUsers().length;
@@ -201,6 +215,10 @@ router.get("/dashboard", requireAuth, (req, res) => {
       <div class="stat-card">
         <div class="stat-val">${denied}</div>
         <div class="stat-label">Denied</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-val">${archived}</div>
+        <div class="stat-label">Archived</div>
       </div>
       <div class="stat-card">
         <div class="stat-val">${trackCount}</div>
@@ -475,12 +493,21 @@ function renderApplicationsPage(req, res, { lockedTrack = null } = {}) {
 
   const filterTrack = lockedTrack || req.query.track || "";
   const filterStatus = req.query.status || "";
+  // "archived" is a special pseudo-status stored as adminArchived flag rather than status field
+  const showArchived = filterStatus === "archived";
   const page = Math.max(1, parseInt(req.query.page, 10) || 1);
   const pageSize = 25;
 
   let filtered = allApps;
   if (filterTrack) filtered = filtered.filter((a) => a.trackKey === filterTrack);
-  if (filterStatus) filtered = filtered.filter((a) => a.status === filterStatus);
+  if (showArchived) {
+    filtered = filtered.filter((a) => a.adminArchived === true);
+  } else if (filterStatus) {
+    filtered = filtered.filter((a) => !a.adminArchived && a.status === filterStatus);
+  } else {
+    // Default: hide archived applications
+    filtered = filtered.filter((a) => !a.adminArchived);
+  }
 
   filtered.sort((a, b) => {
     const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
@@ -495,7 +522,9 @@ function renderApplicationsPage(req, res, { lockedTrack = null } = {}) {
 
   const allTrackKeys = [...new Set(allApps.map((a) => a.trackKey).filter(Boolean))].sort();
 
-  const statusBadge = (s) => {
+  const statusBadge = (a) => {
+    if (a.adminArchived) return `<span class="badge badge-archived">archived</span>`;
+    const s = a.status || "pending";
     const cls = s === "accepted" ? "badge-ok" : s === "denied" ? "badge-err" : "badge-pending";
     return `<span class="badge ${cls}">${escHtml(s)}</span>`;
   };
@@ -506,11 +535,11 @@ function renderApplicationsPage(req, res, { lockedTrack = null } = {}) {
       : "";
     const editUrl = `/admin/applications/${escHtml(a.trackKey || "_")}/${escHtml(a.id)}`;
     return `
-      <tr>
+      <tr${a.adminArchived ? ' style="opacity:0.6"' : ""}>
         <td data-label="ID"><a href="${editUrl}" class="track-link"><code>${escHtml(a.id)}</code></a></td>
         <td data-label="Applicant">${escHtml(a.applicantName || "—")}</td>
         <td data-label="Track"><a href="/admin/applications/${escHtml(a.trackKey || "")}" class="track-link"><code>${escHtml(a.trackKey || "—")}</code></a></td>
-        <td data-label="Status">${statusBadge(a.status || "pending")}</td>
+        <td data-label="Status">${statusBadge(a)}</td>
         <td data-label="Created" class="muted-note">${a.createdAt ? escHtml(a.createdAt.slice(0, 10)) : "—"}</td>
         <td data-label="Decided" class="muted-note">${a.decidedAt ? escHtml(a.decidedAt.slice(0, 10)) : "—"}</td>
         <td data-label="Fields" class="field-preview">${fields}</td>
@@ -553,6 +582,7 @@ function renderApplicationsPage(req, res, { lockedTrack = null } = {}) {
         <option value="pending" ${filterStatus === "pending" ? "selected" : ""}>Pending</option>
         <option value="accepted" ${filterStatus === "accepted" ? "selected" : ""}>Accepted</option>
         <option value="denied" ${filterStatus === "denied" ? "selected" : ""}>Denied</option>
+        <option value="archived" ${filterStatus === "archived" ? "selected" : ""}>Archived</option>
       </select>
       <button type="submit" class="btn-primary">Filter</button>
       ${!lockedTrack ? `<a href="/admin/applications" class="btn-sm">Clear</a>` : ""}
@@ -638,15 +668,13 @@ router.get("/users", requireAuth, (req, res) => {
           </form>`;
       }
 
-      // Remove (moderators only — demote first to remove an admin)
-      if (storedRole === "moderator") {
-        actions += `
-          <form method="POST" action="/admin/users/remove" style="display:inline;margin-left:4px"
-            onsubmit="return confirm('Remove user ${escHtml(u.username)}?')">
-            <input type="hidden" name="username" value="${escHtml(u.username)}"/>
-            <button type="submit" class="btn-sm btn-danger">Remove</button>
-          </form>`;
-      }
+      // Remove any non-self, non-reserved user
+      actions += `
+        <form method="POST" action="/admin/users/remove" style="display:inline;margin-left:4px"
+          onsubmit="return confirm('Remove user ${escHtml(u.username)}?')">
+          <input type="hidden" name="username" value="${escHtml(u.username)}"/>
+          <button type="submit" class="btn-sm btn-danger">Remove</button>
+        </form>`;
     }
 
     return `
@@ -731,11 +759,6 @@ router.post("/users/remove", requireAuth, requireAdmin, (req, res) => {
   }
   if (username === req.session.username) {
     setFlash(req, "error", "You cannot remove your own account.");
-    return res.redirect("/admin/users");
-  }
-  const target = findUser(username);
-  if (target && (target.role || "admin") === "admin") {
-    setFlash(req, "error", "Admin accounts cannot be removed from the web panel.");
     return res.redirect("/admin/users");
   }
   try {
@@ -832,9 +855,14 @@ router.get("/applications/:track/:id", requireAuth, (req, res) => {
     : "";
 
   const backUrl = `/admin/applications/${escHtml(req.params.track)}`;
+  const hasDiscordMessage = Boolean(app.messageId && app.channelId);
+  const archivedBanner = app.adminArchived
+    ? `<div class="flash-error" style="margin-bottom:12px">This application has been archived. The Discord thread has been (or will be) archived by the bot.</div>`
+    : "";
 
   res.send(adminLayout(`Edit Application`, `
     ${flash(req)}
+    ${archivedBanner}
     <a href="${backUrl}" class="back-link" style="display:inline-flex;margin-bottom:20px">← Back</a>
     <div class="card" style="margin-bottom:16px">
       <div style="display:flex;gap:24px;flex-wrap:wrap;font-size:0.85rem;color:var(--muted)">
@@ -843,6 +871,8 @@ router.get("/applications/:track/:id", requireAuth, (req, res) => {
         <span><strong>Job:</strong> ${escHtml(app.jobId || "—")}</span>
         <span><strong>Row:</strong> ${escHtml(String(app.rowIndex || "—"))}</span>
         <span><strong>Discord ID:</strong> ${escHtml(app.applicantUserId || "—")}</span>
+        ${app.messageId ? `<span><strong>Message:</strong> <code>${escHtml(app.messageId)}</code></span>` : ""}
+        ${app.threadId ? `<span><strong>Thread:</strong> <code>${escHtml(app.threadId)}</code></span>` : ""}
       </div>
     </div>
     <form method="POST" action="/admin/applications/${escHtml(req.params.track)}/${escHtml(appId)}" class="card">
@@ -875,24 +905,36 @@ router.get("/applications/:track/:id", requireAuth, (req, res) => {
         <label>Submitted Fields <span class="muted-note">(one per line)</span></label>
         <textarea name="submittedFields" rows="12" style="font-family:ui-monospace,monospace;font-size:0.82rem">${escHtml(fieldsText)}</textarea>
       </div>
-      <div style="display:flex;gap:10px;align-items:center">
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <button type="submit" class="btn-primary">Save Changes</button>
+        ${hasDiscordMessage ? `<button type="submit" name="syncDiscord" value="1" class="btn-primary" style="background:var(--accent2,#5865f2)">Save &amp; Sync Discord</button>` : ""}
         <a href="${backUrl}" class="btn-sm">Cancel</a>
       </div>
+      ${hasDiscordMessage ? `<p class="muted-note" style="margin-top:8px;font-size:0.78rem">"Save &amp; Sync Discord" also updates the embed text in the Discord message.</p>` : ""}
     </form>
-    <form method="POST" action="/admin/applications/${escHtml(req.params.track)}/${escHtml(appId)}/delete"
-      style="margin-top:16px" onsubmit="return confirm('Permanently delete this application?')">
-      <button type="submit" class="btn-sm btn-danger">Delete Application</button>
-    </form>
+    <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
+      ${!app.adminArchived ? `
+        <form method="POST" action="/admin/applications/${escHtml(req.params.track)}/${escHtml(appId)}/archive"
+          onsubmit="return confirm('Archive this application? The Discord thread will be archived by the bot on its next cycle.')">
+          <button type="submit" class="btn-sm btn-danger">Archive (Discord + local)</button>
+        </form>` : `
+        <form method="POST" action="/admin/applications/${escHtml(req.params.track)}/${escHtml(appId)}/unarchive">
+          <button type="submit" class="btn-sm">Unarchive</button>
+        </form>`}
+      <form method="POST" action="/admin/applications/${escHtml(req.params.track)}/${escHtml(appId)}/delete"
+        onsubmit="return confirm('Permanently delete this application from the database? This cannot be undone.')">
+        <button type="submit" class="btn-sm btn-danger">Delete (permanent)</button>
+      </form>
+    </div>
   `, req.session.username));
 });
 
 router.post("/applications/:track/:id", requireAuth, requireAdmin, (req, res) => {
   const appId = req.params.id;
-  const { applicantName, trackKey, status, decidedAt, decidedBy, submittedFields } = req.body;
+  const { applicantName, trackKey, status, decidedAt, decidedBy, submittedFields, syncDiscord } = req.body;
   try {
     const fields = String(submittedFields || "").split("\n").map((l) => l.trimEnd()).filter(Boolean);
-    updateApplication(appId, {
+    const updated = updateApplication(appId, {
       applicantName: String(applicantName || "").trim(),
       trackKey: String(trackKey || "").trim(),
       status: ["pending", "accepted", "denied"].includes(status) ? status : "pending",
@@ -900,7 +942,40 @@ router.post("/applications/:track/:id", requireAuth, requireAdmin, (req, res) =>
       decidedBy: String(decidedBy || "").trim() || null,
       submittedFields: fields,
     });
-    setFlash(req, "ok", "Application saved.");
+    if (syncDiscord && updated?.messageId && updated?.channelId) {
+      addPendingAdminAction({
+        type: "edit_message",
+        appId,
+        messageId: updated.messageId,
+        channelId: updated.channelId,
+        submittedFields: fields,
+      });
+      setFlash(req, "ok", "Application saved. Discord embed update queued — the bot will apply it on its next cycle.");
+    } else {
+      setFlash(req, "ok", "Application saved.");
+    }
+  } catch (err) {
+    setFlash(req, "error", err.message);
+  }
+  res.redirect(`/admin/applications/${encodeURIComponent(req.params.track)}/${encodeURIComponent(appId)}`);
+});
+
+router.post("/applications/:track/:id/archive", requireAuth, requireAdmin, (req, res) => {
+  const appId = req.params.id;
+  try {
+    archiveApplication(appId);
+    setFlash(req, "ok", `Application '${appId}' archived. The Discord thread will be archived by the bot on its next cycle.`);
+  } catch (err) {
+    setFlash(req, "error", err.message);
+  }
+  res.redirect(`/admin/applications/${encodeURIComponent(req.params.track)}/${encodeURIComponent(appId)}`);
+});
+
+router.post("/applications/:track/:id/unarchive", requireAuth, requireAdmin, (req, res) => {
+  const appId = req.params.id;
+  try {
+    updateApplication(appId, { adminArchived: false, adminArchivedAt: null });
+    setFlash(req, "ok", `Application '${appId}' unarchived.`);
   } catch (err) {
     setFlash(req, "error", err.message);
   }
@@ -911,7 +986,7 @@ router.post("/applications/:track/:id/delete", requireAuth, requireAdmin, (req, 
   const appId = req.params.id;
   try {
     deleteApplication(appId);
-    setFlash(req, "ok", `Application '${appId}' deleted.`);
+    setFlash(req, "ok", `Application '${appId}' permanently deleted.`);
   } catch (err) {
     setFlash(req, "error", err.message);
   }
@@ -987,11 +1062,75 @@ router.get("/logs", requireAuth, (req, res) => {
     crashHtml = `<p class="muted-note">Could not read crash log directory (${escHtml(CRASH_LOG_DIR)}).</p>`;
   }
 
+  // ── Bot error log ─────────────────────────────────────────────────────────────
+  const ERROR_LOG_LINE_OPTIONS = [50, 100, 200, 500, 1000];
+  const ERROR_LOG_LINES = ERROR_LOG_LINE_OPTIONS.includes(Number(req.query.errlines))
+    ? Number(req.query.errlines)
+    : 100;
+
+  function renderErrorLogSection(title, logFile, linesCount, linesParam) {
+    let rows = "";
+    let empty = false;
+    try {
+      const raw = fs.readFileSync(logFile, "utf8");
+      const lines = raw.trim().split("\n").filter(Boolean).slice(-linesCount).reverse();
+      if (lines.length === 0) { empty = true; }
+      rows = lines.map((line) => {
+        let obj;
+        try { obj = JSON.parse(line); } catch { obj = { message: line }; }
+        const at = obj.timestamp ? escHtml(new Date(obj.timestamp).toLocaleString()) : "—";
+        const level = String(obj.level || "error");
+        const levelCls = level === "warn" ? "badge-pending" : "badge-err";
+        const event = escHtml(obj.event || obj.source || "");
+        const msg = escHtml(obj.message || "");
+        const stack = obj.stack ? escHtml(String(obj.stack)) : "";
+        const extra = Object.entries(obj)
+          .filter(([k]) => !["timestamp", "level", "event", "message", "stack", "source", "service", "pid", "component"].includes(k))
+          .map(([k, v]) => `${escHtml(k)}: ${escHtml(String(v))}`)
+          .join(", ");
+        return `<tr>
+          <td class="muted-note" style="white-space:nowrap">${at}</td>
+          <td><span class="badge ${levelCls}" style="font-size:0.7rem">${escHtml(level)}</span></td>
+          <td><strong>${event}</strong>${msg ? `<br><span class="muted-note" style="font-size:0.8rem">${msg}</span>` : ""}</td>
+          <td class="muted-note" style="font-size:0.78rem">${extra}</td>
+          ${stack ? `<td><details><summary class="muted-note" style="cursor:pointer;font-size:0.75rem">stack</summary><pre style="font-size:0.72rem;white-space:pre-wrap;margin:4px 0">${stack}</pre></details></td>` : "<td></td>"}
+        </tr>`;
+      }).join("");
+    } catch {
+      return `<h2 style="font-size:1.1rem;font-weight:700;margin-top:36px;margin-bottom:8px">${escHtml(title)}</h2>
+        <p class="muted-note">Log file not found yet: <code>${escHtml(logFile)}</code></p>`;
+    }
+
+    return `
+      <div style="display:flex;align-items:center;gap:12px;margin-top:36px;margin-bottom:12px;flex-wrap:wrap">
+        <h2 style="font-size:1.1rem;font-weight:700;margin:0">${escHtml(title)}</h2>
+        <span class="muted-note" style="font-size:0.78rem">${escHtml(logFile)}</span>
+        <form method="GET" action="/admin/logs" style="display:flex;flex-direction:row;align-items:center;gap:6px;margin:0">
+          <input type="hidden" name="lines" value="${CONTROL_LOG_LINES}"/>
+          <label style="font-size:0.82rem;color:var(--muted)">Show last</label>
+          <select name="${escHtml(linesParam)}" style="width:auto;font-size:0.82rem;padding:4px 10px" onchange="this.form.submit()">
+            ${ERROR_LOG_LINE_OPTIONS.map((n) =>
+              `<option value="${n}" ${linesCount === n ? "selected" : ""}>${n}</option>`
+            ).join("")}
+          </select>
+          <span style="font-size:0.82rem;color:var(--muted)">entries</span>
+        </form>
+      </div>
+      <table class="admin-table">
+        <thead><tr><th>Time</th><th>Level</th><th>Event / Message</th><th>Details</th><th>Stack</th></tr></thead>
+        <tbody>${empty ? '<tr><td colspan="5" class="muted-note">No entries yet.</td></tr>' : (rows || '<tr><td colspan="5" class="muted-note">No entries.</td></tr>')}</tbody>
+      </table>`;
+  }
+
+  const botErrorHtml = renderErrorLogSection("Bot Errors & Warnings", BOT_ERROR_LOG_FILE, ERROR_LOG_LINES, "errlines");
+  const webErrorHtml = renderErrorLogSection("Web Server Errors", WEB_ERROR_LOG_FILE, ERROR_LOG_LINES, "errlines");
+
   res.send(adminLayout("Logs", `
     ${flash(req)}
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap">
       <h2 style="font-size:1.1rem;font-weight:700;margin:0">Control Log</h2>
       <form method="GET" action="/admin/logs" style="display:flex;flex-direction:row;align-items:center;gap:8px;margin:0">
+        <input type="hidden" name="errlines" value="${ERROR_LOG_LINES}"/>
         <label style="font-size:0.82rem;color:var(--muted)">Show last</label>
         <select name="lines" style="width:auto;font-size:0.82rem;padding:4px 10px" onchange="this.form.submit()">
           ${[50,100,200,500,1000].map((n) =>
@@ -1005,6 +1144,9 @@ router.get("/logs", requireAuth, (req, res) => {
       <thead><tr><th>Time</th><th>Action</th><th>User</th><th>Details</th></tr></thead>
       <tbody>${controlRows || '<tr><td colspan="4" class="muted-note">No entries.</td></tr>'}</tbody>
     </table>
+
+    ${botErrorHtml}
+    ${webErrorHtml}
 
     <h2 style="font-size:1.1rem;font-weight:700;margin-top:36px;margin-bottom:12px">Crash Logs <span class="muted-note">(20 most recent)</span></h2>
     ${crashHtml}

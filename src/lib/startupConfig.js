@@ -215,6 +215,7 @@ function loadStartupConfig(options = {}) {
     stateFile: env.STATE_FILE || ".bot-state.json",
     crashLogDir: env.CRASH_LOG_DIR || "crashlog",
     controlLogFile: env.CONTROL_LOG_FILE || "logs/control-actions.log",
+    botErrorLogFile: env.BOT_ERROR_LOG_FILE || "logs/bot-errors.log",
     maintenanceIntervalMinutes: parseNumberEnv(
       env,
       "MAINTENANCE_INTERVAL_MINUTES",
