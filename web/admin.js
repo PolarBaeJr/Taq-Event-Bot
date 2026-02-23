@@ -1265,7 +1265,7 @@ router.post("/applications/:track/:id", requireAuth, requireAdmin, (req, res) =>
     const updated = updateApplication(appId, {
       applicantName: String(applicantName || "").trim(),
       trackKey: String(trackKey || "").trim(),
-      status: ["pending", "accepted", "denied"].includes(status) ? status : "pending",
+      status: ["pending", "accepted", "denied", "closed"].includes(status) ? status : "pending",
       decidedAt: String(decidedAt || "").trim() || null,
       decidedBy: String(decidedBy || "").trim() || null,
       submittedFields: fields,
@@ -1319,7 +1319,10 @@ router.post("/applications/:track/:id/toggle-done", requireAuth, requireAdmin, (
     const app = state.applications?.[appId];
     if (!app) throw new Error(`Application '${appId}' not found.`);
     const nowClosing = !app.adminDone;
-    updateApplication(appId, { adminDone: nowClosing });
+    const statusUpdate = nowClosing
+      ? { adminDone: true, status: "closed" }
+      : { adminDone: false, status: app.status === "closed" ? "pending" : app.status };
+    updateApplication(appId, statusUpdate);
     // Closing: queue a Discord thread archive so it gets tidied up on next bot cycle
     if (nowClosing && app.threadId) {
       addPendingAdminAction({
