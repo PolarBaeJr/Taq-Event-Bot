@@ -563,6 +563,7 @@ function createApplicationDecisionWorkflow(options = {}) {
     application.acceptAnnounceResult = null;
     application.denyDmResult = null;
     application.voteContext = null;
+    application.adminDone = false;
     application.reopenedAt = new Date().toISOString();
     application.reopenedBy = actorId;
     application.reopenReason = String(reopenReason || "").trim() || null;
@@ -737,6 +738,10 @@ function createApplicationDecisionWorkflow(options = {}) {
       application.denyDmResult = denyDmResult;
       decisionReason = `${decisionReason}\n${denyDmResult.message}`;
     }
+
+    // Auto-close: decided applications are marked closed so they are hidden from
+    // the default admin view and carry both their decision badge and the closed badge.
+    application.adminDone = true;
 
     writeState(state);
 

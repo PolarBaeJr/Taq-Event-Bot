@@ -246,7 +246,7 @@
 .badge-err      { background: rgba(248,113,113,0.10); color: var(--error); border: 1px solid rgba(248,113,113,0.3); }
 .badge-pending  { background: rgba(14,165,233,0.10); color: var(--accent); border: 1px solid rgba(14,165,233,0.25); }
 .badge-archived { background: rgba(148,163,184,0.12); color: var(--muted); border: 1px solid rgba(148,163,184,0.3); }
-.badge-closed   { background: rgba(52,211,153,0.10); color: var(--success); border: 1px solid rgba(52,211,153,0.3); }
+.badge-closed   { background: rgba(248,113,113,0.10); color: var(--error); border: 1px solid rgba(248,113,113,0.3); }
 
 /* ── Buttons ───────────────────────────────────────────────────── */
 .btn-primary {
@@ -279,8 +279,8 @@
 .btn-sm.btn-danger { color: var(--error); border-color: rgba(248,113,113,0.3); }
 .btn-sm.btn-danger:hover { background: rgba(248,113,113,0.08); border-color: var(--error); }
 
-.btn-sm.btn-done { color: var(--success); border-color: rgba(52,211,153,0.35); background: rgba(52,211,153,0.06); }
-.btn-sm.btn-done:hover { background: rgba(52,211,153,0.12); border-color: var(--success); }
+.btn-sm.btn-done { color: var(--error); border-color: rgba(248,113,113,0.35); background: rgba(248,113,113,0.06); }
+.btn-sm.btn-done:hover { background: rgba(248,113,113,0.12); border-color: var(--error); }
 
 .btn-link {
   display: inline-block;
