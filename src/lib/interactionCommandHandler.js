@@ -5375,7 +5375,7 @@ function createInteractionCommandHandler(options = {}) {
         }
 
         await interaction.reply({
-          content: `Application **${result.application?.applicationId || messageId}** closed. It will no longer appear in the pending list or trigger pings.`,
+          content: "Application closed.",
           ephemeral: true,
         });
 
