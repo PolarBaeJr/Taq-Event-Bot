@@ -393,6 +393,35 @@ function deleteApplication(appId) {
 
 // ── Job queue management ──────────────────────────────────────────────────────
 
+function reorderTrackQuestions(trackKey, orderedIds) {
+  const all = loadCustomQuestions();
+  if (!Array.isArray(all[trackKey])) throw new Error(`No questions for track '${trackKey}'.`);
+  const byId = new Map(all[trackKey].map((q) => [q.id, q]));
+  const reordered = orderedIds
+    .filter((id) => byId.has(id))
+    .map((id) => byId.get(id));
+  // Preserve any questions not in orderedIds at the end (safety net)
+  for (const q of all[trackKey]) {
+    if (!orderedIds.includes(q.id)) reordered.push(q);
+  }
+  all[trackKey] = reordered;
+  saveCustomQuestions(all);
+}
+
+function moveQuestionBetweenTracks(fromTrack, questionId, toTrack, atIndex) {
+  const all = loadCustomQuestions();
+  if (!Array.isArray(all[fromTrack])) throw new Error(`No questions for source track '${fromTrack}'.`);
+  const qIdx = all[fromTrack].findIndex((q) => q.id === questionId);
+  if (qIdx === -1) throw new Error(`Question '${questionId}' not found in track '${fromTrack}'.`);
+  const [question] = all[fromTrack].splice(qIdx, 1);
+  if (!Array.isArray(all[toTrack])) all[toTrack] = [];
+  const insertAt = Number.isInteger(atIndex) && atIndex >= 0
+    ? Math.min(atIndex, all[toTrack].length)
+    : all[toTrack].length;
+  all[toTrack].splice(insertAt, 0, question);
+  saveCustomQuestions(all);
+}
+
 function removeQueueJob(jobId) {
   const state = readRawState();
   if (!Array.isArray(state.postJobs)) throw new Error("No job queue found.");
@@ -474,6 +503,8 @@ module.exports = {
   removeQueueJob,
   clearFailedQueueJobs,
   clearAllQueueJobs,
+  reorderTrackQuestions,
+  moveQuestionBetweenTracks,
   requireAuth,
   getEffectiveRole,
   elevateUser,

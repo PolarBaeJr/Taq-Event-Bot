@@ -458,6 +458,34 @@ code {
   border-radius: 4px;
 }
 
+/* ── Drag and drop ─────────────────────────────────────────────── */
+.drag-handle {
+  cursor: grab;
+  color: var(--muted2);
+  font-size: 1rem;
+  padding: 10px 8px 10px 14px !important;
+  user-select: none;
+  width: 20px;
+}
+
+.drag-handle:active { cursor: grabbing; }
+
+tr[draggable="true"] { cursor: default; }
+tr[draggable="true"]:hover .drag-handle { color: var(--muted); }
+
+tr.drag-dragging { opacity: 0.4; }
+
+tr.drag-over-top td  { border-top: 2px solid var(--accent) !important; }
+tr.drag-over-bottom td { border-bottom: 2px solid var(--accent) !important; }
+
+tbody.drag-drop-target,
+.questions-empty-note.drag-drop-target {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+  background: rgba(56, 169, 207, 0.06);
+  border-radius: var(--radius-sm);
+}
+
 /* ── Edit row ──────────────────────────────────────────────────── */
 .edit-row td {
   background: var(--bg2);

@@ -12,6 +12,7 @@ const {
   changePassword,
   authenticateUser,
   loadCustomQuestions,
+  saveCustomQuestions,
   addCustomQuestion,
   removeCustomQuestion,
   moveCustomQuestion,
@@ -28,6 +29,8 @@ const {
   removeQueueJob,
   clearFailedQueueJobs,
   clearAllQueueJobs,
+  reorderTrackQuestions,
+  moveQuestionBetweenTracks,
 } = require("./auth");
 
 const STATE_FILE = process.env.STATE_FILE || path.join(__dirname, "../.bot-state.json");
@@ -252,24 +255,19 @@ function buildQuestionSection(key, label, questions, { isDefault = false } = {})
       `<option value="${t}" ${q.type === t ? "selected" : ""}>${t}</option>`
     ).join("");
     return `
-      <tr>
+      <tr draggable="true" data-qid="${escHtml(q.id)}" data-track="${escHtml(key)}">
+        <td class="drag-handle" title="Drag to reorder or move to another track">⠿</td>
         <td><code>${escHtml(q.id)}</code></td>
         <td>${escHtml(q.label)}</td>
         <td>${escHtml(q.type)}</td>
         <td>${q.required ? "Yes" : "No"}</td>
         <td class="muted-note">${escHtml((q.options || []).join(", "))}</td>
         <td class="actions-cell">
-          ${i > 0 ? `<form method="POST" action="/admin/questions/${escHtml(key)}/move" style="display:inline">
-            <input type="hidden" name="id" value="${escHtml(q.id)}"/>
-            <input type="hidden" name="direction" value="up"/>
-            <button type="submit" class="btn-sm">↑</button>
-          </form>` : ""}
-          ${i < questions.length - 1 ? `<form method="POST" action="/admin/questions/${escHtml(key)}/move" style="display:inline">
-            <input type="hidden" name="id" value="${escHtml(q.id)}"/>
-            <input type="hidden" name="direction" value="down"/>
-            <button type="submit" class="btn-sm">↓</button>
-          </form>` : ""}
           <button type="button" class="btn-sm" onclick="toggleEl('${editId}')">Edit</button>
+          <form method="POST" action="/admin/questions/${escHtml(key)}/duplicate" style="display:inline">
+            <input type="hidden" name="id" value="${escHtml(q.id)}"/>
+            <button type="submit" class="btn-sm">Duplicate</button>
+          </form>
           <form method="POST" action="/admin/questions/${escHtml(key)}/remove" style="display:inline"
             onsubmit="return confirm('Remove this question?')">
             <input type="hidden" name="id" value="${escHtml(q.id)}"/>
@@ -278,7 +276,7 @@ function buildQuestionSection(key, label, questions, { isDefault = false } = {})
         </td>
       </tr>
       <tr id="${editId}" class="edit-row" style="display:none">
-        <td colspan="6">
+        <td colspan="7">
           <form method="POST" action="/admin/questions/${escHtml(key)}/edit" class="inline-form edit-inline-form">
             <input type="hidden" name="originalId" value="${escHtml(q.id)}"/>
             <div class="form-row">
@@ -321,9 +319,13 @@ function buildQuestionSection(key, label, questions, { isDefault = false } = {})
 
   const table = questions.length > 0 ? `
     <table class="admin-table">
-      <thead><tr><th>ID</th><th>Label</th><th>Type</th><th>Required</th><th>Options</th><th>Actions</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>` : `<p class="muted-note">No questions defined yet.</p>`;
+      <thead><tr><th></th><th>ID</th><th>Label</th><th>Type</th><th>Required</th><th>Options</th><th>Actions</th></tr></thead>
+      <tbody data-track="${escHtml(key)}">${rows}</tbody>
+    </table>` : `
+    <p class="muted-note questions-empty-note" data-track="${escHtml(key)}">No questions defined yet. Drag a question here to move it from another track.</p>
+    <table class="admin-table" style="display:none">
+      <tbody data-track="${escHtml(key)}"></tbody>
+    </table>`;
 
   const headerNote = isDefault
     ? `<span class="muted-note" style="font-size:0.8rem;font-weight:400"> — appears on every track's form</span>`
@@ -412,11 +414,175 @@ router.get("/questions", requireAuth, (req, res) => {
 
   res.send(adminLayout("Question Management", `
     ${flash(req)}
-    <p class="muted-note">Default questions appear on all tracks. Track questions are appended after built-in questions.</p>
+    <p class="muted-note">Default questions appear on all tracks. Track questions are appended after default questions. <strong>Drag rows</strong> to reorder or move between tracks.</p>
     ${defaultSection}
     ${trackSections}
-    <script>function toggleEl(id){var el=document.getElementById(id);el.style.display=el.style.display==='none'?'':'none';}</script>
+    <script>
+(function () {
+  function toggleEl(id) {
+    var el = document.getElementById(id);
+    el.style.display = el.style.display === 'none' ? '' : 'none';
+  }
+  window.toggleEl = toggleEl;
+
+  var dragSrc = null;
+
+  function clearIndicators() {
+    document.querySelectorAll('.drag-over-top,.drag-over-bottom,.drag-drop-target').forEach(function (el) {
+      el.classList.remove('drag-over-top', 'drag-over-bottom', 'drag-drop-target');
+    });
+  }
+
+  function getOrder(tbody) {
+    return Array.from(tbody.querySelectorAll('tr[data-qid]')).map(function (r) { return r.dataset.qid; });
+  }
+
+  function postForm(url, params) {
+    var body = Object.keys(params).map(function (k) {
+      return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
+    }).join('&');
+    return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body }).then(function (r) { return r.json(); });
+  }
+
+  document.querySelectorAll('tr[data-qid]').forEach(function (row) {
+    row.addEventListener('dragstart', function (e) {
+      dragSrc = { qid: row.dataset.qid, track: row.dataset.track, el: row };
+      e.dataTransfer.effectAllowed = 'move';
+      setTimeout(function () { row.classList.add('drag-dragging'); }, 0);
+    });
+    row.addEventListener('dragend', function () {
+      row.classList.remove('drag-dragging');
+      clearIndicators();
+      dragSrc = null;
+    });
+    row.addEventListener('dragover', function (e) {
+      if (!dragSrc || dragSrc.qid === row.dataset.qid) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      clearIndicators();
+      var rect = row.getBoundingClientRect();
+      row.classList.add(e.clientY < rect.top + rect.height / 2 ? 'drag-over-top' : 'drag-over-bottom');
+    });
+    row.addEventListener('dragleave', function () {
+      row.classList.remove('drag-over-top', 'drag-over-bottom');
+    });
+    row.addEventListener('drop', async function (e) {
+      e.preventDefault();
+      if (!dragSrc || dragSrc.qid === row.dataset.qid) return;
+      clearIndicators();
+      var rect = row.getBoundingClientRect();
+      var dropBefore = e.clientY < rect.top + rect.height / 2;
+      var toTrack = row.dataset.track;
+      var tbody = row.closest('tbody');
+      if (dragSrc.track === toTrack) {
+        tbody.insertBefore(dragSrc.el, dropBefore ? row : row.nextSibling);
+        var d = await postForm('/admin/questions/' + encodeURIComponent(toTrack) + '/reorder', { order: getOrder(tbody).join(',') });
+        if (!d.ok) { alert('Reorder failed: ' + d.error); location.reload(); }
+      } else {
+        var rows = Array.from(tbody.querySelectorAll('tr[data-qid]'));
+        var atIndex = rows.indexOf(row);
+        if (!dropBefore) atIndex++;
+        var d = await postForm('/admin/questions/move-between', { fromTrack: dragSrc.track, questionId: dragSrc.qid, toTrack: toTrack, atIndex: atIndex });
+        if (d.ok) { location.reload(); } else { alert('Move failed: ' + d.error); }
+      }
+    });
+  });
+
+  // Drop onto empty-track tbodies
+  document.querySelectorAll('tbody[data-track]').forEach(function (tbody) {
+    tbody.addEventListener('dragover', function (e) {
+      if (!dragSrc) return;
+      e.preventDefault();
+      tbody.classList.add('drag-drop-target');
+    });
+    tbody.addEventListener('dragleave', function () {
+      tbody.classList.remove('drag-drop-target');
+    });
+    tbody.addEventListener('drop', async function (e) {
+      e.preventDefault();
+      if (!dragSrc) return;
+      tbody.classList.remove('drag-drop-target');
+      var toTrack = tbody.dataset.track;
+      if (dragSrc.track === toTrack) {
+        tbody.appendChild(dragSrc.el);
+        var d = await postForm('/admin/questions/' + encodeURIComponent(toTrack) + '/reorder', { order: getOrder(tbody).join(',') });
+        if (!d.ok) { alert('Reorder failed: ' + d.error); location.reload(); }
+        return;
+      }
+      var d = await postForm('/admin/questions/move-between', { fromTrack: dragSrc.track, questionId: dragSrc.qid, toTrack: toTrack, atIndex: 9999 });
+      if (d.ok) { location.reload(); } else { alert('Move failed: ' + d.error); }
+    });
+  });
+
+  // Highlight empty-track drop zones on drag
+  document.querySelectorAll('.questions-empty-note').forEach(function (note) {
+    var track = note.dataset.track;
+    var hiddenTbody = note.parentElement ? note.parentElement.querySelector('tbody[data-track="' + track + '"]') : null;
+    note.addEventListener('dragover', function (e) {
+      if (!dragSrc) return;
+      e.preventDefault();
+      note.classList.add('drag-drop-target');
+    });
+    note.addEventListener('dragleave', function () { note.classList.remove('drag-drop-target'); });
+    note.addEventListener('drop', async function (e) {
+      e.preventDefault();
+      if (!dragSrc) return;
+      note.classList.remove('drag-drop-target');
+      var d = await postForm('/admin/questions/move-between', { fromTrack: dragSrc.track, questionId: dragSrc.qid, toTrack: track, atIndex: 9999 });
+      if (d.ok) { location.reload(); } else { alert('Move failed: ' + d.error); }
+    });
+  });
+})();
+    </script>
   `, req.session.username));
+});
+
+// Must be defined before /:track routes to avoid param capture
+router.post("/questions/move-between", requireAuth, requireAdmin, (req, res) => {
+  const { fromTrack, questionId, toTrack, atIndex } = req.body;
+  try {
+    const idx = atIndex !== undefined ? parseInt(atIndex, 10) : undefined;
+    moveQuestionBetweenTracks(String(fromTrack || ""), String(questionId || ""), String(toTrack || ""), idx);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
+});
+
+router.post("/questions/:track/reorder", requireAuth, requireAdmin, (req, res) => {
+  const trackKey = req.params.track;
+  const { order } = req.body;
+  try {
+    const ids = String(order || "").split(",").map((s) => s.trim()).filter(Boolean);
+    reorderTrackQuestions(trackKey, ids);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
+});
+
+router.post("/questions/:track/duplicate", requireAuth, requireAdmin, (req, res) => {
+  const trackKey = req.params.track;
+  const { id } = req.body;
+  try {
+    const all = loadCustomQuestions();
+    if (!Array.isArray(all[trackKey])) throw new Error(`No questions for track '${trackKey}'.`);
+    const original = all[trackKey].find((q) => q.id === id);
+    if (!original) throw new Error(`Question '${id}' not found.`);
+    const newId = `${original.id}_copy`;
+    const suffix = (() => {
+      let n = 1;
+      while (all[trackKey].some((q) => q.id === (n === 1 ? newId : `${newId}${n}`))) n++;
+      return n === 1 ? "" : String(n);
+    })();
+    const finalId = `${newId}${suffix}`;
+    all[trackKey].push({ ...original, id: finalId, label: `${original.label} (copy)` });
+    saveCustomQuestions(all);
+    setFlash(req, "ok", `Duplicated '${id}' as '${finalId}'.`);
+  } catch (err) {
+    setFlash(req, "error", err.message);
+  }
+  res.redirect("/admin/questions");
 });
 
 router.post("/questions/:track/add", requireAuth, requireAdmin, (req, res) => {
