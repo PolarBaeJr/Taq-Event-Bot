@@ -2,16 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
-## [Unreleased]
+## [1.6.0] - 2026-02-22
 
 ### Added
-
-
-### Changed
-
-- Application threads are now auto-archived immediately after acceptance or denial (manual decisions and vote-driven decisions).
+- **Admin: Job Queue page** — new `/admin/queue` nav page lists all pending bot jobs with job ID, track(s), row, created time, attempt count, and last error. Individual jobs can be removed; "Clear Failed" and "Clear All" bulk actions available.
+- **Admin: Application done/undone toggle** — quick "Done" toggle button on both the applications list and detail page; done applications render dimmed with a green "✓ Done" badge. `adminDone` flag is internal and does not affect bot decision workflow.
+- **Admin: Admin Notes field** — internal-only free-text notes textarea on application detail page; notes are preserved on save and shown as a 📝 indicator on the applications list. Not synced to Discord.
+- **Web: The Aquarium top navigation bar** — sticky glassmorphism nav bar on all public portal pages matching the-aquarium.com design, with logo (links to the-aquarium.com), Members, Leaderboard, Graid Event, Map, and Lootpools links. Hidden on mobile.
+- **Web: The Aquarium logo** — logo appears in page header (links to the-aquarium.com), admin panel sidebar, and admin login page.
+- **Web: Application archive/unarchive/delete** — added in prior session; archive hides application locally and queues a Discord thread archive action for the bot.
+- **Web: Error log capture** — bot and web server errors are now captured to NDJSON log files (`BOT_ERROR_LOG_FILE`, `WEB_ERROR_LOG_FILE`) and displayed in the admin Logs page.
 
 ### Fixed
+- **Critical: Bot no longer wipes web-portal data on each poll cycle.** `trackCustomQuestions` and `webUsers` were absent from the bot's normalized state, causing every `writeState()` call to delete questions and user accounts added via the web panel. Both fields are now preserved through the normalization pass.
 
 ### Planned Updates
 - Multi guild supprt 

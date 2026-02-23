@@ -25,6 +25,9 @@ const {
   elevateUser,
   revokeElevation,
   setUserRole,
+  removeQueueJob,
+  clearFailedQueueJobs,
+  clearAllQueueJobs,
 } = require("./auth");
 
 const STATE_FILE = process.env.STATE_FILE || path.join(__dirname, "../.bot-state.json");
@@ -71,6 +74,7 @@ function adminLayout(title, body, username) {
         <a href="/admin/dashboard">Dashboard</a>
         <a href="/admin/questions">Questions</a>
         <a href="/admin/applications">Applications</a>
+        <a href="/admin/queue">Queue</a>
         <a href="/admin/logs">Logs</a>
         <a href="/admin/users">Users</a>
       </nav>
@@ -488,6 +492,96 @@ router.post("/questions/:track/edit", requireAuth, requireAdmin, (req, res) => {
   res.redirect("/admin/questions");
 });
 
+// Queue
+function renderQueuePage(req, res) {
+  const state = readRawState();
+  const jobs = Array.isArray(state.postJobs) ? state.postJobs : [];
+  const failedCount = jobs.filter((j) => j.lastError).length;
+
+  const rows = jobs.map((j) => {
+    const tracks = Array.isArray(j.trackKeys) ? j.trackKeys.join(", ") : (j.trackKeys || "—");
+    const createdAt = j.createdAt ? escHtml(j.createdAt.slice(0, 16).replace("T", " ")) : "—";
+    const lastAttempt = j.lastAttemptAt ? escHtml(j.lastAttemptAt.slice(0, 16).replace("T", " ")) : "—";
+    const errHtml = j.lastError
+      ? `<span class="badge badge-err" title="${escHtml(String(j.lastError))}">${escHtml(String(j.lastError).slice(0, 70))}${String(j.lastError).length > 70 ? "…" : ""}</span>`
+      : `<span class="muted-note">—</span>`;
+    return `
+      <tr>
+        <td data-label="Job ID"><code>${escHtml(j.jobId || "—")}</code></td>
+        <td data-label="Track(s)">${escHtml(tracks)}</td>
+        <td data-label="Row">${escHtml(String(j.rowIndex || "—"))}</td>
+        <td data-label="Created" class="muted-note">${createdAt}</td>
+        <td data-label="Attempts">${escHtml(String(j.attempts || 0))}${j.attempts > 0 ? ` <span class="muted-note">(${lastAttempt})</span>` : ""}</td>
+        <td data-label="Last Error">${errHtml}</td>
+        <td data-label="Actions" class="actions-cell">
+          <form method="POST" action="/admin/queue/${encodeURIComponent(j.jobId)}/remove" style="margin:0"
+            onsubmit="return confirm('Remove job ${escHtml(j.jobId)} from the queue? This application will not be posted to Discord.')">
+            <button type="submit" class="btn-sm btn-danger">Remove</button>
+          </form>
+        </td>
+      </tr>`;
+  }).join("");
+
+  res.send(adminLayout("Job Queue", `
+    ${flash(req)}
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:20px;flex-wrap:wrap">
+      <span class="muted-note">${jobs.length} job${jobs.length !== 1 ? "s" : ""} pending${failedCount > 0 ? `, <strong>${failedCount}</strong> with errors` : ""}</span>
+      ${failedCount > 0 ? `
+        <form method="POST" action="/admin/queue/clear-failed" style="margin:0"
+          onsubmit="return confirm('Remove all ${failedCount} failed job(s) from the queue?')">
+          <button type="submit" class="btn-sm btn-danger">Clear Failed (${failedCount})</button>
+        </form>` : ""}
+      ${jobs.length > 0 ? `
+        <form method="POST" action="/admin/queue/clear-all" style="margin:0"
+          onsubmit="return confirm('Remove ALL ${jobs.length} job(s)? These applications will NOT be posted to Discord.')">
+          <button type="submit" class="btn-sm btn-danger">Clear All</button>
+        </form>` : ""}
+    </div>
+    <table class="admin-table">
+      <thead>
+        <tr><th>Job ID</th><th>Track(s)</th><th>Row</th><th>Created</th><th>Attempts</th><th>Last Error</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        ${rows || '<tr><td colspan="7" class="muted-note" style="padding:20px;text-align:center">Queue is empty — no pending jobs.</td></tr>'}
+      </tbody>
+    </table>
+  `, req.session.username));
+}
+
+router.get("/queue", requireAuth, (req, res) => {
+  renderQueuePage(req, res);
+});
+
+router.post("/queue/clear-failed", requireAuth, requireAdmin, (req, res) => {
+  try {
+    const removed = clearFailedQueueJobs();
+    setFlash(req, "ok", `Removed ${removed} failed job${removed !== 1 ? "s" : ""} from the queue.`);
+  } catch (err) {
+    setFlash(req, "error", err.message);
+  }
+  res.redirect("/admin/queue");
+});
+
+router.post("/queue/clear-all", requireAuth, requireAdmin, (req, res) => {
+  try {
+    const removed = clearAllQueueJobs();
+    setFlash(req, "ok", `Cleared all ${removed} job${removed !== 1 ? "s" : ""} from the queue.`);
+  } catch (err) {
+    setFlash(req, "error", err.message);
+  }
+  res.redirect("/admin/queue");
+});
+
+router.post("/queue/:jobId/remove", requireAuth, requireAdmin, (req, res) => {
+  try {
+    removeQueueJob(req.params.jobId);
+    setFlash(req, "ok", `Job '${req.params.jobId}' removed from queue.`);
+  } catch (err) {
+    setFlash(req, "error", err.message);
+  }
+  res.redirect("/admin/queue");
+});
+
 // Applications
 function renderApplicationsPage(req, res, { lockedTrack = null } = {}) {
   const state = readRawState();
@@ -536,15 +630,21 @@ function renderApplicationsPage(req, res, { lockedTrack = null } = {}) {
       ? a.submittedFields.slice(0, 3).map((f) => escHtml(String(f))).join("<br>")
       : "";
     const editUrl = `/admin/applications/${escHtml(a.trackKey || "_")}/${escHtml(a.id)}`;
+    const toggleDoneUrl = `/admin/applications/${encodeURIComponent(a.trackKey || "_")}/${encodeURIComponent(a.id)}/toggle-done`;
+    const doneBtn = `<form method="POST" action="${toggleDoneUrl}" style="margin:0">
+      <button type="submit" class="btn-sm${a.adminDone ? " btn-done" : ""}" title="${a.adminDone ? "Mark as not done" : "Mark as done"}">${a.adminDone ? "✓ Done" : "○"}</button>
+    </form>`;
+    const notesIndicator = a.adminNotes ? ` <span class="muted-note" title="${escHtml(a.adminNotes)}" style="cursor:default">📝</span>` : "";
     return `
-      <tr${a.adminArchived ? ' style="opacity:0.6"' : ""}>
+      <tr${a.adminArchived ? ' style="opacity:0.6"' : a.adminDone ? ' style="opacity:0.75"' : ""}>
         <td data-label="ID"><a href="${editUrl}" class="track-link"><code>${escHtml(a.id)}</code></a></td>
-        <td data-label="Applicant">${escHtml(a.applicantName || "—")}</td>
+        <td data-label="Applicant">${escHtml(a.applicantName || "—")}${notesIndicator}</td>
         <td data-label="Track"><a href="/admin/applications/${escHtml(a.trackKey || "")}" class="track-link"><code>${escHtml(a.trackKey || "—")}</code></a></td>
         <td data-label="Status">${statusBadge(a)}</td>
         <td data-label="Created" class="muted-note">${a.createdAt ? escHtml(a.createdAt.slice(0, 10)) : "—"}</td>
         <td data-label="Decided" class="muted-note">${a.decidedAt ? escHtml(a.decidedAt.slice(0, 10)) : "—"}</td>
         <td data-label="Fields" class="field-preview">${fields}</td>
+        <td data-label="Done" class="actions-cell">${doneBtn}</td>
       </tr>`;
   }).join("");
 
@@ -591,10 +691,10 @@ function renderApplicationsPage(req, res, { lockedTrack = null } = {}) {
     </form>
     <table class="admin-table">
       <thead>
-        <tr><th>ID</th><th>Applicant</th><th>Track</th><th>Status</th><th>Created</th><th>Decided</th><th>Fields</th></tr>
+        <tr><th>ID</th><th>Applicant</th><th>Track</th><th>Status</th><th>Created</th><th>Decided</th><th>Fields</th><th>Done</th></tr>
       </thead>
       <tbody>
-        ${rows || '<tr><td colspan="7" class="muted-note">No applications found.</td></tr>'}
+        ${rows || '<tr><td colspan="8" class="muted-note">No applications found.</td></tr>'}
       </tbody>
     </table>
     ${pagination}
@@ -907,6 +1007,14 @@ router.get("/applications/:track/:id", requireAuth, (req, res) => {
         <label>Submitted Fields <span class="muted-note">(one per line)</span></label>
         <textarea name="submittedFields" rows="12" style="font-family:ui-monospace,monospace;font-size:0.82rem">${escHtml(fieldsText)}</textarea>
       </div>
+      <div class="field" style="margin-bottom:12px">
+        <label>Admin Notes <span class="muted-note">(internal only — not synced to Discord)</span></label>
+        <textarea name="adminNotes" rows="3" placeholder="Internal notes visible only to admins…">${escHtml(app.adminNotes || "")}</textarea>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+        <input type="checkbox" id="adminDone" name="adminDone" value="1"${app.adminDone ? " checked" : ""} style="width:auto"/>
+        <label for="adminDone" style="margin:0;font-size:0.9rem;font-weight:500">Mark as Done <span class="muted-note">(hides from active review, does not affect bot decisions)</span></label>
+      </div>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <button type="submit" class="btn-primary">Save Changes</button>
         ${hasDiscordMessage ? `<button type="submit" name="syncDiscord" value="1" class="btn-primary" style="background:var(--accent2,#5865f2)">Save &amp; Sync Discord</button>` : ""}
@@ -915,6 +1023,9 @@ router.get("/applications/:track/:id", requireAuth, (req, res) => {
       ${hasDiscordMessage ? `<p class="muted-note" style="margin-top:8px;font-size:0.78rem">"Save &amp; Sync Discord" also updates the embed text in the Discord message.</p>` : ""}
     </form>
     <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
+      <form method="POST" action="/admin/applications/${escHtml(req.params.track)}/${escHtml(appId)}/toggle-done" style="margin:0">
+        <button type="submit" class="btn-sm${app.adminDone ? " btn-done" : ""}">${app.adminDone ? "✓ Done — click to unmark" : "○ Mark as Done"}</button>
+      </form>
       ${!app.adminArchived ? `
         <form method="POST" action="/admin/applications/${escHtml(req.params.track)}/${escHtml(appId)}/archive"
           onsubmit="return confirm('Archive this application? The Discord thread will be archived by the bot on its next cycle.')">
@@ -933,7 +1044,7 @@ router.get("/applications/:track/:id", requireAuth, (req, res) => {
 
 router.post("/applications/:track/:id", requireAuth, requireAdmin, (req, res) => {
   const appId = req.params.id;
-  const { applicantName, trackKey, status, decidedAt, decidedBy, submittedFields, syncDiscord } = req.body;
+  const { applicantName, trackKey, status, decidedAt, decidedBy, submittedFields, syncDiscord, adminNotes, adminDone } = req.body;
   try {
     const fields = String(submittedFields || "").split("\n").map((l) => l.trimEnd()).filter(Boolean);
     const updated = updateApplication(appId, {
@@ -943,6 +1054,8 @@ router.post("/applications/:track/:id", requireAuth, requireAdmin, (req, res) =>
       decidedAt: String(decidedAt || "").trim() || null,
       decidedBy: String(decidedBy || "").trim() || null,
       submittedFields: fields,
+      adminNotes: String(adminNotes || "").trim() || null,
+      adminDone: adminDone === "1",
     });
     if (syncDiscord && updated?.messageId && updated?.channelId) {
       addPendingAdminAction({
@@ -982,6 +1095,22 @@ router.post("/applications/:track/:id/unarchive", requireAuth, requireAdmin, (re
     setFlash(req, "error", err.message);
   }
   res.redirect(`/admin/applications/${encodeURIComponent(req.params.track)}/${encodeURIComponent(appId)}`);
+});
+
+router.post("/applications/:track/:id/toggle-done", requireAuth, requireAdmin, (req, res) => {
+  const appId = req.params.id;
+  try {
+    const state = readRawState();
+    const app = state.applications?.[appId];
+    if (!app) throw new Error(`Application '${appId}' not found.`);
+    updateApplication(appId, { adminDone: !app.adminDone });
+    setFlash(req, "ok", app.adminDone ? `Application '${appId}' marked as not done.` : `Application '${appId}' marked as done.`);
+  } catch (err) {
+    setFlash(req, "error", err.message);
+  }
+  // Redirect back to wherever they came from (list or detail)
+  const ref = req.get("Referer") || `/admin/applications/${encodeURIComponent(req.params.track)}`;
+  res.redirect(ref);
 });
 
 router.post("/applications/:track/:id/delete", requireAuth, requireAdmin, (req, res) => {

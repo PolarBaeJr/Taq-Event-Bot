@@ -391,6 +391,35 @@ function deleteApplication(appId) {
   writeRawState(state);
 }
 
+// ── Job queue management ──────────────────────────────────────────────────────
+
+function removeQueueJob(jobId) {
+  const state = readRawState();
+  if (!Array.isArray(state.postJobs)) throw new Error("No job queue found.");
+  const before = state.postJobs.length;
+  state.postJobs = state.postJobs.filter((j) => j.jobId !== jobId);
+  if (state.postJobs.length === before) throw new Error(`Job '${jobId}' not found in queue.`);
+  writeRawState(state);
+}
+
+function clearFailedQueueJobs() {
+  const state = readRawState();
+  if (!Array.isArray(state.postJobs)) return 0;
+  const before = state.postJobs.length;
+  state.postJobs = state.postJobs.filter((j) => !j.lastError);
+  const removed = before - state.postJobs.length;
+  if (removed > 0) writeRawState(state);
+  return removed;
+}
+
+function clearAllQueueJobs() {
+  const state = readRawState();
+  const count = Array.isArray(state.postJobs) ? state.postJobs.length : 0;
+  state.postJobs = [];
+  writeRawState(state);
+  return count;
+}
+
 // Archives an application: marks it locally + queues a Discord thread archive action.
 function archiveApplication(appId) {
   const state = readRawState();
@@ -442,6 +471,9 @@ module.exports = {
   deleteApplication,
   archiveApplication,
   addPendingAdminAction,
+  removeQueueJob,
+  clearFailedQueueJobs,
+  clearAllQueueJobs,
   requireAuth,
   getEffectiveRole,
   elevateUser,

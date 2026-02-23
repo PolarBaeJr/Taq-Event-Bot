@@ -1213,8 +1213,20 @@ function readState() {
             legacySettings.applicantMissingDiscordThreadNoticeMessage
           ),
         reactionRoles: normalizeReactionRoleBindings(legacySettings.reactionRoles),
+        // Web-portal-managed fields: preserve as-is so the bot never strips them on write.
+        trackCustomQuestions:
+          legacySettings.trackCustomQuestions &&
+          typeof legacySettings.trackCustomQuestions === "object" &&
+          !Array.isArray(legacySettings.trackCustomQuestions)
+            ? legacySettings.trackCustomQuestions
+            : (legacySettings.trackCustomQuestions === undefined ? undefined : {}),
+        webUsers: Array.isArray(legacySettings.webUsers) ? legacySettings.webUsers : undefined,
       },
     };
+    // Strip undefined values from settings to avoid writing null-ish placeholders
+    for (const key of Object.keys(normalizedState.settings)) {
+      if (normalizedState.settings[key] === undefined) delete normalizedState.settings[key];
+    }
     ensureExtendedSettingsContainers(normalizedState);
     return normalizedState;
   } catch {
