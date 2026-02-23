@@ -286,6 +286,10 @@ function buildQuestionSection(key, label, questions, { isDefault = false } = {})
             <input type="hidden" name="originalId" value="${escHtml(q.id)}"/>
             <div class="form-row">
               <div class="field">
+                <label>ID</label>
+                <input type="text" name="id" value="${escHtml(q.id)}" required pattern="[A-Za-z0-9_\\-]+" title="Letters, numbers, underscores, hyphens only"/>
+              </div>
+              <div class="field">
                 <label>Label</label>
                 <input type="text" name="label" value="${escHtml(q.label)}" required/>
               </div>
@@ -645,10 +649,12 @@ router.post("/questions/:track/reset", requireAuth, requireAdmin, (req, res) => 
 
 router.post("/questions/:track/edit", requireAuth, requireAdmin, (req, res) => {
   const trackKey = req.params.track;
-  const { originalId, label, sheetHeader, type, required, options, placeholder } = req.body;
+  const { originalId, id, label, sheetHeader, type, required, options, placeholder } = req.body;
   try {
     const optArr = options ? options.split(",").map((s) => s.trim()).filter(Boolean) : [];
+    const newId = String(id || "").trim();
     editCustomQuestion(trackKey, originalId, {
+      ...(newId && newId !== originalId ? { id: newId } : {}),
       label: String(label || "").trim(),
       sheetHeader: String(sheetHeader || label || "").trim(),
       type: ["textarea", "select"].includes(type) ? type : "text",

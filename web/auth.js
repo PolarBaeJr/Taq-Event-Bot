@@ -358,6 +358,13 @@ function editCustomQuestion(trackKey, questionId, updates) {
   if (!Array.isArray(all[trackKey])) throw new Error(`No custom questions for track '${trackKey}'.`);
   const q = all[trackKey].find((q) => q.id === questionId);
   if (!q) throw new Error(`Question '${questionId}' not found.`);
+  // Validate new ID if it's being changed
+  if (updates.id !== undefined && updates.id !== questionId) {
+    const newId = String(updates.id).trim();
+    if (!newId) throw new Error("Question ID cannot be empty.");
+    if (!/^[A-Za-z0-9_-]+$/.test(newId)) throw new Error("Question ID may only contain letters, numbers, underscores, and hyphens.");
+    if (all[trackKey].some((q) => q.id === newId)) throw new Error(`Question ID '${newId}' is already in use.`);
+  }
   Object.assign(q, updates);
   saveCustomQuestions(all);
   return q;
