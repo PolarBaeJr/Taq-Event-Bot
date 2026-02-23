@@ -3503,8 +3503,15 @@ async function processPendingAdminActions() {
     }
   }
 
-  state.pendingAdminActions = remaining;
-  writeState(state);
+  // Re-read fresh state before writing to preserve any new admin actions queued by
+  // the web panel during our async Discord operations (race condition prevention).
+  const freshForWrite = readState();
+  const originalActionIds = new Set(actions.map((a) => a.id));
+  const newWebActions = (freshForWrite.pendingAdminActions || []).filter(
+    (a) => !originalActionIds.has(a.id)
+  );
+  freshForWrite.pendingAdminActions = [...remaining, ...newWebActions];
+  writeState(freshForWrite);
 }
 
 async function main() {

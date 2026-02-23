@@ -554,6 +554,33 @@ function createPollingPipeline(options = {}) {
   }
 
   // processQueuedPostJobs: handles process queued post jobs.
+  // Refreshes web-managed fields from disk into a working state snapshot before writing,
+  // preventing race conditions where concurrent web-server writes get overwritten.
+  function mergeWebManagedFields(state) {
+    try {
+      const fresh = readState();
+      // Never overwrite pending admin actions with a stale snapshot
+      state.pendingAdminActions = Array.isArray(fresh.pendingAdminActions)
+        ? fresh.pendingAdminActions
+        : [];
+      // Preserve per-application admin flags set by the web panel
+      const adminFields = ["adminArchived", "adminArchivedAt", "adminDone", "adminNotes"];
+      for (const [appId, freshApp] of Object.entries(fresh.applications || {})) {
+        if (state.applications && state.applications[appId]) {
+          for (const f of adminFields) {
+            if (freshApp[f] !== undefined) {
+              state.applications[appId][f] = freshApp[f];
+            } else {
+              delete state.applications[appId][f];
+            }
+          }
+        }
+      }
+    } catch {
+      // If refresh fails, proceed with existing snapshot — better than crashing
+    }
+  }
+
   async function processQueuedPostJobs() {
     if (isProcessingPostJobs) {
       const state = readState();
@@ -633,6 +660,7 @@ function createPollingPipeline(options = {}) {
         try {
           await postApplicationForJob(state, job);
           posted += 1;
+          mergeWebManagedFields(state);
           writeState(state);
           logInfo(
             "queue_job_posted",
@@ -654,6 +682,7 @@ function createPollingPipeline(options = {}) {
             failedError = err.message;
           }
           state.postJobs.push(job);
+          mergeWebManagedFields(state);
           writeState(state);
           logError(
             "queue_job_failed",
@@ -672,6 +701,7 @@ function createPollingPipeline(options = {}) {
 
       if (state.postJobs.length > 1) {
         sortPostJobsInPlace(state.postJobs);
+        mergeWebManagedFields(state);
         writeState(state);
       }
 
