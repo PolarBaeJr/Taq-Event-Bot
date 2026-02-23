@@ -346,25 +346,13 @@ function indexPage() {
     .join("");
 
   return layout("Apply", `
-    <section class="landing-grid">
-      <section class="hero-panel">
-        <p class="eyebrow">Join the Crew</p>
-        <h2>Help shape Aquarium events behind the scenes.</h2>
-        <p class="hero-copy">Pick a role that matches your strengths and submit an application. We review every submission manually and reach out on Discord.</p>
-        <ul class="hero-points">
-          <li>Clear role-specific questions</li>
-          <li>Tracked directly to the review sheet</li>
-          <li>Fast follow-up through Discord</li>
-        </ul>
-      </section>
-      <section class="content-panel role-panel">
-        <div class="panel-headline">
-          <h2>Open Roles</h2>
-          <span class="panel-chip">${Object.keys(getAllTrackLabels()).length} tracks</span>
-        </div>
-        <p class="intro-copy">Select the role you are applying for below and complete the form.</p>
-        <div class="track-list">${trackCards}</div>
-      </section>
+    <section class="content-panel role-panel">
+      <div class="panel-headline">
+        <h2>Open Roles</h2>
+        <span class="panel-chip">${Object.keys(getAllTrackLabels()).length} tracks</span>
+      </div>
+      <p class="intro-copy">Select the role you are applying for below and complete the form.</p>
+      <div class="track-list">${trackCards}</div>
     </section>
   `);
 }
