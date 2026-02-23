@@ -835,7 +835,7 @@ function renderApplicationsPage(req, res, { lockedTrack = null } = {}) {
     if (a.adminArchived) return `<span class="badge badge-archived">archived</span>`;
     if (a.adminDone) return `<span class="badge badge-closed">closed</span>`;
     const s = a.status || "pending";
-    const cls = s === "accepted" ? "badge-ok" : s === "denied" ? "badge-err" : "badge-pending";
+    const cls = s === "accepted" ? "badge-ok" : s === "denied" ? "badge-err" : s === "closed" ? "badge-closed" : "badge-pending";
     return `<span class="badge ${cls}">${escHtml(s)}</span>`;
   };
 

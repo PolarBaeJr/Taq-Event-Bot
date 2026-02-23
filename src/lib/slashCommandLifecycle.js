@@ -1151,6 +1151,33 @@ function createSlashCommandLifecycle(options = {}) {
             .setRequired(false)
         ),
       new SlashCommandBuilder()
+        .setName("close")
+        .setDescription("Silently close an application (no accept/deny — just stops it from pinging)")
+        .addStringOption((option) =>
+          option
+            .setName("message_id")
+            .setDescription("Application message ID")
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("application_id")
+            .setDescription("Application ID (e.g. TESTER-123)")
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("job_id")
+            .setDescription("Application job ID (e.g. job-000123)")
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("reason")
+            .setDescription("Optional reason (stored in logs only)")
+            .setRequired(false)
+        ),
+      new SlashCommandBuilder()
         .setName("reopen")
         .setDescription("Reopen a previously accepted/denied application")
         .addStringOption((option) =>

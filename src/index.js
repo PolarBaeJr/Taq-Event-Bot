@@ -3074,6 +3074,7 @@ const {
   finalizeApplication,
   evaluateAndApplyVoteDecision,
   reopenApplication,
+  closeApplication,
 } = createApplicationDecisionWorkflow({
   client,
   PermissionsBitField,
@@ -3308,6 +3309,7 @@ const onInteractionCreate = createInteractionCommandHandler({
   resolveMessageIdForCommand,
   finalizeApplication,
   reopenApplication,
+  closeApplication,
   repostTrackedApplications,
   buildDashboardMessage,
   buildUptimeMessage,

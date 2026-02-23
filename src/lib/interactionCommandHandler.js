@@ -139,6 +139,9 @@ function createInteractionCommandHandler(options = {}) {
   const resolveMessageIdForCommand = options.resolveMessageIdForCommand;
   const finalizeApplication = options.finalizeApplication;
   const reopenApplication = options.reopenApplication;
+  const closeApplication = typeof options.closeApplication === "function"
+    ? options.closeApplication
+    : async () => { throw new Error("closeApplication unavailable"); };
   const repostTrackedApplications = typeof options.repostTrackedApplications === "function"
     ? options.repostTrackedApplications
     : async () => {
@@ -1802,6 +1805,7 @@ function createInteractionCommandHandler(options = {}) {
       const isAccept = interaction.commandName === "accept";
       const isDeny = interaction.commandName === "deny";
       const isReopen = interaction.commandName === "reopen";
+      const isClose = interaction.commandName === "close";
       const isSetUnified = interaction.commandName === "set";
       const setSubcommandGroup = isSetUnified ? safeGetSubcommandGroup(interaction) : null;
       const setSubcommand = isSetUnified ? safeGetSubcommand(interaction) : null;
@@ -5321,6 +5325,72 @@ function createInteractionCommandHandler(options = {}) {
             acceptMessageChannelId: nextAcceptAnnounceChannelId || null,
             bugChannelId: nextBugChannelId || null,
             suggestionsChannelId: nextSuggestionsChannelId || null,
+          }
+        );
+        return;
+      }
+
+      if (isClose) {
+        if (!canForceDecision) {
+          await interaction.reply({
+            content:
+              "You need both Manage Server and Manage Roles permissions (or Administrator) to use /close.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        const suppliedApplicationId = interaction.options.getString("application_id");
+        const suppliedJobId = interaction.options.getString("job_id");
+        const messageId = resolveMessageIdForCommand(interaction);
+        logInteractionDebug(
+          "close_command_received",
+          "Processing close command.",
+          interaction,
+          {
+            resolvedMessageId: messageId || null,
+            suppliedApplicationId: suppliedApplicationId || null,
+            suppliedJobId: suppliedJobId || null,
+          }
+        );
+        if (!messageId) {
+          await interaction.reply({
+            content:
+              suppliedApplicationId || suppliedJobId
+                ? "That `application_id` or `job_id` was not found, or it matches multiple track posts."
+                : "Message ID not found. Use this command inside an application thread or pass `message_id`, `application_id`, or `job_id`.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        const reason = String(interaction.options.getString("reason") || "").trim();
+        const result = await closeApplication(messageId, interaction.user.id, reason);
+        if (!result.ok && result.reason === "unknown_application") {
+          await interaction.reply({
+            content: "This message ID is not a tracked application.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        await interaction.reply({
+          content: `Application **${result.application?.applicationId || messageId}** closed. It will no longer appear in the pending list or trigger pings.`,
+          ephemeral: true,
+        });
+
+        await postConfigurationLog(interaction, "Application Closed", [
+          `**Application:** ${result.application?.applicationId || result.application?.messageId || messageId}`,
+          `**Closed By:** <@${interaction.user.id}>`,
+          `**Reason:** ${reason || "none"}`,
+        ]);
+        logInteractionDebug(
+          "close_command_completed",
+          "Application closed via command.",
+          interaction,
+          {
+            messageId,
+            applicationId: result.application?.applicationId || null,
           }
         );
         return;

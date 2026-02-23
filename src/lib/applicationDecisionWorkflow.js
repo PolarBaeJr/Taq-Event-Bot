@@ -828,10 +828,29 @@ function createApplicationDecisionWorkflow(options = {}) {
     }
   }
 
+  // closeApplication: silently closes an application without accept/deny.
+  // Changes status to "closed" and sets adminDone = true so it stops pinging
+  // and disappears from the default admin list.
+  async function closeApplication(messageId, actorId, closeReason = "") {
+    const state = readState();
+    const application = state.applications[messageId];
+    if (!application) {
+      return { ok: false, reason: "unknown_application" };
+    }
+    application.status = "closed";
+    application.adminDone = true;
+    application.closedAt = new Date().toISOString();
+    application.closedBy = actorId;
+    application.closeReason = String(closeReason || "").trim() || null;
+    writeState(state);
+    return { ok: true, application };
+  }
+
   return {
     finalizeApplication,
     evaluateAndApplyVoteDecision,
     reopenApplication,
+    closeApplication,
   };
 }
 
