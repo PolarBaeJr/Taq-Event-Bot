@@ -435,7 +435,7 @@ function indexPage() {
       </div>
       <p class="intro-copy">Select the role you are applying for below and complete the form.</p>
       <p class="intro-copy">Applying without joining the discord may result in your application being rejected!</p>
-      <p class="intro-copy">Join the <a href="https://discord.gg/njRpZwKVaa" target="_blank" rel="noopener noreferrer">Discord server</a> before you apply</p>
+      <p class="intro-copy">Join the <a href="https://discord.gg/bn6Yw9GNVT" target="_blank" rel="noopener noreferrer">Discord server</a> before you apply</p>
       <div class="track-list">${trackCards}</div>
     </section>
   `);
