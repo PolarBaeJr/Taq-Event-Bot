@@ -458,3 +458,39 @@ test("buildSlashCommands includes /accept mode option and /unassignedrole comman
   const unassignedRole = commands.find((command) => command.name === "unassignedrole");
   assert.ok(unassignedRole, "unassignedrole command should exist");
 });
+
+test("buildSlashCommands includes /close and /reopen commands with expected options", () => {
+  const { buildSlashCommands } = createSlashCommandLifecycle({
+    config: {},
+    client: { guilds: { cache: new Map() } },
+    REST: function REST() {},
+    Routes: {},
+    SlashCommandBuilder,
+    baseSetChannelTrackOptions: [],
+    debugModes: { report: "report", post_test: "post_test", accept_test: "accept_test", deny_test: "deny_test" },
+    getApplicationTrackKeys: () => ["tester"],
+    getTrackLabel: () => "Tester",
+  });
+
+  const commands = buildSlashCommands();
+
+  const close = commands.find((c) => c.name === "close");
+  assert.ok(close, "/close command should exist");
+  const closeOptionNames = new Set(
+    (Array.isArray(close.options) ? close.options : []).map((o) => o.name)
+  );
+  assert.ok(closeOptionNames.has("message_id"));
+  assert.ok(closeOptionNames.has("application_id"));
+  assert.ok(closeOptionNames.has("job_id"));
+  assert.ok(closeOptionNames.has("reason"));
+
+  const reopen = commands.find((c) => c.name === "reopen");
+  assert.ok(reopen, "/reopen command should exist");
+  const reopenOptionNames = new Set(
+    (Array.isArray(reopen.options) ? reopen.options : []).map((o) => o.name)
+  );
+  assert.ok(reopenOptionNames.has("message_id"));
+  assert.ok(reopenOptionNames.has("application_id"));
+  assert.ok(reopenOptionNames.has("job_id"));
+  assert.ok(reopenOptionNames.has("reason"));
+});
