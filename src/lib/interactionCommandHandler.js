@@ -1880,6 +1880,7 @@ function createInteractionCommandHandler(options = {}) {
         !isAccept &&
         !isDeny &&
         !isReopen &&
+        !isClose &&
         !isSetUnified &&
         !isSetChannel &&
         !isRepostApps &&
