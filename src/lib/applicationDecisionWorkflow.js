@@ -632,6 +632,22 @@ function createApplicationDecisionWorkflow(options = {}) {
         resolverHints: applicantResolverHints,
       });
 
+      if (roleResult?.status === "failed_member_fetch_transient") {
+        // Transient Discord API error — block acceptance and ask reviewer to retry.
+        // Do NOT permanently record as lastAcceptanceBlock (it may succeed on retry).
+        await postAcceptanceBlockedUpdate(
+          application,
+          String(roleResult.message || "Discord API error — please try accepting again.")
+        );
+        return {
+          ok: false,
+          reason: "member_fetch_transient_error",
+          roleResult,
+          warningPosted: true,
+          application,
+        };
+      }
+
       if (roleResult?.status === unresolvedUserRoleStatusValue) {
         const blockReason =
           String(roleResult.message || "").trim() ||

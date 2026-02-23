@@ -349,9 +349,19 @@ function createApplicationDecisionUtils(options = {}) {
         }
       }
 
+      // Cache fallback: check all currently-loaded members including globalName/displayName.
+      // Validate the hit by fetching from API to confirm they're still in the server
+      // (cache can contain stale entries for members who have left).
       const cached = pickBestGuildMemberMatch(guild.members?.cache, query);
       if (cached?.id) {
-        return cached.id;
+        try {
+          const validated = await guild.members.fetch(cached.id);
+          if (validated?.id) {
+            return validated.id;
+          }
+        } catch {
+          // stale cache entry — keep trying other candidates
+        }
       }
     }
 
@@ -583,20 +593,47 @@ function createApplicationDecisionUtils(options = {}) {
       }
 
       let member = null;
+      let memberDefinitelyAbsent = false;
       try {
         member = await guild.members.fetch(resolvedApplicantUserId);
-      } catch {
-        member = null;
+      } catch (fetchErr) {
+        // Discord API error 10007 = Unknown Member — user is definitively not in the server.
+        // Any other error code (429 rate-limit, 500 server error, network timeout) is
+        // transient; fall back to cache rather than falsely blocking acceptance.
+        if (fetchErr?.code === 10007) {
+          memberDefinitelyAbsent = true;
+        } else {
+          member = guild.members.cache.get(resolvedApplicantUserId) || null;
+          if (!member) {
+            // One more attempt: force-refresh this specific member via REST
+            try {
+              member = await guild.members.fetch({ user: resolvedApplicantUserId, force: true });
+            } catch (retryErr) {
+              memberDefinitelyAbsent = retryErr?.code === 10007;
+              member = null;
+            }
+          }
+        }
       }
 
       if (!member) {
-        let noticePosted = false;
-        if (postMissingMemberThreadNotice) {
-          noticePosted = await postApplicantNotInDiscordThreadNotice(application);
+        if (memberDefinitelyAbsent) {
+          let noticePosted = false;
+          if (postMissingMemberThreadNotice) {
+            noticePosted = await postApplicantNotInDiscordThreadNotice(application);
+          }
+          return {
+            status: "failed_member_not_found",
+            message: `Applicant user <@${resolvedApplicantUserId}> is not in this server.${noticePosted ? " Posted configured not-in-server notice in the application thread." : ""}`,
+            roleIds: approvedRoleIds,
+            userId: resolvedApplicantUserId,
+          };
         }
+        // Transient Discord API error — could not confirm or deny membership.
+        // Return a retriable error rather than falsely blocking acceptance.
         return {
-          status: "failed_member_not_found",
-          message: `Applicant user <@${resolvedApplicantUserId}> is not in this server.${noticePosted ? " Posted configured not-in-server notice in the application thread." : ""}`,
+          status: "failed_member_fetch_transient",
+          message: `Could not verify guild membership for <@${resolvedApplicantUserId}> due to a Discord API error. Please try accepting again.`,
           roleIds: approvedRoleIds,
           userId: resolvedApplicantUserId,
         };
