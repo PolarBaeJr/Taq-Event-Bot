@@ -34,6 +34,8 @@ const BOT_ERROR_LOG_FILE = process.env.BOT_ERROR_LOG_FILE || path.join(__dirname
 const WEB_ERROR_LOG_FILE = process.env.WEB_ERROR_LOG_FILE || path.join(__dirname, "../logs/web-errors.log");
 
 const router = express.Router();
+const ADMIN_STYLE_VERSION = "admin-css-2";
+const BASE_STYLE_VERSION = "shared-css-2";
 
 // ── HTML helpers ──────────────────────────────────────────────────────────────
 
@@ -53,10 +55,10 @@ function adminLayout(title, body, username) {
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>${escHtml(title)} — TAq Admin</title>
-  <link rel="stylesheet" href="/style.css"/>
-  <link rel="stylesheet" href="/admin.css"/>
+  <link rel="stylesheet" href="/style.css?v=${BASE_STYLE_VERSION}"/>
+  <link rel="stylesheet" href="/admin.css?v=${ADMIN_STYLE_VERSION}"/>
 </head>
-<body>
+<body class="admin-body">
   <div class="admin-page">
     <aside class="admin-nav">
       <div class="nav-logo">
@@ -95,10 +97,10 @@ function loginLayout(body) {
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Admin Login — TAq</title>
-  <link rel="stylesheet" href="/style.css"/>
-  <link rel="stylesheet" href="/admin.css"/>
+  <link rel="stylesheet" href="/style.css?v=${BASE_STYLE_VERSION}"/>
+  <link rel="stylesheet" href="/admin.css?v=${ADMIN_STYLE_VERSION}"/>
 </head>
-<body>
+<body class="admin-body admin-login-body">
   <div class="login-wrap">
     <div class="login-box">
       <div class="login-logo-wrap">
