@@ -303,13 +303,25 @@ function createApplicationDecisionUtils(options = {}) {
       return null;
     }
 
+    // Resolver hints (e.g. from a modal prompt) take priority over any cached ID.
+    // This lets a reviewer override a wrong cached applicantUserId by providing the
+    // correct @mention or numeric ID when the bot fails to find the member.
+    const normalizedHints = normalizeResolverHints(resolverHints);
+    for (const hint of normalizedHints) {
+      const directId = extractDiscordUserId(hint);
+      if (isSnowflake(directId)) {
+        return directId;
+      }
+    }
+
+    // Fall back to the previously cached user ID if no explicit hint was given.
     const existing = String(application.applicantUserId || "").trim();
     if (isSnowflake(existing)) {
       return existing;
     }
 
     const candidateValues = normalizeResolverHints([
-      ...normalizeResolverHints(resolverHints),
+      ...normalizedHints,
       inferApplicantDiscordValueFromSubmittedFields(application),
     ]);
     if (candidateValues.length === 0) {

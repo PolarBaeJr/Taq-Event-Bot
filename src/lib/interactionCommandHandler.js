@@ -1405,7 +1405,7 @@ function createInteractionCommandHandler(options = {}) {
           if (!modalResult.ok && modalResult.reason === "missing_member_not_in_guild") {
             await interaction.reply({
               content:
-                "Acceptance blocked: applicant is not in this server. The application is still pending. Use `/accept ... mode:force` if you want to accept anyway.",
+                "That user is not in this server. If you still want to accept, run `/accept` again and choose **mode:force**.",
               ephemeral: true,
             });
             return;
@@ -1414,7 +1414,7 @@ function createInteractionCommandHandler(options = {}) {
           if (!modalResult.ok && modalResult.reason === "unresolved_applicant_user") {
             await interaction.reply({
               content:
-                "Still could not resolve that applicant. Use a direct @mention or numeric Discord user ID.",
+                "Still could not resolve that applicant. Paste their numeric Discord user ID (right-click → Copy User ID with Developer Mode on).",
               ephemeral: true,
             });
             return;
@@ -5509,16 +5509,15 @@ function createInteractionCommandHandler(options = {}) {
         return;
       }
 
-      if (!result.ok && result.reason === "missing_member_not_in_guild") {
-        await interaction.reply({
-          content:
-            "Acceptance blocked: applicant is not in this server. The application is still pending. Use `/accept ... mode:force` if you want to accept anyway.",
-          ephemeral: true,
-        });
-        return;
-      }
-
-      if (!result.ok && result.reason === "unresolved_applicant_user") {
+      if (
+        !result.ok &&
+        (result.reason === "missing_member_not_in_guild" ||
+          result.reason === "unresolved_applicant_user")
+      ) {
+        // Show the applicant-resolve modal so the reviewer can supply the correct
+        // @mention or numeric user ID.  This handles both "couldn't find any user"
+        // and "found a user but they're not in the server" (wrong cached ID, stale
+        // resolution, or form submitted display-name instead of real username).
         pruneExpiredAcceptResolvePrompts();
         const promptId = nextAcceptResolvePromptId();
         pendingAcceptResolvePrompts.set(promptId, {
@@ -5527,6 +5526,7 @@ function createInteractionCommandHandler(options = {}) {
           messageId,
           reason: suppliedReason || "",
           acceptMode,
+          previousReason: result.reason,
         });
         await interaction.showModal(buildAcceptResolveModal(promptId));
         return;
