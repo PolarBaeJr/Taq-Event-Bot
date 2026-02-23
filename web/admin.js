@@ -201,10 +201,11 @@ router.post("/logout", (req, res) => {
 router.get("/dashboard", requireAuth, (req, res) => {
   const state = readRawState();
   const apps = Object.values(state.applications || {});
-  const active = apps.filter((a) => !a.adminArchived);
+  const active = apps.filter((a) => !a.adminArchived && !a.adminDone);
   const pending = active.filter((a) => a.status === "pending").length;
   const accepted = active.filter((a) => a.status === "accepted").length;
   const denied = active.filter((a) => a.status === "denied").length;
+  const closed = apps.filter((a) => !a.adminArchived && a.adminDone).length;
   const archived = apps.filter((a) => a.adminArchived).length;
   const customTracks = state?.settings?.customTracks;
   const trackCount = Array.isArray(customTracks) ? customTracks.length : 0;
@@ -224,6 +225,10 @@ router.get("/dashboard", requireAuth, (req, res) => {
       <div class="stat-card">
         <div class="stat-val">${denied}</div>
         <div class="stat-label">Denied</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-val">${closed}</div>
+        <div class="stat-label">Closed</div>
       </div>
       <div class="stat-card">
         <div class="stat-val">${archived}</div>
@@ -664,7 +669,13 @@ function renderQueuePage(req, res) {
   const jobs = Array.isArray(state.postJobs) ? state.postJobs : [];
   const failedCount = jobs.filter((j) => j.lastError).length;
 
-  const rows = jobs.map((j) => {
+  // Pending applications: already posted to Discord, awaiting a decision
+  const pendingApps = Object.entries(state.applications || {})
+    .map(([id, a]) => ({ id, ...a }))
+    .filter((a) => !a.adminArchived && !a.adminDone && a.status === "pending")
+    .sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""));
+
+  const jobRows = jobs.map((j) => {
     const tracks = Array.isArray(j.trackKeys) ? j.trackKeys.join(", ") : (j.trackKeys || "—");
     const createdAt = j.createdAt ? escHtml(j.createdAt.slice(0, 16).replace("T", " ")) : "—";
     const lastAttempt = j.lastAttemptAt ? escHtml(j.lastAttemptAt.slice(0, 16).replace("T", " ")) : "—";
@@ -688,10 +699,37 @@ function renderQueuePage(req, res) {
       </tr>`;
   }).join("");
 
-  res.send(adminLayout("Job Queue", `
+  const appRows = pendingApps.map((a) => {
+    const editUrl = `/admin/applications/${encodeURIComponent(a.trackKey || "_")}/${encodeURIComponent(a.id)}`;
+    const createdAt = a.createdAt ? escHtml(a.createdAt.slice(0, 16).replace("T", " ")) : "—";
+    return `
+      <tr>
+        <td data-label="ID"><a href="${editUrl}" class="track-link"><code>${escHtml(a.id)}</code></a></td>
+        <td data-label="Applicant">${escHtml(a.applicantName || "—")}</td>
+        <td data-label="Track"><code>${escHtml(a.trackKey || "—")}</code></td>
+        <td data-label="Created" class="muted-note">${createdAt}</td>
+        <td data-label="Actions" class="actions-cell">
+          <a href="${editUrl}" class="btn-sm">View</a>
+        </td>
+      </tr>`;
+  }).join("");
+
+  res.send(adminLayout("Queue", `
     ${flash(req)}
-    <div style="display:flex;gap:10px;align-items:center;margin-bottom:20px;flex-wrap:wrap">
-      <span class="muted-note">${jobs.length} job${jobs.length !== 1 ? "s" : ""} pending${failedCount > 0 ? `, <strong>${failedCount}</strong> with errors` : ""}</span>
+
+    <h2 style="font-size:1.1rem;font-weight:700;margin-bottom:12px">Pending Applications <span class="muted-note" style="font-size:0.85rem;font-weight:400">(posted to Discord, awaiting decision)</span></h2>
+    <table class="admin-table" style="margin-bottom:32px">
+      <thead>
+        <tr><th>ID</th><th>Applicant</th><th>Track</th><th>Submitted</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        ${appRows || '<tr><td colspan="5" class="muted-note" style="padding:16px;text-align:center">No pending applications.</td></tr>'}
+      </tbody>
+    </table>
+
+    <h2 style="font-size:1.1rem;font-weight:700;margin-bottom:12px">Unposted Jobs <span class="muted-note" style="font-size:0.85rem;font-weight:400">(new form responses waiting to be posted to Discord)</span></h2>
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+      <span class="muted-note">${jobs.length} job${jobs.length !== 1 ? "s" : ""}${failedCount > 0 ? `, <strong>${failedCount}</strong> with errors` : ""}</span>
       ${failedCount > 0 ? `
         <form method="POST" action="/admin/queue/clear-failed" style="margin:0"
           onsubmit="return confirm('Remove all ${failedCount} failed job(s) from the queue?')">
@@ -708,7 +746,7 @@ function renderQueuePage(req, res) {
         <tr><th>Job ID</th><th>Track(s)</th><th>Row</th><th>Created</th><th>Attempts</th><th>Last Error</th><th>Actions</th></tr>
       </thead>
       <tbody>
-        ${rows || '<tr><td colspan="7" class="muted-note" style="padding:20px;text-align:center">Queue is empty — no pending jobs.</td></tr>'}
+        ${jobRows || '<tr><td colspan="7" class="muted-note" style="padding:16px;text-align:center">No unposted jobs.</td></tr>'}
       </tbody>
     </table>
   `, req.session.username));
@@ -755,8 +793,9 @@ function renderApplicationsPage(req, res, { lockedTrack = null } = {}) {
 
   const filterTrack = lockedTrack || req.query.track || "";
   const filterStatus = req.query.status || "";
-  // "archived" is a special pseudo-status stored as adminArchived flag rather than status field
+  // "archived" and "closed" are special pseudo-statuses stored as flags
   const showArchived = filterStatus === "archived";
+  const showClosed = filterStatus === "closed";
   const page = Math.max(1, parseInt(req.query.page, 10) || 1);
   const pageSize = 25;
 
@@ -764,11 +803,13 @@ function renderApplicationsPage(req, res, { lockedTrack = null } = {}) {
   if (filterTrack) filtered = filtered.filter((a) => a.trackKey === filterTrack);
   if (showArchived) {
     filtered = filtered.filter((a) => a.adminArchived === true);
+  } else if (showClosed) {
+    filtered = filtered.filter((a) => !a.adminArchived && a.adminDone === true);
   } else if (filterStatus) {
-    filtered = filtered.filter((a) => !a.adminArchived && a.status === filterStatus);
+    filtered = filtered.filter((a) => !a.adminArchived && !a.adminDone && a.status === filterStatus);
   } else {
-    // Default: hide archived applications
-    filtered = filtered.filter((a) => !a.adminArchived);
+    // Default: hide archived and closed applications
+    filtered = filtered.filter((a) => !a.adminArchived && !a.adminDone);
   }
 
   filtered.sort((a, b) => {
@@ -786,6 +827,7 @@ function renderApplicationsPage(req, res, { lockedTrack = null } = {}) {
 
   const statusBadge = (a) => {
     if (a.adminArchived) return `<span class="badge badge-archived">archived</span>`;
+    if (a.adminDone) return `<span class="badge badge-closed">closed</span>`;
     const s = a.status || "pending";
     const cls = s === "accepted" ? "badge-ok" : s === "denied" ? "badge-err" : "badge-pending";
     return `<span class="badge ${cls}">${escHtml(s)}</span>`;
@@ -798,7 +840,7 @@ function renderApplicationsPage(req, res, { lockedTrack = null } = {}) {
     const editUrl = `/admin/applications/${escHtml(a.trackKey || "_")}/${escHtml(a.id)}`;
     const toggleDoneUrl = `/admin/applications/${encodeURIComponent(a.trackKey || "_")}/${encodeURIComponent(a.id)}/toggle-done`;
     const doneBtn = `<form method="POST" action="${toggleDoneUrl}" style="margin:0">
-      <button type="submit" class="btn-sm${a.adminDone ? " btn-done" : ""}" title="${a.adminDone ? "Mark as not done" : "Mark as done"}">${a.adminDone ? "✓ Done" : "○"}</button>
+      <button type="submit" class="btn-sm${a.adminDone ? " btn-done" : ""}" title="${a.adminDone ? "Mark as open" : "Mark as closed"}">${a.adminDone ? "✓ Closed" : "○"}</button>
     </form>`;
     const notesIndicator = a.adminNotes ? ` <span class="muted-note" title="${escHtml(a.adminNotes)}" style="cursor:default">📝</span>` : "";
     return `
@@ -810,7 +852,7 @@ function renderApplicationsPage(req, res, { lockedTrack = null } = {}) {
         <td data-label="Created" class="muted-note">${a.createdAt ? escHtml(a.createdAt.slice(0, 10)) : "—"}</td>
         <td data-label="Decided" class="muted-note">${a.decidedAt ? escHtml(a.decidedAt.slice(0, 10)) : "—"}</td>
         <td data-label="Fields" class="field-preview">${fields}</td>
-        <td data-label="Done" class="actions-cell">${doneBtn}</td>
+        <td data-label="Closed" class="actions-cell">${doneBtn}</td>
       </tr>`;
   }).join("");
 
@@ -850,6 +892,7 @@ function renderApplicationsPage(req, res, { lockedTrack = null } = {}) {
         <option value="pending" ${filterStatus === "pending" ? "selected" : ""}>Pending</option>
         <option value="accepted" ${filterStatus === "accepted" ? "selected" : ""}>Accepted</option>
         <option value="denied" ${filterStatus === "denied" ? "selected" : ""}>Denied</option>
+        <option value="closed" ${filterStatus === "closed" ? "selected" : ""}>Closed</option>
         <option value="archived" ${filterStatus === "archived" ? "selected" : ""}>Archived</option>
       </select>
       <button type="submit" class="btn-primary">Filter</button>
@@ -857,7 +900,7 @@ function renderApplicationsPage(req, res, { lockedTrack = null } = {}) {
     </form>
     <table class="admin-table">
       <thead>
-        <tr><th>ID</th><th>Applicant</th><th>Track</th><th>Status</th><th>Created</th><th>Decided</th><th>Fields</th><th>Done</th></tr>
+        <tr><th>ID</th><th>Applicant</th><th>Track</th><th>Status</th><th>Created</th><th>Decided</th><th>Fields</th><th>Closed</th></tr>
       </thead>
       <tbody>
         ${rows || '<tr><td colspan="8" class="muted-note">No applications found.</td></tr>'}
@@ -1179,7 +1222,7 @@ router.get("/applications/:track/:id", requireAuth, (req, res) => {
       </div>
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
         <input type="checkbox" id="adminDone" name="adminDone" value="1"${app.adminDone ? " checked" : ""} style="width:auto"/>
-        <label for="adminDone" style="margin:0;font-size:0.9rem;font-weight:500">Mark as Done <span class="muted-note">(hides from active review, does not affect bot decisions)</span></label>
+        <label for="adminDone" style="margin:0;font-size:0.9rem;font-weight:500">Closed <span class="muted-note">(marks application as closed/resolved; does not affect bot decisions)</span></label>
       </div>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <button type="submit" class="btn-primary">Save Changes</button>
@@ -1190,7 +1233,7 @@ router.get("/applications/:track/:id", requireAuth, (req, res) => {
     </form>
     <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
       <form method="POST" action="/admin/applications/${escHtml(req.params.track)}/${escHtml(appId)}/toggle-done" style="margin:0">
-        <button type="submit" class="btn-sm${app.adminDone ? " btn-done" : ""}">${app.adminDone ? "✓ Done — click to unmark" : "○ Mark as Done"}</button>
+        <button type="submit" class="btn-sm${app.adminDone ? " btn-done" : ""}">${app.adminDone ? "✓ Closed — click to reopen" : "○ Close Application"}</button>
       </form>
       ${!app.adminArchived ? `
         <form method="POST" action="/admin/applications/${escHtml(req.params.track)}/${escHtml(appId)}/archive"
@@ -1269,8 +1312,19 @@ router.post("/applications/:track/:id/toggle-done", requireAuth, requireAdmin, (
     const state = readRawState();
     const app = state.applications?.[appId];
     if (!app) throw new Error(`Application '${appId}' not found.`);
-    updateApplication(appId, { adminDone: !app.adminDone });
-    setFlash(req, "ok", app.adminDone ? `Application '${appId}' marked as not done.` : `Application '${appId}' marked as done.`);
+    const nowClosing = !app.adminDone;
+    updateApplication(appId, { adminDone: nowClosing });
+    // Closing: queue a Discord thread archive so it gets tidied up on next bot cycle
+    if (nowClosing && app.threadId) {
+      addPendingAdminAction({
+        type: "archive_thread",
+        appId,
+        messageId: app.messageId || null,
+        channelId: app.channelId || null,
+        threadId: app.threadId,
+      });
+    }
+    setFlash(req, "ok", nowClosing ? `Application '${appId}' closed. Discord thread will be archived on next bot cycle.` : `Application '${appId}' reopened.`);
   } catch (err) {
     setFlash(req, "error", err.message);
   }

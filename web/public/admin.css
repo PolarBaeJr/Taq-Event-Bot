@@ -246,6 +246,7 @@
 .badge-err      { background: rgba(248,113,113,0.10); color: var(--error); border: 1px solid rgba(248,113,113,0.3); }
 .badge-pending  { background: rgba(14,165,233,0.10); color: var(--accent); border: 1px solid rgba(14,165,233,0.25); }
 .badge-archived { background: rgba(148,163,184,0.12); color: var(--muted); border: 1px solid rgba(148,163,184,0.3); }
+.badge-closed   { background: rgba(52,211,153,0.10); color: var(--success); border: 1px solid rgba(52,211,153,0.3); }
 
 /* ── Buttons ───────────────────────────────────────────────────── */
 .btn-primary {
