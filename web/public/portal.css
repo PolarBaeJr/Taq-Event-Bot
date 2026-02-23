@@ -3,9 +3,10 @@
 .portal-body {
   color: var(--text);
   position: relative;
-  --bg-nav: rgba(15, 23, 42, 0.94);
+  /* Match Aquarium dark theme tokens from globals.css */
+  --bg-nav: #1e293b;
   --text-primary: #e2e8f0;
-  --border-color: rgba(148, 163, 184, 0.22);
+  --border-color: rgba(71, 85, 105, 0.3);
 }
 
 .portal-body::before,
@@ -54,11 +55,15 @@
   gap: 0;
   height: auto;
   min-height: 0;
-  padding: 0 !important; /* inline padding wins, but keep this for safety if source changes */
 }
 
 .portal-body .aquarium-nav {
   font-family: "Roboto", ui-sans-serif, system-ui, sans-serif;
+}
+
+.portal-body .nav-font,
+.portal-body .nav-font * {
+  font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji" !important;
 }
 
 .portal-body .aquarium-nav .topbar-home {
@@ -514,6 +519,16 @@
   }
 }
 
+@media (max-width: 800px) {
+  .portal-body .aquarium-nav .desktop-nav {
+    display: none !important;
+  }
+
+  .portal-body .aquarium-nav .mobile-menu-button {
+    display: flex !important;
+  }
+}
+
 @media (max-width: 700px) {
   .portal-stage {
     padding: 18px 14px 70px;
@@ -550,14 +565,6 @@
     padding: 0 10px;
     border-radius: 8px;
     font-size: 0.8rem;
-  }
-
-  .portal-body .aquarium-nav .desktop-nav {
-    display: none !important;
-  }
-
-  .portal-body .aquarium-nav .mobile-menu-button {
-    display: flex !important;
   }
 
   .portal-body .aquarium-nav .aquarium-nav-actions {
@@ -618,5 +625,11 @@
 
   .success-panel {
     padding: 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  .portal-body .aquarium-nav .mobile-apply-button {
+    display: block !important;
   }
 }

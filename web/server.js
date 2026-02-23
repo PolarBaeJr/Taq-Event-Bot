@@ -257,7 +257,7 @@ function layout(title, body) {
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>${escHtml(title)} — TAq Applications</title>
   <link rel="stylesheet" href="/style.css?v=portal-base-2"/>
-  <link rel="stylesheet" href="/portal.css?v=portal-aq-5"/>
+  <link rel="stylesheet" href="/portal.css?v=portal-aq-6"/>
 </head>
 <body class="portal-body">
   <nav class="nav-font aquarium-nav" style="width:100%;background:var(--bg-nav);padding:1rem 1.5rem;display:flex;justify-content:space-between;align-items:center;box-shadow:0 4px 6px -1px rgba(0, 0, 0, 0.1);position:relative">
