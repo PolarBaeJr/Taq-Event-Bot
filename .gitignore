@@ -19,6 +19,7 @@ web/certs/*key*.txt
 web/users.seed.json
 .bot-state.json
 .bot-state.*.json
+.web-sessions.json
 .bot.pid
 *.pid
 control-actions.log

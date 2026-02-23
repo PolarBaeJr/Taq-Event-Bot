@@ -468,6 +468,76 @@ function successPage(trackLabel) {
   `);
 }
 
+// ── Persistent file-backed session store ──────────────────────────────────────
+// Stores sessions in a JSON file so logins survive web-server restarts.
+// No extra packages required — implements the express-session Store API directly.
+
+const SESSION_STORE_FILE = path.resolve(
+  process.env.SESSION_STORE_FILE || path.join(__dirname, "../.web-sessions.json")
+);
+
+class FileSessionStore extends session.Store {
+  constructor(filePath) {
+    super();
+    this._file = filePath;
+    this._sessions = this._load();
+    // Prune expired sessions every 15 minutes (unref so it doesn't block shutdown)
+    setInterval(() => this._prune(), 15 * 60 * 1000).unref();
+  }
+
+  _load() {
+    try {
+      return JSON.parse(fs.readFileSync(this._file, "utf8"));
+    } catch {
+      return {};
+    }
+  }
+
+  _save() {
+    try {
+      fs.writeFileSync(this._file, JSON.stringify(this._sessions, null, 2));
+    } catch { /* ignore write errors */ }
+  }
+
+  _prune() {
+    const now = Date.now();
+    let changed = false;
+    for (const [sid, data] of Object.entries(this._sessions)) {
+      const exp = data?.cookie?.expires;
+      if (exp && new Date(exp).getTime() < now) {
+        delete this._sessions[sid];
+        changed = true;
+      }
+    }
+    if (changed) this._save();
+  }
+
+  get(sid, cb) {
+    const s = this._sessions[sid];
+    cb(null, s ?? null);
+  }
+
+  set(sid, session, cb) {
+    this._sessions[sid] = session;
+    this._save();
+    cb(null);
+  }
+
+  destroy(sid, cb) {
+    delete this._sessions[sid];
+    this._save();
+    cb(null);
+  }
+
+  touch(sid, session, cb) {
+    if (this._sessions[sid]) {
+      this._sessions[sid].cookie = session.cookie;
+      this._save();
+    }
+    cb(null);
+  }
+}
+
 // ── Express app ───────────────────────────────────────────────────────────────
 
 bootstrapAdminIfNeeded();
@@ -480,6 +550,7 @@ app.use(session({
   secret: process.env.SESSION_SECRET || "change-me-in-production",
   resave: false,
   saveUninitialized: false,
+  store: new FileSessionStore(SESSION_STORE_FILE),
   cookie: {
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     httpOnly: true,    // not accessible via document.cookie (blocks XSS theft)
