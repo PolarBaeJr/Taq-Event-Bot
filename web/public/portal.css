@@ -3,10 +3,40 @@
 .portal-body {
   color: var(--text);
   position: relative;
+  background: var(--bg);
+  background-image:
+    radial-gradient(1200px 600px at 50% -10%, rgba(25, 42, 86, 0.85), rgba(25, 42, 86, 0) 60%),
+    linear-gradient(180deg, #1a2654 0%, #0f1629 40%, #050c1a 100%);
+  background-attachment: fixed;
   /* Match Aquarium dark theme tokens from globals.css */
   --bg-nav: #1e293b;
   --text-primary: #e2e8f0;
   --border-color: rgba(71, 85, 105, 0.3);
+}
+
+html[data-theme="light"] .portal-body {
+  /* Match Aquarium light theme tokens from globals.css */
+  --bg-nav: #d7f4fb;
+  --text-primary: #204a5f;
+  --border-color: rgba(255, 255, 255, 0.3);
+
+  /* Override shared dark defaults from style.css for public portal only */
+  --bg: #e8fbff;
+  --bg2: #d7f4fb;
+  --surface: #ffffff;
+  --surface2: #eef8ff;
+  --border: rgba(255, 255, 255, 0.45);
+  --border-h: rgba(84, 195, 231, 0.42);
+  --accent-glow: rgba(56, 169, 207, 0.14);
+  --text: #204a5f;
+  --muted: rgba(32, 74, 95, 0.75);
+  --muted2: rgba(32, 74, 95, 0.6);
+
+  background: #e8fbff;
+  background-image:
+    radial-gradient(1200px 600px at 50% -10%, rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0) 60%),
+    linear-gradient(180deg, #e8fbff 0%, #c8f2ff 40%, #bff0ff 55%, #fdf4df 100%);
+  background-attachment: fixed;
 }
 
 .portal-body::before,
@@ -31,6 +61,20 @@
     linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
   background-size: 26px 26px;
   opacity: 0.35;
+}
+
+html[data-theme="light"] .portal-body::before {
+  background:
+    radial-gradient(780px 360px at 10% 14%, rgba(84, 195, 231, 0.18), transparent 70%),
+    radial-gradient(620px 320px at 92% 18%, rgba(130, 216, 241, 0.24), transparent 72%),
+    radial-gradient(680px 420px at 50% 92%, rgba(253, 244, 223, 0.35), transparent 74%);
+}
+
+html[data-theme="light"] .portal-body::after {
+  background-image:
+    linear-gradient(rgba(32, 74, 95, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(32, 74, 95, 0.04) 1px, transparent 1px);
+  opacity: 0.22;
 }
 
 .portal-body > * {
@@ -93,6 +137,19 @@
 .portal-body .aquarium-nav .mobile-apply-button:hover {
   transform: translateY(-1px) !important;
   box-shadow: 0 4px 8px rgba(88, 101, 242, 0.4) !important;
+}
+
+html[data-theme="light"] .portal-body .aquarium-nav .topbar-home {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(232, 251, 255, 0.88) 100%) !important;
+  border-color: rgba(130, 216, 241, 0.45) !important;
+  box-shadow:
+    0 2px 8px rgba(32, 74, 95, 0.08),
+    inset 0 1px 2px rgba(255, 255, 255, 0.7) !important;
+}
+
+html[data-theme="light"] .portal-body .aquarium-nav .desktop-nav a:hover {
+  background: linear-gradient(135deg, rgba(255,255,255,0.75) 0%, rgba(232, 251, 255, 0.85) 100%) !important;
+  box-shadow: 0 2px 8px rgba(32, 74, 95, 0.08) !important;
 }
 
 .portal-body .aquarium-nav .mobile-menu-button {
@@ -507,6 +564,159 @@
 
 .portal-body .back-link:hover {
   color: #e9f5ff;
+}
+
+html[data-theme="light"] .portal-body .portal-header {
+  border-color: rgba(255, 255, 255, 0.55);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(240, 250, 255, 0.78)),
+    radial-gradient(700px 260px at 0% 0%, rgba(84, 195, 231, 0.18), transparent 70%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    0 20px 50px rgba(32, 74, 95, 0.08);
+}
+
+html[data-theme="light"] .portal-body .header-logo-link {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(232, 251, 255, 0.9));
+  border-color: rgba(130, 216, 241, 0.35);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 12px 28px rgba(32, 74, 95, 0.08);
+}
+
+html[data-theme="light"] .portal-body .portal-header .subtitle {
+  color: rgba(32, 74, 95, 0.72);
+}
+
+html[data-theme="light"] .portal-body .portal-header h1 {
+  background: linear-gradient(135deg, #204a5f 0%, #2a86aa 52%, #54c3e7 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+html[data-theme="light"] .portal-body .header-lead {
+  color: rgba(32, 74, 95, 0.78);
+}
+
+html[data-theme="light"] .portal-body .hero-panel,
+html[data-theme="light"] .portal-body .content-panel {
+  border-color: rgba(255, 255, 255, 0.5);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.8), rgba(239, 251, 255, 0.8));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 16px 42px rgba(32, 74, 95, 0.07);
+}
+
+html[data-theme="light"] .portal-body .hero-panel::before {
+  background:
+    radial-gradient(320px 150px at 0% 0%, rgba(84, 195, 231, 0.18), transparent 72%),
+    radial-gradient(280px 160px at 95% 100%, rgba(130, 216, 241, 0.22), transparent 76%);
+}
+
+html[data-theme="light"] .portal-body .eyebrow {
+  color: rgba(32, 74, 95, 0.72);
+}
+
+html[data-theme="light"] .portal-body .hero-points li {
+  color: rgba(32, 74, 95, 0.92);
+}
+
+html[data-theme="light"] .portal-body .panel-chip {
+  color: #235a73;
+  border-color: rgba(84, 195, 231, 0.25);
+  background: rgba(84, 195, 231, 0.12);
+}
+
+html[data-theme="light"] .portal-body .track-card {
+  border-color: rgba(255, 255, 255, 0.52);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(241, 252, 255, 0.88));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+}
+
+html[data-theme="light"] .portal-body .track-card:hover {
+  border-color: rgba(84, 195, 231, 0.42);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(232, 251, 255, 0.96));
+  box-shadow:
+    0 0 0 1px rgba(84, 195, 231, 0.16),
+    0 12px 26px rgba(32, 74, 95, 0.10);
+}
+
+html[data-theme="light"] .portal-body .track-arrow {
+  color: rgba(32, 74, 95, 0.55);
+}
+
+html[data-theme="light"] .portal-body .track-card:hover .track-arrow {
+  color: var(--accent);
+}
+
+html[data-theme="light"] .portal-body .application-form label {
+  color: rgba(32, 74, 95, 0.92);
+}
+
+html[data-theme="light"] .portal-body .application-form input[type="text"],
+html[data-theme="light"] .portal-body .application-form input[type="password"],
+html[data-theme="light"] .portal-body .application-form textarea,
+html[data-theme="light"] .portal-body .application-form select {
+  background: rgba(255, 255, 255, 0.88);
+  border-color: rgba(84, 195, 231, 0.18);
+  color: #204a5f;
+}
+
+html[data-theme="light"] .portal-body .application-form input::placeholder,
+html[data-theme="light"] .portal-body .application-form textarea::placeholder {
+  color: rgba(32, 74, 95, 0.45);
+}
+
+html[data-theme="light"] .portal-body .application-form select option {
+  background: #ffffff;
+  color: #204a5f;
+}
+
+html[data-theme="light"] .portal-body .application-form input[type="text"]:focus,
+html[data-theme="light"] .portal-body .application-form input[type="password"]:focus,
+html[data-theme="light"] .portal-body .application-form textarea:focus,
+html[data-theme="light"] .portal-body .application-form select:focus {
+  border-color: rgba(56, 169, 207, 0.45);
+  box-shadow: 0 0 0 4px rgba(84, 195, 231, 0.14);
+}
+
+html[data-theme="light"] .portal-body .submit-btn {
+  background: linear-gradient(180deg, #4dbbe0, #349ec5);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 10px 18px rgba(84, 195, 231, 0.22);
+}
+
+html[data-theme="light"] .portal-body .submit-btn:hover {
+  background: linear-gradient(180deg, #60c9ea, #3aaed4);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 12px 22px rgba(84, 195, 231, 0.25);
+}
+
+html[data-theme="light"] .portal-body .error-banner {
+  background: rgba(248, 113, 113, 0.08);
+  border-color: rgba(248, 113, 113, 0.22);
+  color: #b42318;
+}
+
+html[data-theme="light"] .portal-body .success-box {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(240, 250, 255, 0.9));
+  border-color: rgba(255, 255, 255, 0.55);
+}
+
+html[data-theme="light"] .portal-body .portal-footer {
+  color: rgba(32, 74, 95, 0.62);
+}
+
+html[data-theme="light"] .portal-body .back-link {
+  color: rgba(32, 74, 95, 0.72);
+}
+
+html[data-theme="light"] .portal-body .back-link:hover {
+  color: #246c8b;
 }
 
 @media (max-width: 960px) {

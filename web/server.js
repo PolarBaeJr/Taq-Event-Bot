@@ -256,8 +256,19 @@ function layout(title, body) {
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>${escHtml(title)} — TAq Applications</title>
+  <script>
+    (function () {
+      try {
+        var savedTheme = localStorage.getItem("theme");
+        var theme = savedTheme === "light" || savedTheme === "dark" ? savedTheme : "dark";
+        document.documentElement.setAttribute("data-theme", theme);
+      } catch (_err) {
+        document.documentElement.setAttribute("data-theme", "dark");
+      }
+    })();
+  </script>
   <link rel="stylesheet" href="/style.css?v=portal-base-2"/>
-  <link rel="stylesheet" href="/portal.css?v=portal-aq-6"/>
+  <link rel="stylesheet" href="/portal.css?v=portal-aq-7"/>
 </head>
 <body class="portal-body">
   <nav class="nav-font aquarium-nav" style="width:100%;background:var(--bg-nav);padding:1rem 1.5rem;display:flex;justify-content:space-between;align-items:center;box-shadow:0 4px 6px -1px rgba(0, 0, 0, 0.1);position:relative">
@@ -276,14 +287,14 @@ function layout(title, body) {
     <div class="aquarium-nav-actions" style="display:flex;align-items:center;gap:1rem">
       <a href="https://discord.gg/njRpZwKVaa" target="_blank" rel="noopener noreferrer" class="mobile-apply-button" style="padding: 8px 16px; background: linear-gradient(135deg, rgb(88, 101, 242) 0%, rgb(71, 82, 196) 100%); color: white; text-decoration: none; border-radius: 8px; font-size: 0.875rem; font-weight: 600; transition: 0.3s; border: medium; cursor: pointer; box-shadow: rgba(88, 101, 242, 0.3) 0px 2px 4px; transform: translateY(0px);">📝 Apply</a>
       <div style="position:relative;display:flex;align-items:center">
-        <button type="button" aria-label="Toggle dark mode" style="position: relative; width: 64px; height: 32px; background: rgb(55, 65, 81); border-radius: 16px; display: flex; align-items: center; justify-content: space-between; padding: 0px 8px; transition: 0.3s; border: 1px solid rgb(75, 85, 99); cursor: pointer;">
-          <span style="flex: 1 1 0%; display: flex; justify-content: center; align-items: center; opacity: 0.4; transition: opacity 0.3s;">
+        <button id="portal-theme-toggle" type="button" aria-label="Toggle dark mode" aria-pressed="false" style="position: relative; width: 64px; height: 32px; background: rgb(55, 65, 81); border-radius: 16px; display: flex; align-items: center; justify-content: space-between; padding: 0px 8px; transition: 0.3s; border: 1px solid rgb(75, 85, 99); cursor: pointer;">
+          <span id="portal-theme-sun" style="flex: 1 1 0%; display: flex; justify-content: center; align-items: center; opacity: 0.4; transition: opacity 0.3s;">
             <svg width="16" height="16" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="10" cy="10" r="4" fill="#FBBF24"></circle><g stroke="#FBBF24" stroke-width="2"><line x1="10" y1="1" x2="10" y2="3"></line><line x1="10" y1="17" x2="10" y2="19"></line><line x1="1" y1="10" x2="3" y2="10"></line><line x1="17" y1="10" x2="19" y2="10"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="14.36" y1="14.36" x2="15.78" y2="15.78"></line><line x1="4.22" y1="15.78" x2="5.64" y2="14.36"></line><line x1="14.36" y1="5.64" x2="15.78" y2="4.22"></line></g></svg>
           </span>
-          <span style="flex: 1 1 0%; display: flex; justify-content: center; align-items: center; opacity: 1; transition: opacity 0.3s;">
+          <span id="portal-theme-moon" style="flex: 1 1 0%; display: flex; justify-content: center; align-items: center; opacity: 1; transition: opacity 0.3s;">
             <svg width="16" height="16" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M17.293 13.293A8 8 0 0 1 6.707 2.707a8.001 8.001 0 1 0 10.586 10.586z" fill="#e2e8f0" stroke="#94a3b8" stroke-width="1.5"></path></svg>
           </span>
-          <span style="position: absolute; left: 4px; width: 24px; height: 24px; background: white; border-radius: 50%; box-shadow: rgba(0, 0, 0, 0.2) 0px 2px 4px; transition: left 0.3s;"></span>
+          <span id="portal-theme-thumb" style="position: absolute; left: 4px; width: 24px; height: 24px; background: white; border-radius: 50%; box-shadow: rgba(0, 0, 0, 0.2) 0px 2px 4px; transition: left 0.3s;"></span>
         </button>
       </div>
       <button type="button" aria-label="Toggle mobile menu" class="mobile-menu-button" style="flex-direction:column;justify-content:center;align-items:center;width:40px;height:40px;background:transparent;border:none;cursor:pointer;gap:4px">
@@ -309,6 +320,49 @@ function layout(title, body) {
       <footer class="portal-footer"><p>Applications are reviewed by the TAq team. Good luck!</p></footer>
     </div>
   </div>
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var btn = document.getElementById("portal-theme-toggle");
+      var sun = document.getElementById("portal-theme-sun");
+      var moon = document.getElementById("portal-theme-moon");
+      var thumb = document.getElementById("portal-theme-thumb");
+
+      if (!btn) return;
+
+      function getTheme() {
+        var theme = root.getAttribute("data-theme");
+        return theme === "light" ? "light" : "dark";
+      }
+
+      function applyTheme(theme) {
+        var isDark = theme !== "light";
+        root.setAttribute("data-theme", isDark ? "dark" : "light");
+
+        try {
+          localStorage.setItem("theme", isDark ? "dark" : "light");
+        } catch (_err) {
+          // ignore storage failures
+        }
+
+        btn.style.background = isDark ? "#374151" : "#b2e9f7";
+        btn.style.border = isDark ? "1px solid #4b5563" : "1px solid #82d8f1";
+        btn.setAttribute("aria-pressed", String(!isDark));
+        btn.setAttribute("title", isDark ? "Switch to light mode" : "Switch to dark mode");
+        btn.setAttribute("aria-label", isDark ? "Switch to light mode" : "Switch to dark mode");
+
+        if (sun) sun.style.opacity = isDark ? "0.4" : "1";
+        if (moon) moon.style.opacity = isDark ? "1" : "0.4";
+        if (thumb) thumb.style.left = isDark ? "4px" : "36px";
+      }
+
+      applyTheme(getTheme());
+
+      btn.addEventListener("click", function () {
+        applyTheme(getTheme() === "dark" ? "light" : "dark");
+      });
+    })();
+  </script>
 </body>
 </html>`;
 }
