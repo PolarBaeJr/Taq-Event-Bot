@@ -257,20 +257,22 @@ function layout(title, body) {
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>${escHtml(title)} — TAq Applications</title>
   <link rel="stylesheet" href="/style.css?v=portal-base-2"/>
-  <link rel="stylesheet" href="/portal.css?v=portal-aq-1"/>
+  <link rel="stylesheet" href="/portal.css?v=portal-aq-2"/>
 </head>
 <body class="portal-body">
   <nav class="site-topbar">
-    <a href="https://www.the-aquarium.com/" class="topbar-logo" target="_blank" rel="noopener noreferrer">
-      <img src="https://www.the-aquarium.com/images/guildimages/icontransparent.png" alt="The Aquarium" class="topbar-logo-img" width="34" height="34"/>
-      <span class="topbar-logo-name">The Aquarium</span>
-    </a>
-    <div class="topbar-links">
-      <a href="https://www.the-aquarium.com/members" target="_blank" rel="noopener noreferrer">Members</a>
-      <a href="https://www.the-aquarium.com/leaderboard" target="_blank" rel="noopener noreferrer">Leaderboard</a>
-      <a href="https://www.the-aquarium.com/graid-event" target="_blank" rel="noopener noreferrer">Graid Event</a>
-      <a href="https://www.the-aquarium.com/map" target="_blank" rel="noopener noreferrer">Map</a>
-      <a href="https://www.the-aquarium.com/lootpools" target="_blank" rel="noopener noreferrer">Lootpools</a>
+    <div class="topbar-shell">
+      <a href="https://www.the-aquarium.com/" class="topbar-logo topbar-home" target="_blank" rel="noopener noreferrer" aria-label="The Aquarium Home">
+        <img src="https://www.the-aquarium.com/images/guildimages/icontransparent.png" alt="Home" class="topbar-logo-img" width="34" height="34"/>
+      </a>
+      <div class="topbar-links" aria-label="The Aquarium navigation">
+        <a href="https://www.the-aquarium.com/members" target="_blank" rel="noopener noreferrer">Members</a>
+        <a href="https://www.the-aquarium.com/leaderboard" target="_blank" rel="noopener noreferrer">Leaderboard</a>
+        <a href="https://www.the-aquarium.com/graid-event" target="_blank" rel="noopener noreferrer">Graid Event</a>
+        <a href="https://www.the-aquarium.com/map" target="_blank" rel="noopener noreferrer">Map</a>
+        <a href="https://www.the-aquarium.com/lootpools" target="_blank" rel="noopener noreferrer">Lootpools</a>
+      </div>
+      <a href="https://discord.gg/njRpZwKVaa" class="topbar-cta" target="_blank" rel="noopener noreferrer">Apply</a>
     </div>
   </nav>
   <div class="portal-stage">

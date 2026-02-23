@@ -37,28 +37,86 @@
 .portal-body .site-topbar {
   background: rgba(4, 11, 24, 0.78);
   border-bottom-color: rgba(84, 195, 231, 0.18);
+  justify-content: center;
+  padding: 0 14px;
+  height: 64px;
 }
 
-.portal-body .topbar-logo {
-  padding: 6px 0;
+.portal-body .topbar-shell {
+  width: min(1120px, 100%);
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 14px;
+}
+
+.portal-body .topbar-logo.topbar-home {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(84, 195, 231, 0.15);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
 }
 
 .portal-body .topbar-logo-img {
-  width: 34px;
-  height: 34px;
-  border-radius: 9px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(84, 195, 231, 0.15);
-  padding: 3px;
+  width: 24px;
+  height: 24px;
+  border-radius: 0;
+  background: transparent;
+  border: none;
+  padding: 0;
+  filter: drop-shadow(0 0 5px rgba(84, 195, 231, 0.35));
 }
 
 .portal-body .topbar-links a {
   color: #b7c8db;
 }
 
+.portal-body .topbar-links {
+  justify-content: flex-start;
+  gap: 4px;
+}
+
+.portal-body .topbar-links a {
+  font-size: 0.84rem;
+  font-weight: 500;
+  padding: 7px 10px;
+  border-radius: 9px;
+}
+
 .portal-body .topbar-links a:hover {
   background: rgba(84, 195, 231, 0.12);
   color: #eef5ff;
+}
+
+.topbar-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(84, 195, 231, 0.22);
+  background: rgba(84, 195, 231, 0.08);
+  color: #e9f5ff;
+  text-decoration: none;
+  font-size: 0.84rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+}
+
+.topbar-cta:hover {
+  background: rgba(84, 195, 231, 0.16);
+  border-color: rgba(84, 195, 231, 0.35);
+}
+
+.topbar-cta:active {
+  transform: translateY(1px);
 }
 
 .portal-stage {
@@ -403,6 +461,34 @@
 @media (max-width: 700px) {
   .portal-stage {
     padding: 18px 14px 70px;
+  }
+
+  .portal-body .site-topbar {
+    height: 58px;
+    padding: 0 10px;
+  }
+
+  .portal-body .topbar-shell {
+    gap: 8px;
+    grid-template-columns: auto 1fr auto;
+  }
+
+  .portal-body .topbar-logo.topbar-home {
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+  }
+
+  .portal-body .topbar-logo-img {
+    width: 20px;
+    height: 20px;
+  }
+
+  .topbar-cta {
+    height: 32px;
+    padding: 0 10px;
+    border-radius: 8px;
+    font-size: 0.8rem;
   }
 
   .portal-header {
