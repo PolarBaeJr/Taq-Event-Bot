@@ -257,22 +257,40 @@ function layout(title, body) {
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>${escHtml(title)} — TAq Applications</title>
   <link rel="stylesheet" href="/style.css?v=portal-base-2"/>
-  <link rel="stylesheet" href="/portal.css?v=portal-aq-2"/>
+  <link rel="stylesheet" href="/portal.css?v=portal-aq-5"/>
 </head>
 <body class="portal-body">
-  <nav class="site-topbar">
-    <div class="topbar-shell">
-      <a href="https://www.the-aquarium.com/" class="topbar-logo topbar-home" target="_blank" rel="noopener noreferrer" aria-label="The Aquarium Home">
-        <img src="https://www.the-aquarium.com/images/guildimages/icontransparent.png" alt="Home" class="topbar-logo-img" width="34" height="34"/>
+  <nav class="nav-font aquarium-nav" style="width:100%;background:var(--bg-nav);padding:1rem 1.5rem;display:flex;justify-content:space-between;align-items:center;box-shadow:0 4px 6px -1px rgba(0, 0, 0, 0.1);position:relative">
+    <div style="display:flex;align-items:center;gap:2rem">
+      <a style="text-decoration: none; transition: 0.3s; display: flex; align-items: center; justify-content: center; padding: 6px; border-radius: 8px; background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%); box-shadow: rgba(0, 0, 0, 0.15) 0px 2px 8px, rgba(255, 255, 255, 0.1) 0px 1px 2px inset; border: 1px solid rgba(255, 255, 255, 0.1); transform: scale(1);" href="https://www.the-aquarium.com/" target="_blank" rel="noopener noreferrer" aria-label="Home">
+        <img src="https://www.the-aquarium.com/images/guildimages/icontransparent.png" alt="Home" style="width:42px;height:42px;object-fit:contain;filter:drop-shadow(0 1px 3px rgba(0,0,0,0.2))"/>
       </a>
-      <div class="topbar-links" aria-label="The Aquarium navigation">
-        <a href="https://www.the-aquarium.com/members" target="_blank" rel="noopener noreferrer">Members</a>
-        <a href="https://www.the-aquarium.com/leaderboard" target="_blank" rel="noopener noreferrer">Leaderboard</a>
-        <a href="https://www.the-aquarium.com/graid-event" target="_blank" rel="noopener noreferrer">Graid Event</a>
-        <a href="https://www.the-aquarium.com/map" target="_blank" rel="noopener noreferrer">Map</a>
-        <a href="https://www.the-aquarium.com/lootpools" target="_blank" rel="noopener noreferrer">Lootpools</a>
+      <div class="desktop-nav" style="display:flex;gap:1.5rem;align-items:center">
+        <a style="color: var(--text-primary); font-weight: bold; font-size: 1.125rem; text-decoration: none; transition: 0.3s; padding: 8px 12px; border-radius: 6px; background: none; box-shadow: none;" href="https://www.the-aquarium.com/members" target="_blank" rel="noopener noreferrer">Members</a>
+        <a style="color: var(--text-primary); font-weight: bold; font-size: 1.125rem; text-decoration: none; transition: 0.3s; padding: 8px 12px; border-radius: 6px; background: none; box-shadow: none;" href="https://www.the-aquarium.com/leaderboard" target="_blank" rel="noopener noreferrer">Leaderboard</a>
+        <a style="color: var(--text-primary); font-weight: bold; font-size: 1.125rem; text-decoration: none; transition: 0.3s; padding: 8px 12px; border-radius: 6px; background: none; box-shadow: none;" href="https://www.the-aquarium.com/graid-event" target="_blank" rel="noopener noreferrer">Graid Event</a>
+        <a style="color: var(--text-primary); font-weight: bold; font-size: 1.125rem; text-decoration: none; transition: 0.3s; padding: 8px 12px; border-radius: 6px; background: none; box-shadow: none;" href="https://www.the-aquarium.com/map" target="_blank" rel="noopener noreferrer">Map</a>
+        <a style="color: var(--text-primary); font-weight: bold; font-size: 1.125rem; text-decoration: none; transition: 0.3s; padding: 8px 12px; border-radius: 6px; background: none; box-shadow: none;" href="https://www.the-aquarium.com/lootpools" target="_blank" rel="noopener noreferrer">Lootpools</a>
       </div>
-      <a href="https://discord.gg/njRpZwKVaa" class="topbar-cta" target="_blank" rel="noopener noreferrer">Apply</a>
+    </div>
+    <div class="aquarium-nav-actions" style="display:flex;align-items:center;gap:1rem">
+      <a href="https://discord.gg/njRpZwKVaa" target="_blank" rel="noopener noreferrer" class="mobile-apply-button" style="padding: 8px 16px; background: linear-gradient(135deg, rgb(88, 101, 242) 0%, rgb(71, 82, 196) 100%); color: white; text-decoration: none; border-radius: 8px; font-size: 0.875rem; font-weight: 600; transition: 0.3s; border: medium; cursor: pointer; box-shadow: rgba(88, 101, 242, 0.3) 0px 2px 4px; transform: translateY(0px);">📝 Apply</a>
+      <div style="position:relative;display:flex;align-items:center">
+        <button type="button" aria-label="Toggle dark mode" style="position: relative; width: 64px; height: 32px; background: rgb(55, 65, 81); border-radius: 16px; display: flex; align-items: center; justify-content: space-between; padding: 0px 8px; transition: 0.3s; border: 1px solid rgb(75, 85, 99); cursor: pointer;">
+          <span style="flex: 1 1 0%; display: flex; justify-content: center; align-items: center; opacity: 0.4; transition: opacity 0.3s;">
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="10" cy="10" r="4" fill="#FBBF24"></circle><g stroke="#FBBF24" stroke-width="2"><line x1="10" y1="1" x2="10" y2="3"></line><line x1="10" y1="17" x2="10" y2="19"></line><line x1="1" y1="10" x2="3" y2="10"></line><line x1="17" y1="10" x2="19" y2="10"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="14.36" y1="14.36" x2="15.78" y2="15.78"></line><line x1="4.22" y1="15.78" x2="5.64" y2="14.36"></line><line x1="14.36" y1="5.64" x2="15.78" y2="4.22"></line></g></svg>
+          </span>
+          <span style="flex: 1 1 0%; display: flex; justify-content: center; align-items: center; opacity: 1; transition: opacity 0.3s;">
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M17.293 13.293A8 8 0 0 1 6.707 2.707a8.001 8.001 0 1 0 10.586 10.586z" fill="#e2e8f0" stroke="#94a3b8" stroke-width="1.5"></path></svg>
+          </span>
+          <span style="position: absolute; left: 4px; width: 24px; height: 24px; background: white; border-radius: 50%; box-shadow: rgba(0, 0, 0, 0.2) 0px 2px 4px; transition: left 0.3s;"></span>
+        </button>
+      </div>
+      <button type="button" aria-label="Toggle mobile menu" class="mobile-menu-button" style="flex-direction:column;justify-content:center;align-items:center;width:40px;height:40px;background:transparent;border:none;cursor:pointer;gap:4px">
+        <span style="width:24px;height:2px;background:var(--text-primary);transition:all 0.3s ease;transform:none"></span>
+        <span style="width:24px;height:2px;background:var(--text-primary);transition:all 0.3s ease;opacity:1"></span>
+        <span style="width:24px;height:2px;background:var(--text-primary);transition:all 0.3s ease;transform:none"></span>
+      </button>
     </div>
   </nav>
   <div class="portal-stage">
