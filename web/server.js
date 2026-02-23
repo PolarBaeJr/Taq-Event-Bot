@@ -256,12 +256,13 @@ function layout(title, body) {
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>${escHtml(title)} — TAq Applications</title>
-  <link rel="stylesheet" href="/style.css"/>
+  <link rel="stylesheet" href="/style.css?v=portal-base-2"/>
+  <link rel="stylesheet" href="/portal.css?v=portal-aq-1"/>
 </head>
-<body>
+<body class="portal-body">
   <nav class="site-topbar">
     <a href="https://www.the-aquarium.com/" class="topbar-logo" target="_blank" rel="noopener noreferrer">
-      <img src="https://www.the-aquarium.com/images/guildimages/icontransparent.png" alt="The Aquarium" class="topbar-logo-img"/>
+      <img src="https://www.the-aquarium.com/images/guildimages/icontransparent.png" alt="The Aquarium" class="topbar-logo-img" width="34" height="34"/>
       <span class="topbar-logo-name">The Aquarium</span>
     </a>
     <div class="topbar-links">
@@ -272,16 +273,21 @@ function layout(title, body) {
       <a href="https://www.the-aquarium.com/lootpools" target="_blank" rel="noopener noreferrer">Lootpools</a>
     </div>
   </nav>
-  <div class="page">
-    <header>
-      <a href="https://www.the-aquarium.com/" target="_blank" rel="noopener noreferrer">
-        <img src="https://www.the-aquarium.com/images/guildimages/icontransparent.png" alt="The Aquarium" class="header-logo"/>
-      </a>
-      <h1>TAq Event Team</h1>
-      <p class="subtitle">Application Portal</p>
-    </header>
-    <main>${body}</main>
-    <footer><p>Applications are reviewed by the TAq team. Good luck!</p></footer>
+  <div class="portal-stage">
+    <div class="page">
+      <header class="portal-header">
+        <a href="https://www.the-aquarium.com/" target="_blank" rel="noopener noreferrer" class="header-logo-link">
+          <img src="https://www.the-aquarium.com/images/guildimages/icontransparent.png" alt="The Aquarium" class="header-logo" width="80" height="80"/>
+        </a>
+        <div class="portal-header-copy">
+          <p class="subtitle">Application Portal</p>
+          <h1>TAq Event Team</h1>
+          <p class="header-lead">Apply to help build, test, and run Aquarium events with the TAq crew.</p>
+        </div>
+      </header>
+      <main class="portal-main">${body}</main>
+      <footer class="portal-footer"><p>Applications are reviewed by the TAq team. Good luck!</p></footer>
+    </div>
   </div>
 </body>
 </html>`;
@@ -340,11 +346,26 @@ function indexPage() {
     .join("");
 
   return layout("Apply", `
-    <section class="intro">
-      <h2>Join the Team</h2>
-      <p>Select the role you're applying for below. Make sure to read the requirements before submitting.</p>
+    <section class="landing-grid">
+      <section class="hero-panel">
+        <p class="eyebrow">Join the Crew</p>
+        <h2>Help shape Aquarium events behind the scenes.</h2>
+        <p class="hero-copy">Pick a role that matches your strengths and submit an application. We review every submission manually and reach out on Discord.</p>
+        <ul class="hero-points">
+          <li>Clear role-specific questions</li>
+          <li>Tracked directly to the review sheet</li>
+          <li>Fast follow-up through Discord</li>
+        </ul>
+      </section>
+      <section class="content-panel role-panel">
+        <div class="panel-headline">
+          <h2>Open Roles</h2>
+          <span class="panel-chip">${Object.keys(getAllTrackLabels()).length} tracks</span>
+        </div>
+        <p class="intro-copy">Select the role you are applying for below and complete the form.</p>
+        <div class="track-list">${trackCards}</div>
+      </section>
     </section>
-    <div class="track-list">${trackCards}</div>
   `);
 }
 
@@ -356,25 +377,32 @@ function formPage(trackKey, trackLabel, error) {
     : "";
 
   return layout(`Apply — ${trackLabel}`, `
-    <a class="back-link" href="/">← Back</a>
-    <h2>Apply for ${escHtml(trackLabel)}</h2>
-    <p class="form-note">Fields marked <span class="req">*</span> are required.</p>
-    ${errorHtml}
-    <form method="POST" action="/apply/${escHtml(trackKey)}">
-      ${fieldHtml}
-      <button type="submit" class="submit-btn">Submit Application</button>
-    </form>
+    <section class="content-panel form-panel">
+      <div class="panel-headline panel-headline-stack">
+        <a class="back-link" href="/">← Back</a>
+        <span class="panel-chip">Role Application</span>
+      </div>
+      <h2>Apply for ${escHtml(trackLabel)}</h2>
+      <p class="form-note">Fields marked <span class="req">*</span> are required.</p>
+      ${errorHtml}
+      <form method="POST" action="/apply/${escHtml(trackKey)}" class="application-form">
+        ${fieldHtml}
+        <button type="submit" class="submit-btn">Submit Application</button>
+      </form>
+    </section>
   `);
 }
 
 function successPage(trackLabel) {
   return layout("Application Submitted", `
-    <div class="success-box">
-      <div class="success-icon">✓</div>
-      <h2>Application Submitted!</h2>
-      <p>Thanks for applying for <strong>${escHtml(trackLabel)}</strong>. The team will review your application and reach out via Discord.</p>
-      <a class="back-link" href="/">← Submit another application</a>
-    </div>
+    <section class="content-panel success-panel">
+      <div class="success-box">
+        <div class="success-icon">✓</div>
+        <h2>Application Submitted!</h2>
+        <p>Thanks for applying for <strong>${escHtml(trackLabel)}</strong>. The team will review your application and reach out via Discord.</p>
+        <a class="back-link" href="/">← Submit another application</a>
+      </div>
+    </section>
   `);
 }
 
