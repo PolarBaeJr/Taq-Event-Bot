@@ -793,6 +793,7 @@ function createPollingPipeline(options = {}) {
 
       if (stateChanged) {
         sortPostJobsInPlace(state.postJobs);
+        mergeWebManagedFields(state);
         writeState(state);
       }
     }

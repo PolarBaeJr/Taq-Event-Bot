@@ -1235,6 +1235,35 @@ function readState() {
   }
 }
 
+// Refreshes web-panel-managed fields from disk into a working state snapshot
+// before writing, preventing race conditions where concurrent web-server writes
+// (adminArchived, adminDone, adminNotes, pendingAdminActions) get overwritten
+// when the bot holds a stale snapshot across async operations.
+function mergeWebManagedFields(state) {
+  try {
+    const fresh = readState();
+    // Never overwrite pending admin actions with a stale snapshot
+    state.pendingAdminActions = Array.isArray(fresh.pendingAdminActions)
+      ? fresh.pendingAdminActions
+      : [];
+    // Preserve per-application admin flags set by the web panel
+    const adminFields = ["adminArchived", "adminArchivedAt", "adminDone", "adminNotes"];
+    for (const [appId, freshApp] of Object.entries(fresh.applications || {})) {
+      if (state.applications && state.applications[appId]) {
+        for (const f of adminFields) {
+          if (freshApp[f] !== undefined) {
+            state.applications[appId][f] = freshApp[f];
+          } else {
+            delete state.applications[appId][f];
+          }
+        }
+      }
+    }
+  } catch {
+    // If refresh fails, proceed with existing snapshot — better than crashing
+  }
+}
+
 function writeState(state) {
   ensureExtendedSettingsContainers(state);
   const serialized = JSON.stringify(state, null, 2);
@@ -2229,6 +2258,7 @@ async function announceReviewerAssignment({
   ].join("\n");
   await sendChannelMessage(targetChannelId, content, allowedMentions);
   reviewerConfig.rotationIndex = (currentIndex + 1) % pool.length;
+  mergeWebManagedFields(state);
   writeState(state);
 }
 
@@ -2297,6 +2327,7 @@ async function maybeSendPendingReminders() {
   }
 
   if (stateChanged) {
+    mergeWebManagedFields(state);
     writeState(state);
   }
 }
@@ -2407,6 +2438,7 @@ async function maybeSendDailyDigest() {
     { parse: [] }
   );
   settings.dailyDigest.lastDigestDate = targetDateKey;
+  mergeWebManagedFields(state);
   writeState(state);
 }
 
