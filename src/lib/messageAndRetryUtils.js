@@ -134,15 +134,28 @@ async function withRateLimitRetry(label, run, options = {}) {
     try {
       return await run();
     } catch (err) {
-      if (!isRateLimitError(err) || attempt >= maxAttempts) {
+      const rateLimitError = isRateLimitError(err);
+      if (!rateLimitError || attempt >= maxAttempts) {
         if (logger) {
-          logger.error("discord_rate_limit_final_failure", `${label} failed after retry handling.`, {
-            label,
-            attempt,
-            maxAttempts,
-            error: err?.message || String(err),
-            ...logContext,
-          });
+          const exhaustedRateLimitRetries = rateLimitError && attempt >= maxAttempts;
+          logger.error(
+            exhaustedRateLimitRetries
+              ? "discord_rate_limit_retries_exhausted"
+              : "discord_request_final_failure",
+            exhaustedRateLimitRetries
+              ? `${label} failed after exhausting rate-limit retries.`
+              : `${label} failed with a non-rate-limit error.`,
+            {
+              label,
+              attempt,
+              maxAttempts,
+              error: err?.message || String(err),
+              errorCode: err?.code ?? null,
+              errorStatus: err?.status ?? null,
+              rateLimitError,
+              ...logContext,
+            }
+          );
         }
         throw err;
       }
