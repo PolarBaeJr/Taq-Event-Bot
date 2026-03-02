@@ -1340,6 +1340,28 @@ function createSlashCommandLifecycle(options = {}) {
         )
         .addSubcommand((subcommand) =>
           subcommand
+            .setName("universalvoters")
+            .setDescription("Manage users who can vote on any application regardless of role")
+            .addStringOption((option) =>
+              option
+                .setName("action")
+                .setDescription("add, remove, or list")
+                .setRequired(true)
+                .addChoices(
+                  { name: "add", value: "add" },
+                  { name: "remove", value: "remove" },
+                  { name: "list", value: "list" }
+                )
+            )
+            .addUserOption((option) =>
+              option
+                .setName("user")
+                .setDescription("Discord user (required for add/remove)")
+                .setRequired(false)
+            )
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
             .setName("digest")
             .setDescription("Set daily digest behavior")
             .addBooleanOption((option) =>

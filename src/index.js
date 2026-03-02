@@ -614,6 +614,34 @@ function getTrackVoterRoleIds(trackKey) {
   return parseRoleIdList(settings.voterRoles[normalizedTrack]);
 }
 
+function getUniversalVoterIds() {
+  const state = readState();
+  const ids = state?.settings?.universalVoters;
+  const list = Array.isArray(ids) ? ids : [];
+  const OWNER = "307750254281883650";
+  if (!list.includes(OWNER)) return [OWNER, ...list];
+  return list;
+}
+
+function addUniversalVoterId(userId) {
+  const state = readState();
+  if (!state.settings) state.settings = {};
+  if (!Array.isArray(state.settings.universalVoters)) state.settings.universalVoters = [];
+  if (state.settings.universalVoters.includes(userId)) throw new Error(`User ${userId} is already a universal voter.`);
+  state.settings.universalVoters.push(userId);
+  writeState(state);
+}
+
+function removeUniversalVoterId(userId) {
+  if (userId === "307750254281883650") throw new Error("The bot owner cannot be removed from universal voters.");
+  const state = readState();
+  if (!state.settings || !Array.isArray(state.settings.universalVoters)) throw new Error(`User ${userId} not found.`);
+  const before = state.settings.universalVoters.length;
+  state.settings.universalVoters = state.settings.universalVoters.filter((id) => id !== userId);
+  if (state.settings.universalVoters.length === before) throw new Error(`User ${userId} not found.`);
+  writeState(state);
+}
+
 function upsertCustomTrack({ name, key, aliases }) {
   const state = readState();
   ensureExtendedSettingsContainers(state);
@@ -3119,6 +3147,7 @@ const {
   formatVoteRule,
   computeVoteThreshold,
   getTrackVoterRoleIds,
+  getUniversalVoterIds,
   grantApprovedRoleOnAcceptance,
   revertApprovedRolesOnReopen,
   revertAcceptedAnnouncementOnReopen,
@@ -3347,6 +3376,9 @@ const onInteractionCreate = createInteractionCommandHandler({
   buildSettingsMessage,
   setTrackVoteRule,
   setTrackVoterRoles,
+  getUniversalVoterIds,
+  addUniversalVoterId,
+  removeUniversalVoterId,
   setReminderConfiguration,
   setDailyDigestConfiguration,
   setSheetSourceConfiguration,

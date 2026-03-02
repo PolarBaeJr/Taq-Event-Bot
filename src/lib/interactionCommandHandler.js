@@ -182,6 +182,15 @@ function createInteractionCommandHandler(options = {}) {
     : () => {
         throw new Error("Voter role configuration is unavailable.");
       };
+  const getUniversalVoterIds = typeof options.getUniversalVoterIds === "function"
+    ? options.getUniversalVoterIds
+    : () => ["307750254281883650"];
+  const addUniversalVoterId = typeof options.addUniversalVoterId === "function"
+    ? options.addUniversalVoterId
+    : () => { throw new Error("Universal voter management unavailable."); };
+  const removeUniversalVoterId = typeof options.removeUniversalVoterId === "function"
+    ? options.removeUniversalVoterId
+    : () => { throw new Error("Universal voter management unavailable."); };
   const upsertReactionRoleBinding = options.upsertReactionRoleBinding;
   const removeReactionRoleBinding = options.removeReactionRoleBinding;
   const listReactionRoleBindings = options.listReactionRoleBindings;
@@ -2342,6 +2351,38 @@ function createInteractionCommandHandler(options = {}) {
               roleCount: summary.length,
             }
           );
+          return;
+        }
+
+        if (settingsAction === "universalvoters") {
+          if (interaction.user.id !== "307750254281883650") {
+            await interaction.reply({ content: "Only the bot owner can manage universal voters.", ephemeral: true });
+            return;
+          }
+          const action = interaction.options.getString("action");
+          const targetUser = interaction.options.getUser("user");
+
+          if (action === "list") {
+            const ids = getUniversalVoterIds();
+            const lines = ids.map((id) => `• <@${id}> (\`${id}\`)`).join("\n") || "_(none)_";
+            await interaction.reply({ content: `**Universal Voters:**\n${lines}`, ephemeral: true });
+            return;
+          }
+          if (!targetUser) {
+            await interaction.reply({ content: "Provide a `user` for add/remove.", ephemeral: true });
+            return;
+          }
+          try {
+            if (action === "add") {
+              addUniversalVoterId(targetUser.id);
+              await interaction.reply({ content: `Added <@${targetUser.id}> to universal voters.`, ephemeral: true });
+            } else if (action === "remove") {
+              removeUniversalVoterId(targetUser.id);
+              await interaction.reply({ content: `Removed <@${targetUser.id}> from universal voters.`, ephemeral: true });
+            }
+          } catch (err) {
+            await interaction.reply({ content: err.message || "Failed.", ephemeral: true });
+          }
           return;
         }
 

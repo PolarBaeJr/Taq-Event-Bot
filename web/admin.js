@@ -28,6 +28,8 @@ const {
   removeRuntimeAuthServer,
   clearRoleCacheEntry,
   clearSessionUser,
+  getUniversalVoterIds,
+  castWebVote,
 } = require("./auth");
 
 const STATE_FILE = process.env.STATE_FILE || path.join(__dirname, "../.bot-state.json");
@@ -148,6 +150,13 @@ function readRawState() {
   } catch {
     return {};
   }
+}
+
+function canVoteOnApp(req) {
+  const discordId = req.discordUser?.id;
+  if (!discordId) return false;
+  if (getUniversalVoterIds().includes(discordId)) return true;
+  return ["admin", "moderator"].includes(req.discordUser?.effectiveRole);
 }
 
 // ── Routes ────────────────────────────────────────────────────────────────────
@@ -1034,10 +1043,45 @@ router.get("/applications/:track/:id", requireAuth, (req, res) => {
     ? `<div class="flash-error" style="margin-bottom:12px">This application has been archived. The Discord thread has been (or will be) archived by the bot.</div>`
     : "";
 
+  const currentDiscordId = req.discordUser?.id || null;
+  const canVote = canVoteOnApp(req);
+  const existingWebVote = currentDiscordId && app.webVotes?.[currentDiscordId]
+    ? app.webVotes[currentDiscordId].vote
+    : null;
+  const universalVoterIds = getUniversalVoterIds();
+
+  const voteSection = (canVote && app.status === "pending") ? `
+  <div class="card" style="margin-bottom:16px">
+    <h3 style="margin:0 0 10px">Cast Vote</h3>
+    ${existingWebVote ? `<p style="margin:0 0 10px;opacity:0.7">Current vote: <strong>${escHtml(existingWebVote)}</strong></p>` : ""}
+    <div style="display:flex;gap:10px">
+      <form method="POST" action="/admin/applications/${encodeURIComponent(req.params.track)}/${encodeURIComponent(appId)}/vote" style="margin:0">
+        <input type="hidden" name="vote" value="accept"/>
+        <button type="submit" class="btn-primary" style="background:#57f287;color:#111"${existingWebVote === "accept" ? " disabled" : ""}>✅ Accept</button>
+      </form>
+      <form method="POST" action="/admin/applications/${encodeURIComponent(req.params.track)}/${encodeURIComponent(appId)}/vote" style="margin:0">
+        <input type="hidden" name="vote" value="deny"/>
+        <button type="submit" class="btn-primary" style="background:#ed4245"${existingWebVote === "deny" ? " disabled" : ""}>❌ Deny</button>
+      </form>
+    </div>
+  </div>` : "";
+
+  const webVoteSummary = (app.webVotes && Object.keys(app.webVotes).length > 0 &&
+    (req.discordUser?.effectiveRole === "admin" || universalVoterIds.includes(currentDiscordId)))
+    ? `<div class="card" style="margin-bottom:16px">
+        <h3 style="margin:0 0 10px">Web Votes</h3>
+        <table class="admin-table"><thead><tr><th>Discord ID</th><th>Vote</th><th>When</th></tr></thead>
+        <tbody>${Object.entries(app.webVotes).map(([uid, v]) =>
+          `<tr><td><code>${escHtml(uid)}</code></td><td>${escHtml(v.vote)}</td><td style="opacity:0.6">${escHtml(v.votedAt || "")}</td></tr>`
+        ).join("")}</tbody></table>
+      </div>`
+    : "";
+
   res.send(adminLayout(`Edit Application`, `
     ${flash(req)}
     ${archivedBanner}
     <a href="${backUrl}" class="back-link" style="display:inline-flex;margin-bottom:20px">← Back</a>
+    ${voteSection}${webVoteSummary}
     <div class="card" style="margin-bottom:16px">
       <div style="display:flex;gap:24px;flex-wrap:wrap;font-size:0.85rem;color:var(--muted)">
         <span><strong>ID:</strong> <code>${escHtml(appId)}</code></span>
@@ -1112,6 +1156,23 @@ router.get("/applications/:track/:id", requireAuth, (req, res) => {
       </form>
     </div>
   `, req.discordUser));
+});
+
+router.post("/applications/:track/:id/vote", requireAuth, async (req, res) => {
+  const { track, id: appId } = req.params;
+  const discordId = req.discordUser?.id;
+  if (!canVoteOnApp(req)) {
+    setFlash(req, "error", "You do not have permission to vote.");
+    return res.redirect(`/admin/applications/${encodeURIComponent(track)}/${encodeURIComponent(appId)}`);
+  }
+  const { vote } = req.body;
+  try {
+    castWebVote(appId, discordId, vote);
+    setFlash(req, "ok", `Vote recorded: ${vote}.`);
+  } catch (err) {
+    setFlash(req, "error", err.message || "Failed to record vote.");
+  }
+  res.redirect(`/admin/applications/${encodeURIComponent(track)}/${encodeURIComponent(appId)}`);
 });
 
 router.post("/applications/:track/:id", requireAuth, requireAdmin, (req, res) => {

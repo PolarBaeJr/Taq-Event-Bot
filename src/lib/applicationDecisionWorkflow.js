@@ -39,6 +39,9 @@ function createApplicationDecisionWorkflow(options = {}) {
     typeof options.getTrackVoterRoleIds === "function"
       ? options.getTrackVoterRoleIds
       : () => [];
+  const getUniversalVoterIds = typeof options.getUniversalVoterIds === "function"
+    ? options.getUniversalVoterIds
+    : () => ["307750254281883650"];
   const grantApprovedRoleOnAcceptance =
     typeof options.grantApprovedRoleOnAcceptance === "function"
       ? options.grantApprovedRoleOnAcceptance
@@ -237,6 +240,23 @@ function createApplicationDecisionWorkflow(options = {}) {
       for (const user of users.values()) {
         if (!user.bot && eligibleReviewerIds.has(user.id)) {
           noUsers.add(user.id);
+        }
+      }
+    }
+
+    // Merge web votes — deduplicated by Discord user ID, web vote overrides reaction
+    const state = readState();
+    const allApps = Object.values(state.applications || {});
+    const matchedApp = allApps.find((a) => a.messageId === message.id);
+    if (matchedApp?.webVotes && typeof matchedApp.webVotes === "object") {
+      for (const [userId, entry] of Object.entries(matchedApp.webVotes)) {
+        if (!eligibleReviewerIds.has(userId) && !getUniversalVoterIds().includes(userId)) continue;
+        if (entry.vote === "accept") {
+          noUsers.delete(userId);
+          yesUsers.add(userId);
+        } else if (entry.vote === "deny") {
+          yesUsers.delete(userId);
+          noUsers.add(userId);
         }
       }
     }
@@ -563,6 +583,7 @@ function createApplicationDecisionWorkflow(options = {}) {
     application.acceptAnnounceResult = null;
     application.denyDmResult = null;
     application.voteContext = null;
+    application.webVotes = {};
     application.adminDone = false;
     application.reopenedAt = new Date().toISOString();
     application.reopenedBy = actorId;

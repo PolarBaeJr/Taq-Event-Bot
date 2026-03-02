@@ -484,6 +484,45 @@ function archiveApplication(appId) {
   writeRawState(state);
 }
 
+function getUniversalVoterIds() {
+  const state = readRawState();
+  const ids = state?.settings?.universalVoters;
+  const list = Array.isArray(ids) ? ids : [];
+  const OWNER = "307750254281883650";
+  if (!list.includes(OWNER)) return [OWNER, ...list];
+  return list;
+}
+
+function addUniversalVoter(userId) {
+  const state = readRawState();
+  if (!state.settings) state.settings = {};
+  if (!Array.isArray(state.settings.universalVoters)) state.settings.universalVoters = [];
+  if (state.settings.universalVoters.includes(userId)) throw new Error(`User ${userId} is already a universal voter.`);
+  state.settings.universalVoters.push(userId);
+  writeRawState(state);
+}
+
+function removeUniversalVoter(userId) {
+  if (userId === "307750254281883650") throw new Error("The bot owner cannot be removed from universal voters.");
+  const state = readRawState();
+  if (!state.settings || !Array.isArray(state.settings.universalVoters)) throw new Error(`User ${userId} not found.`);
+  const before = state.settings.universalVoters.length;
+  state.settings.universalVoters = state.settings.universalVoters.filter((id) => id !== userId);
+  if (state.settings.universalVoters.length === before) throw new Error(`User ${userId} not found.`);
+  writeRawState(state);
+}
+
+function castWebVote(appId, discordId, vote) {
+  if (!["accept", "deny"].includes(vote)) throw new Error("Vote must be 'accept' or 'deny'.");
+  const state = readRawState();
+  const app = state.applications?.[appId];
+  if (!app) throw new Error(`Application '${appId}' not found.`);
+  if (app.status !== "pending") throw new Error(`Application '${appId}' is not open for voting.`);
+  if (!app.webVotes || typeof app.webVotes !== "object") app.webVotes = {};
+  app.webVotes[discordId] = { vote, votedAt: new Date().toISOString() };
+  writeRawState(state);
+}
+
 module.exports = {
   // Role cache
   getRoleCacheEntry,
@@ -534,4 +573,9 @@ module.exports = {
   clearAllQueueJobs,
   reorderTrackQuestions,
   moveQuestionBetweenTracks,
+  // Universal voters
+  getUniversalVoterIds,
+  addUniversalVoter,
+  removeUniversalVoter,
+  castWebVote,
 };
