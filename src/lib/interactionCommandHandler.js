@@ -164,6 +164,12 @@ function createInteractionCommandHandler(options = {}) {
     : () => {
         throw new Error("Sheet source configuration is unavailable.");
       };
+  const setOAuthConfig = typeof options.setOAuthConfig === "function"
+    ? options.setOAuthConfig
+    : () => { throw new Error("setOAuthConfig not configured."); };
+  const getOAuthConfig = typeof options.getOAuthConfig === "function"
+    ? options.getOAuthConfig
+    : () => ({});
   const setApplicantMissingDiscordThreadNoticeMessage =
     typeof options.setApplicantMissingDiscordThreadNoticeMessage === "function"
       ? options.setApplicantMissingDiscordThreadNoticeMessage
@@ -2550,7 +2556,8 @@ function createInteractionCommandHandler(options = {}) {
           return;
         }
 
-        const subcommand = interaction.options.getSubcommand(true);
+        const configSubGroup = safeGetSubcommandGroup(interaction);
+        const subcommand = configSubGroup ? safeGetSubcommand(interaction) : interaction.options.getSubcommand(true);
         logInteractionDebug(
           "config_command_received",
           "Processing config command.",
@@ -2559,6 +2566,63 @@ function createInteractionCommandHandler(options = {}) {
             subcommand,
           }
         );
+
+        if (configSubGroup === "oauth") {
+          if (subcommand === "client-secret") {
+            const value = interaction.options.getString("value", true);
+            try {
+              setOAuthConfig("clientSecret", value);
+            } catch (err) {
+              await interaction.reply({ content: err.message || "Failed to save client secret.", ephemeral: true });
+              return;
+            }
+            await interaction.reply({ content: "Discord OAuth2 client secret saved to bot state.", ephemeral: true });
+            await postConfigurationLog(interaction, "OAuth Config Updated", [
+              "**Field:** clientSecret",
+              "**Value:** \\*\\*\\*\\*\\*\\*\\*\\* (redacted)",
+            ]);
+            return;
+          }
+
+          if (subcommand === "redirect-uri") {
+            const value = interaction.options.getString("value", true);
+            try {
+              setOAuthConfig("redirectUri", value);
+            } catch (err) {
+              await interaction.reply({ content: err.message || "Failed to save redirect URI.", ephemeral: true });
+              return;
+            }
+            await interaction.reply({ content: `Discord OAuth2 redirect URI saved: \`${value}\``, ephemeral: true });
+            await postConfigurationLog(interaction, "OAuth Config Updated", [
+              "**Field:** redirectUri",
+              `**Value:** \`${value}\``,
+            ]);
+            return;
+          }
+
+          if (subcommand === "show") {
+            const cfg = getOAuthConfig();
+            const secretDisplay = cfg.storedClientSecret
+              ? `\`...${cfg.storedClientSecret.slice(-4)}\` (source: ${cfg.clientSecretSource})`
+              : `not set (source: ${cfg.clientSecretSource})`;
+            const uriDisplay = cfg.redirectUri
+              ? `\`${cfg.redirectUri}\` (source: ${cfg.redirectUriSource})`
+              : "not set";
+            await interaction.reply({
+              content: [
+                "**Discord OAuth2 Configuration**",
+                `**Client Secret:** ${secretDisplay}`,
+                `**Redirect URI:** ${uriDisplay}`,
+              ].join("\n"),
+              ephemeral: true,
+            });
+            return;
+          }
+
+          await interaction.reply({ content: `Unknown oauth action: ${subcommand}`, ephemeral: true });
+          return;
+        }
+
         if (subcommand === "export") {
           const payload = exportAdminConfig();
           try {
