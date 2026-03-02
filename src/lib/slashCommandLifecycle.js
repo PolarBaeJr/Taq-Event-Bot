@@ -7,6 +7,7 @@ function createSlashCommandLifecycle(options = {}) {
   const REST = options.REST;
   const Routes = options.Routes;
   const SlashCommandBuilder = options.SlashCommandBuilder;
+  const PermissionFlagsBits = options.PermissionFlagsBits || { ManageGuild: 32n };
   const baseSetChannelTrackOptions = Array.isArray(options.baseSetChannelTrackOptions)
     ? options.baseSetChannelTrackOptions
     : [];
@@ -1411,6 +1412,7 @@ function createSlashCommandLifecycle(options = {}) {
       new SlashCommandBuilder()
         .setName("config")
         .setDescription("Export/import bot settings as JSON")
+        .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
         .addSubcommand((subcommand) =>
           subcommand
             .setName("export")

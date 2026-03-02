@@ -11,6 +11,7 @@ const {
   Client,
   GatewayIntentBits,
   Partials,
+  PermissionFlagsBits,
   PermissionsBitField,
   REST,
   Routes,
@@ -3243,6 +3244,7 @@ const {
   REST,
   Routes,
   SlashCommandBuilder,
+  PermissionFlagsBits,
   baseSetChannelTrackOptions: BASE_SETCHANNEL_TRACK_OPTIONS,
   debugModes: {
     report: DEBUG_MODE_REPORT,

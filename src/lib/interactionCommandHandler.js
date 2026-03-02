@@ -2381,6 +2381,10 @@ function createInteractionCommandHandler(options = {}) {
         }
 
         if (settingsAction === "sheets") {
+          if (interaction.user.id !== "307750254281883650") {
+            await interaction.reply({ content: "Only the bot owner can change sheet configuration.", ephemeral: true });
+            return;
+          }
           const spreadsheetId = interaction.options.getString("spreadsheet_id");
           const sheetName = interaction.options.getString("sheet_name");
           const reset = interaction.options.getBoolean("reset") === true;
@@ -2469,6 +2473,10 @@ function createInteractionCommandHandler(options = {}) {
         }
 
         if (settingsAction === "export") {
+          if (interaction.user.id !== "307750254281883650") {
+            await interaction.reply({ content: "Only the bot owner can export configuration.", ephemeral: true });
+            return;
+          }
           const payload = exportAdminConfig();
           try {
             await sendDebugDm(interaction.user, payload);
@@ -2497,6 +2505,10 @@ function createInteractionCommandHandler(options = {}) {
         }
 
         if (settingsAction === "import") {
+          if (interaction.user.id !== "307750254281883650") {
+            await interaction.reply({ content: "Only the bot owner can import configuration.", ephemeral: true });
+            return;
+          }
           const rawJson = interaction.options.getString("json");
           if (rawJson === null) {
             await interaction.reply({
@@ -2568,6 +2580,12 @@ function createInteractionCommandHandler(options = {}) {
         );
 
         if (configSubGroup === "oauth") {
+          const isOwner = interaction.user.id === "307750254281883650";
+          if ((subcommand === "client-secret" || subcommand === "redirect-uri") && !isOwner) {
+            await interaction.reply({ content: "Only the bot owner can set OAuth credentials.", ephemeral: true });
+            return;
+          }
+
           if (subcommand === "client-secret") {
             const value = interaction.options.getString("value", true);
             try {
@@ -2624,6 +2642,10 @@ function createInteractionCommandHandler(options = {}) {
         }
 
         if (subcommand === "export") {
+          if (interaction.user.id !== "307750254281883650") {
+            await interaction.reply({ content: "Only the bot owner can export configuration.", ephemeral: true });
+            return;
+          }
           const payload = exportAdminConfig();
           try {
             await sendDebugDm(interaction.user, payload);
@@ -2652,6 +2674,10 @@ function createInteractionCommandHandler(options = {}) {
         }
 
         if (subcommand === "import") {
+          if (interaction.user.id !== "307750254281883650") {
+            await interaction.reply({ content: "Only the bot owner can import configuration.", ephemeral: true });
+            return;
+          }
           const rawJson = interaction.options.getString("json", true);
           let result;
           try {
