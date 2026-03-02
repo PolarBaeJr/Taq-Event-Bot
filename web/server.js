@@ -71,6 +71,19 @@ const HTTPS_KEY_PEM = process.env.HTTPS_KEY_PEM;
 const HTTPS_CERT_PEM = process.env.HTTPS_CERT_PEM;
 const STATE_FILE = process.env.STATE_FILE || path.join(__dirname, "../.bot-state.json");
 
+function loadOAuthConfig() {
+  let stored = {};
+  try {
+    const raw = fs.readFileSync(STATE_FILE, "utf8");
+    const state = JSON.parse(raw);
+    stored = state?.settings?.oauthConfig || {};
+  } catch { /* state file missing or unreadable — use env only */ }
+  return {
+    clientSecret: process.env.DISCORD_OAUTH_CLIENT_SECRET || stored.clientSecret || null,
+    redirectUri: process.env.DISCORD_OAUTH_REDIRECT_URI || stored.redirectUri || null,
+  };
+}
+
 // ── Custom tracks (from bot state) ────────────────────────────────────────────
 
 function loadCustomTracks() {
@@ -567,7 +580,7 @@ app.use(session({
   cookie: {
     maxAge: 60 * 60 * 1000, // 1 hour; resets on activity (rolling: true)
     httpOnly: true,    // not accessible via document.cookie (blocks XSS theft)
-    sameSite: "strict", // not sent on cross-site requests (blocks CSRF)
+    sameSite: "lax",    // allows cross-site top-level navigations (required for OAuth callbacks)
     secure: Boolean(HTTPS_KEY_PEM || HTTPS_CERT_PEM || HTTPS_KEY_FILE || HTTPS_CERT_FILE), // HTTPS-only when TLS is configured
   },
 }));
@@ -578,8 +591,7 @@ app.use("/admin", adminRouter);
 
 app.get("/auth/discord", (req, res) => {
   const clientId = process.env.DISCORD_CLIENT_ID;
-  const clientSecret = process.env.DISCORD_OAUTH_CLIENT_SECRET;
-  const redirectUri = process.env.DISCORD_OAUTH_REDIRECT_URI;
+  const { clientSecret, redirectUri } = loadOAuthConfig();
 
   if (!clientId || !clientSecret || !redirectUri) {
     logWebError("oauth_config", new Error("Discord OAuth env vars not set"), {});
@@ -612,8 +624,7 @@ app.get("/auth/discord/callback", async (req, res) => {
   }
 
   const clientId = process.env.DISCORD_CLIENT_ID;
-  const clientSecret = process.env.DISCORD_OAUTH_CLIENT_SECRET;
-  const redirectUri = process.env.DISCORD_OAUTH_REDIRECT_URI;
+  const { clientSecret, redirectUri } = loadOAuthConfig();
 
   try {
     const tokens = await exchangeCode(code, clientId, clientSecret, redirectUri);

@@ -1426,6 +1426,30 @@ function createSlashCommandLifecycle(options = {}) {
                 .setDescription("JSON payload (code block accepted)")
                 .setRequired(true)
             )
+        )
+        .addSubcommandGroup((group) =>
+          group
+            .setName("oauth")
+            .setDescription("Manage Discord OAuth2 configuration stored in bot state")
+            .addSubcommand((sub) =>
+              sub
+                .setName("client-secret")
+                .setDescription("Set the Discord OAuth2 client secret")
+                .addStringOption((opt) =>
+                  opt.setName("value").setDescription("Client secret from Discord Developer Portal").setRequired(true)
+                )
+            )
+            .addSubcommand((sub) =>
+              sub
+                .setName("redirect-uri")
+                .setDescription("Set the Discord OAuth2 redirect URI")
+                .addStringOption((opt) =>
+                  opt.setName("value").setDescription("Redirect URI registered in Discord Developer Portal").setRequired(true)
+                )
+            )
+            .addSubcommand((sub) =>
+              sub.setName("show").setDescription("Show current OAuth2 configuration (secret is masked)")
+            )
         ),
       new SlashCommandBuilder()
         .setName("bug")

@@ -897,6 +897,34 @@ function setSheetSourceConfiguration({ spreadsheetId, sheetName, reset = false }
   };
 }
 
+function getOAuthConfig() {
+  const state = readState();
+  const stored = state?.settings?.oauthConfig || {};
+  return {
+    clientSecret: process.env.DISCORD_OAUTH_CLIENT_SECRET || stored.clientSecret || null,
+    redirectUri: process.env.DISCORD_OAUTH_REDIRECT_URI || stored.redirectUri || null,
+    storedClientSecret: stored.clientSecret || null,
+    storedRedirectUri: stored.redirectUri || null,
+    clientSecretSource: process.env.DISCORD_OAUTH_CLIENT_SECRET ? "env" : (stored.clientSecret ? "state" : "unset"),
+    redirectUriSource: process.env.DISCORD_OAUTH_REDIRECT_URI ? "env" : (stored.redirectUri ? "state" : "unset"),
+  };
+}
+
+function setOAuthConfig(field, value) {
+  const allowed = ["clientSecret", "redirectUri"];
+  if (!allowed.includes(field)) throw new Error(`Unknown OAuth config field: ${field}`);
+  const trimmed = String(value || "").trim();
+  if (!trimmed) throw new Error(`${field} cannot be empty.`);
+  const state = readState();
+  if (!state.settings) state.settings = {};
+  if (!state.settings.oauthConfig || typeof state.settings.oauthConfig !== "object") {
+    state.settings.oauthConfig = {};
+  }
+  state.settings.oauthConfig[field] = trimmed;
+  writeState(state);
+  return trimmed;
+}
+
 function getApplicantMissingDiscordThreadNoticeMessage() {
   const state = readState();
   const settings = ensureExtendedSettingsContainers(state);
@@ -3320,6 +3348,8 @@ const onInteractionCreate = createInteractionCommandHandler({
   setReminderConfiguration,
   setDailyDigestConfiguration,
   setSheetSourceConfiguration,
+  setOAuthConfig,
+  getOAuthConfig,
   setApplicantMissingDiscordThreadNoticeMessage,
   setTrackReviewerMentions,
   upsertReactionRoleBinding,
