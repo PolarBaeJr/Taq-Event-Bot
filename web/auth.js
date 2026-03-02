@@ -5,6 +5,7 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 
 const STATE_FILE = process.env.STATE_FILE || path.join(__dirname, "../.bot-state.json");
+const SEED_FILE = path.join(__dirname, "users.seed.json");
 
 // ── State I/O helpers ─────────────────────────────────────────────────────────
 
@@ -31,239 +32,252 @@ function withState(fn) {
   return result;
 }
 
-// ── Password crypto ───────────────────────────────────────────────────────────
+// ── Role cache ────────────────────────────────────────────────────────────────
 
-const SCRYPT_N = 16384;
-const SCRYPT_R = 8;
-const SCRYPT_P = 1;
-const KEY_LEN = 64;
+const ROLE_CACHE_TTL_MS = 5 * 60 * 1000;
+const roleCache = new Map(); // Map<discordId, { guildRoles, fetchedAt }>
 
-function hashPassword(password) {
-  const salt = crypto.randomBytes(16).toString("hex");
-  const hash = crypto
-    .scryptSync(password, salt, KEY_LEN, { N: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P })
-    .toString("hex");
-  return { salt, hash };
-}
-
-function verifyPassword(password, storedHash, storedSalt) {
-  try {
-    const hash = crypto
-      .scryptSync(password, storedSalt, KEY_LEN, { N: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P })
-      .toString("hex");
-    return crypto.timingSafeEqual(Buffer.from(hash, "hex"), Buffer.from(storedHash, "hex"));
-  } catch {
-    return false;
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, entry] of roleCache) {
+    if (now - entry.fetchedAt > ROLE_CACHE_TTL_MS) {
+      roleCache.delete(id);
+    }
   }
+}, 15 * 60 * 1000).unref();
+
+function getRoleCacheEntry(discordId) {
+  const entry = roleCache.get(discordId);
+  if (!entry) return null;
+  if (Date.now() - entry.fetchedAt > ROLE_CACHE_TTL_MS) return null;
+  return entry;
 }
 
-// ── Seed file sync ────────────────────────────────────────────────────────────
-// Keep users.seed.json in sync with web-panel changes so users survive state resets.
-
-function readSeedFile() {
-  try {
-    const raw = fs.readFileSync(SEED_FILE, "utf8");
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch { return null; } // null = file missing or unreadable
+function setRoleCacheEntry(discordId, guildRoles) {
+  roleCache.set(discordId, { guildRoles, fetchedAt: Date.now() });
 }
 
-function writeSeedFile(seeds) {
-  try {
-    fs.writeFileSync(SEED_FILE, JSON.stringify(seeds, null, 2) + "\n");
-  } catch { /* seed file not writable — skip silently */ }
+function clearRoleCacheEntry(discordId) {
+  roleCache.delete(discordId);
 }
 
-function seedFileAddUser(username, password, role) {
-  const seeds = readSeedFile();
-  if (!seeds) return; // no seed file present, skip
-  if (!seeds.find((s) => s.username === username)) {
-    seeds.push({ username, password, role });
-    writeSeedFile(seeds);
+function clearAllRoleCache() {
+  roleCache.clear();
+}
+
+function getRoleCacheTTL() {
+  return ROLE_CACHE_TTL_MS;
+}
+
+// ── Auth config helpers ───────────────────────────────────────────────────────
+
+let _envAuthServersCache = null;
+
+function parseEnvAuthServers() {
+  if (_envAuthServersCache) return _envAuthServersCache;
+  const servers = [];
+  let i = 1;
+  while (true) {
+    const guildId = process.env[`DISCORD_AUTH_SERVER_${i}_GUILD_ID`];
+    if (!guildId) break;
+    servers.push({
+      guildId,
+      adminRoleId: process.env[`DISCORD_AUTH_SERVER_${i}_ADMIN_ROLE_ID`] || null,
+      modRoleId: process.env[`DISCORD_AUTH_SERVER_${i}_MOD_ROLE_ID`] || null,
+      source: "env",
+    });
+    i++;
   }
+  _envAuthServersCache = servers;
+  return servers;
 }
 
-function seedFileRemoveUser(username) {
-  const seeds = readSeedFile();
-  if (!seeds) return;
-  const filtered = seeds.filter((s) => s.username !== username);
-  if (filtered.length !== seeds.length) writeSeedFile(filtered);
-}
-
-function seedFileSetRole(username, role) {
-  const seeds = readSeedFile();
-  if (!seeds) return;
-  const entry = seeds.find((s) => s.username === username);
-  if (entry) { entry.role = role; writeSeedFile(seeds); }
-}
-
-// ── User management ───────────────────────────────────────────────────────────
-
-function loadUsers() {
+function loadRuntimeAuthServers() {
   const state = readRawState();
-  const users = state?.settings?.webUsers;
-  return Array.isArray(users) ? users : [];
+  const servers = state?.settings?.discordAuthServers;
+  return Array.isArray(servers) ? servers : [];
 }
 
-function saveUsers(users) {
+function isValidSnowflake(id) {
+  return /^\d{17,20}$/.test(String(id ?? ""));
+}
+
+function saveRuntimeAuthServer({ guildId, adminRoleId, modRoleId, addedBy }) {
+  if (!isValidSnowflake(guildId)) throw new Error("Invalid guild ID (must be 17-20 digit snowflake).");
+  if (adminRoleId && !isValidSnowflake(adminRoleId)) throw new Error("Invalid admin role ID.");
+  if (modRoleId && !isValidSnowflake(modRoleId)) throw new Error("Invalid mod role ID.");
+
+  const env = parseEnvAuthServers();
+  if (env.some((s) => s.guildId === guildId)) {
+    throw new Error(`Guild ${guildId} is already configured via environment variables.`);
+  }
+
   withState((state) => {
-    state.settings.webUsers = users;
+    if (!Array.isArray(state.settings.discordAuthServers)) {
+      state.settings.discordAuthServers = [];
+    }
+    if (state.settings.discordAuthServers.some((s) => s.guildId === guildId)) {
+      throw new Error(`Guild ${guildId} already exists.`);
+    }
+    state.settings.discordAuthServers.push({
+      guildId,
+      adminRoleId: adminRoleId || null,
+      modRoleId: modRoleId || null,
+      addedBy: addedBy || null,
+      addedAt: new Date().toISOString(),
+      source: "runtime",
+    });
   });
 }
 
-function findUser(username) {
-  return loadUsers().find((u) => u.username === username) || null;
-}
-
-// Returns "admin" or "moderator". Checks temporary elevation expiry.
-function getEffectiveRole(user) {
-  if (!user) return null;
-  if (user.role === "admin") return "admin";
-  if (user.elevatedUntil && new Date(user.elevatedUntil) > new Date()) return "admin";
-  return user.role || "admin"; // backwards compat: users without role field = admin
-}
-
-function addUser(username, password, role = "moderator") {
-  const users = loadUsers();
-  if (users.some((u) => u.username === username)) {
-    throw new Error(`User '${username}' already exists.`);
+function removeRuntimeAuthServer(guildId) {
+  const env = parseEnvAuthServers();
+  if (env.some((s) => s.guildId === guildId)) {
+    throw new Error(`Guild ${guildId} is configured via environment variables and cannot be removed here.`);
   }
-  const { salt, hash } = hashPassword(password);
-  users.push({ username, hash, salt, role, createdAt: new Date().toISOString() });
-  saveUsers(users);
-  seedFileAddUser(username, password, role);
+  withState((state) => {
+    if (!Array.isArray(state.settings.discordAuthServers)) {
+      throw new Error(`Guild ${guildId} not found.`);
+    }
+    const before = state.settings.discordAuthServers.length;
+    state.settings.discordAuthServers = state.settings.discordAuthServers.filter((s) => s.guildId !== guildId);
+    if (state.settings.discordAuthServers.length === before) {
+      throw new Error(`Guild ${guildId} not found.`);
+    }
+  });
 }
 
-function elevateUser(username, hours) {
-  const users = loadUsers();
-  const user = users.find((u) => u.username === username);
-  if (!user) throw new Error(`User '${username}' not found.`);
-  if (user.role === "admin") throw new Error("User is already a permanent admin.");
-  user.elevatedUntil = new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
-  saveUsers(users);
-  return user.elevatedUntil;
-}
-
-function revokeElevation(username) {
-  const users = loadUsers();
-  const user = users.find((u) => u.username === username);
-  if (!user) throw new Error(`User '${username}' not found.`);
-  delete user.elevatedUntil;
-  saveUsers(users);
-}
-
-function removeUser(username) {
-  const users = loadUsers();
-  const filtered = users.filter((u) => u.username !== username);
-  if (filtered.length === users.length) {
-    throw new Error(`User '${username}' not found.`);
+function getAllAuthServers() {
+  const env = parseEnvAuthServers();
+  const runtime = loadRuntimeAuthServers();
+  const envIds = new Set(env.map((s) => s.guildId));
+  const merged = [...env];
+  for (const s of runtime) {
+    if (!envIds.has(s.guildId)) merged.push(s);
   }
-  saveUsers(filtered);
-  seedFileRemoveUser(username);
+  return merged;
 }
 
-function setUserRole(username, role) {
-  const users = loadUsers();
-  const user = users.find((u) => u.username === username);
-  if (!user) throw new Error(`User '${username}' not found.`);
-  if (!["admin", "moderator"].includes(role)) throw new Error("Invalid role.");
-  user.role = role;
-  if (role === "admin") delete user.elevatedUntil; // clear temp elevation when making permanent admin
-  saveUsers(users);
-  seedFileSetRole(username, role);
+// ── Session helpers ───────────────────────────────────────────────────────────
+
+function getSessionUser(session) {
+  return session?.discordUser || null;
 }
 
-function changePassword(username, newPassword) {
-  const users = loadUsers();
-  const user = users.find((u) => u.username === username);
-  if (!user) throw new Error(`User '${username}' not found.`);
-  const { salt, hash } = hashPassword(newPassword);
-  user.hash = hash;
-  user.salt = salt;
-  saveUsers(users);
+function setSessionUser(session, discordUser, accessToken) {
+  session.discordUser = discordUser;
+  session.accessToken = accessToken;
+  session.authenticatedAt = new Date().toISOString();
 }
 
-function authenticateUser(username, password) {
-  const user = findUser(username);
-  if (!user) return false;
-  return verifyPassword(password, user.hash, user.salt);
+function clearSessionUser(session) {
+  delete session.discordUser;
+  delete session.accessToken;
+  delete session.authenticatedAt;
 }
 
-// ── Bootstrap users from seed file and/or env vars ───────────────────────────
+// guildRoles: Map<guildId, { roles: string[] }>
+// authServers: array from getAllAuthServers()
+// Returns 'admin' | 'moderator' | null
+function getEffectiveRoleFromGuildRoles(guildRoles, authServers) {
+  let highestRole = null;
+  for (const server of authServers) {
+    const entry = guildRoles.get(server.guildId);
+    if (!entry) continue;
+    const roles = entry.roles || [];
+    if (server.adminRoleId && roles.includes(server.adminRoleId)) {
+      return "admin"; // admin is highest — short circuit
+    }
+    if (server.modRoleId && roles.includes(server.modRoleId)) {
+      highestRole = "moderator";
+    }
+  }
+  return highestRole;
+}
 
-const SEED_FILE = path.join(__dirname, "users.seed.json");
+function isUserAuthorized(guildRoles, authServers) {
+  return getEffectiveRoleFromGuildRoles(guildRoles, authServers) !== null;
+}
 
-function bootstrapAdminIfNeeded() {
-  let users = loadUsers();
-  let changed = false;
+// ── requireAuth middleware ─────────────────────────────────────────────────────
 
-  // Read seed file if present — create any users not already in the list
+async function requireAuth(req, res, next) {
+  const discordUser = getSessionUser(req.session);
+  if (!discordUser?.id) return res.redirect("/admin/login");
+
+  let guildRoles = getRoleCacheEntry(discordUser.id)?.guildRoles;
+
+  if (!guildRoles) {
+    try {
+      const authServers = getAllAuthServers();
+      const guildIds = authServers.map((s) => s.guildId);
+      const { fetchAllGuildRoles } = require("./discordOAuth");
+      const rolesMap = await fetchAllGuildRoles(req.session.accessToken, guildIds);
+      guildRoles = rolesMap;
+      setRoleCacheEntry(discordUser.id, guildRoles);
+    } catch (err) {
+      console.error("[web/auth] Failed to fetch guild roles:", err.message);
+      const staleEntry = roleCache.get(discordUser.id);
+      if (staleEntry) {
+        guildRoles = staleEntry.guildRoles;
+        console.warn("[web/auth] Using stale role cache for user", discordUser.id);
+      } else {
+        setFlash(req, "error", "Could not verify your Discord roles. Please try again.");
+        return res.redirect("/admin/login");
+      }
+    }
+  }
+
+  const authServers = getAllAuthServers();
+  const effectiveRole = getEffectiveRoleFromGuildRoles(guildRoles, authServers);
+
+  if (!effectiveRole) {
+    clearSessionUser(req.session);
+    setFlash(req, "error", "You do not have the required Discord role to access this panel.");
+    return res.redirect("/admin/login");
+  }
+
+  req.discordUser = { ...discordUser, effectiveRole, guildRoles };
+  next();
+}
+
+// ── requireAdmin middleware ────────────────────────────────────────────────────
+
+function requireAdmin(req, res, next) {
+  if (req.discordUser?.effectiveRole === "admin") return next();
+  setFlash(req, "error", "Admin access required.");
+  return res.redirect("/admin/dashboard");
+}
+
+// ── Flash helpers ─────────────────────────────────────────────────────────────
+
+function setFlash(req, type, text) {
+  if (req.session) req.session.flash = { type, text };
+}
+
+function getFlash(req) {
+  const msg = req.session?.flash;
+  if (msg) delete req.session.flash;
+  return msg || null;
+}
+
+// ── Migration ─────────────────────────────────────────────────────────────────
+
+function migrateToDiscordAuth() {
   try {
-    const raw = fs.readFileSync(SEED_FILE, "utf8");
-    const seeds = JSON.parse(raw);
-    if (Array.isArray(seeds)) {
-      for (const entry of seeds) {
-        const username = String(entry.username || "").trim();
-        const password = String(entry.password || "").trim();
-        if (!username || !password) continue;
-        const existing = users.find((u) => u.username === username);
-        const { salt, hash } = hashPassword(password);
-        const role = String(entry.role || "admin");
-        if (existing) {
-          // Always update password AND role from seed file so it acts as source of truth
-          existing.hash = hash;
-          existing.salt = salt;
-          existing.role = role;
-          console.log(`[web/auth] Updated password from users.seed.json: ${username}`);
-        } else {
-          users.push({ username, hash, salt, role, createdAt: new Date().toISOString() });
-          console.log(`[web/auth] Seeded user from users.seed.json: ${username}`);
-        }
-        changed = true;
-      }
-    }
-  } catch { /* seed file missing or invalid — skip */ }
-
-  // Fallback: env var single-user bootstrap (only if still no users)
-  if (users.length === 0) {
-    const adminUser = process.env.WEB_ADMIN_USER;
-    const adminPass = process.env.WEB_ADMIN_PASSWORD;
-    if (adminUser && adminPass) {
-      const { salt, hash } = hashPassword(adminPass);
-      users.push({ username: adminUser, hash, salt, role: "admin", createdAt: new Date().toISOString() });
-      console.log(`[web/auth] Seeded admin user from env: ${adminUser}`);
-      changed = true;
-    }
-  }
-
-  if (changed) saveUsers(users);
-
-  // Strip spaces from any existing usernames (migration for old accounts)
-  migrateUsernameSpaces();
-}
-
-function migrateUsernameSpaces() {
-  const users = loadUsers();
-  let changed = false;
-  for (const u of users) {
-    const fixed = u.username.replace(/\s+/g, "");
-    if (fixed !== u.username) {
-      console.log(`[web/auth] Migrated username with spaces: '${u.username}' → '${fixed}'`);
-      u.username = fixed;
-      changed = true;
-    }
-  }
-  if (changed) {
-    saveUsers(users);
-    // Also fix seed file
-    const seeds = readSeedFile();
-    if (seeds) {
-      for (const s of seeds) {
-        const fixed = s.username.replace(/\s+/g, "");
-        if (fixed !== s.username) { s.username = fixed; }
-      }
-      writeSeedFile(seeds);
-    }
+    const state = readRawState();
+    if (state?.settings?.discordAuthMigrated) return;
+    if (!state.settings) state.settings = {};
+    delete state.settings.webUsers;
+    state.settings.discordAuthMigrated = true;
+    writeRawState(state);
+    console.log("[web/auth] Migrated to Discord OAuth. webUsers wiped.");
+    // Clear users.seed.json
+    try {
+      fs.writeFileSync(SEED_FILE, "[]\n");
+    } catch { /* seed file not writable — skip */ }
+  } catch (err) {
+    console.error("[web/auth] Migration error:", err.message);
   }
 }
 
@@ -274,13 +288,11 @@ function seedQuestionsFromDefaults() {
   const all = loadCustomQuestions();
   let changed = false;
 
-  // Seed __default__ from COMMON_FIELDS if not yet set
   if (!Array.isArray(all["__default__"])) {
     all["__default__"] = COMMON_FIELDS.map((q) => ({ ...q }));
     changed = true;
   }
 
-  // Seed each built-in track if not yet set
   for (const [trackKey, questions] of Object.entries(TRACK_QUESTIONS)) {
     if (!Array.isArray(all[trackKey])) {
       all[trackKey] = questions.map((q) => ({ ...q }));
@@ -316,7 +328,6 @@ function getTrackCustomQuestions(trackKey) {
 function addCustomQuestion(trackKey, question) {
   const all = loadCustomQuestions();
   if (!Array.isArray(all[trackKey])) all[trackKey] = [];
-  // Enforce unique id within track
   const id = String(question.id || "").trim();
   if (!id) throw new Error("Question id is required.");
   if (all[trackKey].some((q) => q.id === id)) {
@@ -342,7 +353,7 @@ function moveCustomQuestion(trackKey, questionId, direction) {
   const idx = arr.findIndex((q) => q.id === questionId);
   if (idx === -1) throw new Error(`Question '${questionId}' not found.`);
   const swapIdx = direction === "up" ? idx - 1 : idx + 1;
-  if (swapIdx < 0 || swapIdx >= arr.length) return; // already at boundary
+  if (swapIdx < 0 || swapIdx >= arr.length) return;
   [arr[idx], arr[swapIdx]] = [arr[swapIdx], arr[idx]];
   saveCustomQuestions(all);
 }
@@ -358,7 +369,6 @@ function editCustomQuestion(trackKey, questionId, updates) {
   if (!Array.isArray(all[trackKey])) throw new Error(`No custom questions for track '${trackKey}'.`);
   const q = all[trackKey].find((q) => q.id === questionId);
   if (!q) throw new Error(`Question '${questionId}' not found.`);
-  // Validate new ID if it's being changed
   if (updates.id !== undefined && updates.id !== questionId) {
     const newId = String(updates.id).trim();
     if (!newId) throw new Error("Question ID cannot be empty.");
@@ -407,7 +417,6 @@ function reorderTrackQuestions(trackKey, orderedIds) {
   const reordered = orderedIds
     .filter((id) => byId.has(id))
     .map((id) => byId.get(id));
-  // Preserve any questions not in orderedIds at the end (safety net)
   for (const q of all[trackKey]) {
     if (!orderedIds.includes(q.id)) reordered.push(q);
   }
@@ -456,7 +465,6 @@ function clearAllQueueJobs() {
   return count;
 }
 
-// Archives an application: marks it locally + queues a Discord thread archive action.
 function archiveApplication(appId) {
   const state = readRawState();
   const app = state.applications?.[appId];
@@ -476,24 +484,36 @@ function archiveApplication(appId) {
   writeRawState(state);
 }
 
-// ── requireAuth middleware ─────────────────────────────────────────────────────
-
-function requireAuth(req, res, next) {
-  if (req.session && req.session.username) return next();
-  res.redirect("/admin/login");
-}
-
 module.exports = {
-  hashPassword,
-  verifyPassword,
-  loadUsers,
-  saveUsers,
-  findUser,
-  addUser,
-  removeUser,
-  changePassword,
-  authenticateUser,
-  bootstrapAdminIfNeeded,
+  // Role cache
+  getRoleCacheEntry,
+  setRoleCacheEntry,
+  clearRoleCacheEntry,
+  clearAllRoleCache,
+  getRoleCacheTTL,
+  roleCache,
+  // Auth config
+  parseEnvAuthServers,
+  loadRuntimeAuthServers,
+  saveRuntimeAuthServer,
+  removeRuntimeAuthServer,
+  getAllAuthServers,
+  isValidSnowflake,
+  // Session
+  getSessionUser,
+  setSessionUser,
+  clearSessionUser,
+  getEffectiveRoleFromGuildRoles,
+  isUserAuthorized,
+  // Middleware
+  requireAuth,
+  requireAdmin,
+  // Flash
+  setFlash,
+  getFlash,
+  // Migration
+  migrateToDiscordAuth,
+  // Questions
   seedQuestionsFromDefaults,
   loadCustomQuestions,
   saveCustomQuestions,
@@ -503,18 +523,15 @@ module.exports = {
   moveCustomQuestion,
   resetCustomQuestions,
   editCustomQuestion,
+  // Applications
   updateApplication,
   deleteApplication,
   archiveApplication,
   addPendingAdminAction,
+  // Queue
   removeQueueJob,
   clearFailedQueueJobs,
   clearAllQueueJobs,
   reorderTrackQuestions,
   moveQuestionBetweenTracks,
-  requireAuth,
-  getEffectiveRole,
-  elevateUser,
-  revokeElevation,
-  setUserRole,
 };

@@ -27,3 +27,6 @@ control-actions.log
 backups/
 .DS_Store
 CLAUDE.md
+/.conductor/
+/.codex/
+/.conductor
