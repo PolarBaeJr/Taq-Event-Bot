@@ -5,12 +5,8 @@ const path = require("node:path");
 const express = require("express");
 const {
   requireAuth,
-  loadUsers,
-  findUser,
-  addUser,
-  removeUser,
-  changePassword,
-  authenticateUser,
+  requireAdmin,
+  setFlash,
   loadCustomQuestions,
   saveCustomQuestions,
   addCustomQuestion,
@@ -22,15 +18,16 @@ const {
   deleteApplication,
   archiveApplication,
   addPendingAdminAction,
-  getEffectiveRole,
-  elevateUser,
-  revokeElevation,
-  setUserRole,
   removeQueueJob,
   clearFailedQueueJobs,
   clearAllQueueJobs,
   reorderTrackQuestions,
   moveQuestionBetweenTracks,
+  getAllAuthServers,
+  saveRuntimeAuthServer,
+  removeRuntimeAuthServer,
+  clearRoleCacheEntry,
+  clearSessionUser,
 } = require("./auth");
 
 const STATE_FILE = process.env.STATE_FILE || path.join(__dirname, "../.bot-state.json");
@@ -53,8 +50,20 @@ function escHtml(str) {
     .replace(/"/g, "&quot;");
 }
 
-function adminLayout(title, body, username) {
-  const navUser = username ? `<span class="nav-user">${escHtml(username)}</span>` : "";
+function adminLayout(title, body, discordUser) {
+  let navUserHtml = "";
+  if (discordUser) {
+    const avatarUrl = discordUser.avatar
+      ? `https://cdn.discordapp.com/avatars/${escHtml(discordUser.id)}/${escHtml(discordUser.avatar)}.png`
+      : null;
+    const avatarImg = avatarUrl
+      ? `<img src="${avatarUrl}" alt="" style="width:22px;height:22px;border-radius:50%;object-fit:cover;flex-shrink:0"/>`
+      : "";
+    const roleBadge = discordUser.effectiveRole === "admin"
+      ? `<span class="badge badge-ok" style="font-size:0.68rem">admin</span>`
+      : `<span class="badge badge-pending" style="font-size:0.68rem">mod</span>`;
+    navUserHtml = `<span class="nav-user" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">${avatarImg}${escHtml(discordUser.username)} ${roleBadge}</span>`;
+  }
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -79,10 +88,10 @@ function adminLayout(title, body, username) {
         <a href="/admin/applications">Applications</a>
         <a href="/admin/queue">Queue</a>
         <a href="/admin/logs">Logs</a>
-        <a href="/admin/users">Users</a>
+        <a href="/admin/users">Servers</a>
       </nav>
       <div class="nav-footer">
-        ${navUser}
+        ${navUserHtml}
         <form method="POST" action="/admin/logout" style="margin:0">
           <button type="submit" class="logout-btn">Log out</button>
         </form>
@@ -131,17 +140,6 @@ function flash(req) {
   return `<div class="${cls}">${escHtml(msg.text)}</div>`;
 }
 
-function setFlash(req, type, text) {
-  req.session.flash = { type, text };
-}
-
-function requireAdmin(req, res, next) {
-  const user = findUser(req.session?.username);
-  if (getEffectiveRole(user) === "admin") return next();
-  setFlash(req, "error", "Admin access required.");
-  return res.redirect("/admin/dashboard");
-}
-
 // ── State helpers ─────────────────────────────────────────────────────────────
 
 function readRawState() {
@@ -158,42 +156,34 @@ router.get("/", (_req, res) => res.redirect("/admin/dashboard"));
 
 // Login
 router.get("/login", (req, res) => {
-  if (req.session?.username) return res.redirect("/admin/dashboard");
+  if (req.session?.discordUser) return res.redirect("/admin/dashboard");
+  const returnTo = req.query.returnTo || "";
+  const oauthConfigured = Boolean(
+    process.env.DISCORD_CLIENT_ID &&
+    process.env.DISCORD_OAUTH_CLIENT_SECRET &&
+    process.env.DISCORD_OAUTH_REDIRECT_URI
+  );
+  const warningHtml = !oauthConfigured
+    ? `<div class="flash-error">Discord OAuth is not configured. Set DISCORD_CLIENT_ID, DISCORD_OAUTH_CLIENT_SECRET, and DISCORD_OAUTH_REDIRECT_URI.</div>`
+    : "";
+  const returnToParam = returnTo ? `?returnTo=${encodeURIComponent(returnTo)}` : "";
   res.send(loginLayout(`
     ${flash(req)}
-    <form method="POST" action="/admin/login" class="login-form">
-      <div class="field">
-        <label for="username">Username</label>
-        <input type="text" id="username" name="username" required autocomplete="username"/>
-      </div>
-      <div class="field">
-        <label for="password">Password</label>
-        <input type="password" id="password" name="password" required autocomplete="current-password"/>
-      </div>
-      <button type="submit" class="submit-btn">Log in</button>
-    </form>
+    ${warningHtml}
+    <a href="/auth/discord${returnToParam}" class="discord-login-btn">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+        <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057c.001.022.015.043.03.054a19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03z"/>
+      </svg>
+      Login with Discord
+    </a>
+    <p class="login-note">Access requires a Discord role in a configured server.</p>
   `));
 });
 
-router.post("/login", (req, res) => {
-  const { username, password } = req.body;
-  if (!username || !password) {
-    setFlash(req, "error", "Username and password are required.");
-    return res.redirect("/admin/login");
-  }
-  if (!authenticateUser(username, password)) {
-    setFlash(req, "error", "Invalid credentials.");
-    return res.redirect("/admin/login");
-  }
-  // Regenerate session ID on login to prevent session fixation attacks.
-  req.session.regenerate((err) => {
-    if (err) return res.redirect("/admin/login");
-    req.session.username = username;
-    req.session.save(() => res.redirect("/admin/dashboard"));
-  });
-});
-
 router.post("/logout", (req, res) => {
+  const discordId = req.session?.discordUser?.id;
+  if (discordId) clearRoleCacheEntry(discordId);
+  clearSessionUser(req.session);
   req.session.destroy(() => res.redirect("/admin/login"));
 });
 
@@ -209,10 +199,11 @@ router.get("/dashboard", requireAuth, (req, res) => {
   const archived = apps.filter((a) => a.adminArchived).length;
   const customTracks = state?.settings?.customTracks;
   const trackCount = Array.isArray(customTracks) ? customTracks.length : 0;
-  const userCount = loadUsers().length;
+  const serverCount = getAllAuthServers().length;
 
   res.send(adminLayout("Dashboard", `
     ${flash(req)}
+    <p style="margin-bottom:20px;color:var(--muted)">Welcome, <strong>${escHtml(req.discordUser?.username || "")}</strong></p>
     <div class="stats-grid">
       <div class="stat-card">
         <div class="stat-val">${pending}</div>
@@ -239,15 +230,15 @@ router.get("/dashboard", requireAuth, (req, res) => {
         <div class="stat-label">Custom Tracks</div>
       </div>
       <div class="stat-card">
-        <div class="stat-val">${userCount}</div>
-        <div class="stat-label">Admin Users</div>
+        <div class="stat-val">${serverCount}</div>
+        <div class="stat-label">Auth Servers</div>
       </div>
     </div>
     <div style="margin-top:24px">
       <a class="btn-link" href="/admin/applications">View Applications</a>
       <a class="btn-link" href="/admin/questions">Manage Questions</a>
     </div>
-  `, req.session.username));
+  `, req.discordUser));
 });
 
 // Questions
@@ -543,7 +534,7 @@ router.get("/questions", requireAuth, (req, res) => {
   });
 })();
     </script>
-  `, req.session.username));
+  `, req.discordUser));
 });
 
 // Must be defined before /:track routes to avoid param capture
@@ -755,7 +746,7 @@ function renderQueuePage(req, res) {
         ${jobRows || '<tr><td colspan="7" class="muted-note" style="padding:16px;text-align:center">No unposted jobs.</td></tr>'}
       </tbody>
     </table>
-  `, req.session.username));
+  `, req.discordUser));
 }
 
 router.get("/queue", requireAuth, (req, res) => {
@@ -913,7 +904,7 @@ function renderApplicationsPage(req, res, { lockedTrack = null } = {}) {
       </tbody>
     </table>
     ${pagination}
-  `, req.session.username));
+  `, req.discordUser));
 }
 
 router.get("/applications", requireAuth, (req, res) => {
@@ -924,220 +915,86 @@ router.get("/applications/:track", requireAuth, (req, res) => {
   renderApplicationsPage(req, res, { lockedTrack: req.params.track });
 });
 
-// Users
+// Discord Auth Servers (formerly "Users")
 router.get("/users", requireAuth, (req, res) => {
-  const users = loadUsers();
-  const currentUser = findUser(req.session.username);
-  const currentRole = getEffectiveRole(currentUser);
+  const servers = getAllAuthServers();
+  const isAdmin = req.discordUser?.effectiveRole === "admin";
 
-  const roleBadge = (u) => {
-    const stored = u.role || "admin";
-    const effective = getEffectiveRole(u);
-    const isElevated = stored === "moderator" && effective === "admin";
-    if (isElevated) {
-      const until = new Date(u.elevatedUntil).toLocaleString();
-      return `<span class="badge badge-pending" title="Elevated until ${escHtml(until)}">admin (temp)</span>`;
-    }
-    return stored === "admin"
-      ? `<span class="badge badge-ok">admin</span>`
-      : `<span class="badge badge-pending">moderator</span>`;
-  };
-
-  const rows = users.filter((u) => u.username !== "admin").map((u) => {
-    const storedRole = u.role || "admin";
-    const isElevated = storedRole === "moderator" && getEffectiveRole(u) === "admin";
-    const isCurrentUser = u.username === req.session.username;
-
-    let actions = "";
-    if (isCurrentUser) {
-      actions = '<span class="muted-note">(you)</span>';
-    } else if (currentRole === "admin") {
-      // Permanent role change
-      const roleOpts = ["admin", "moderator"].map((r) =>
-        `<option value="${r}" ${storedRole === r ? "selected" : ""}>${r}</option>`
-      ).join("");
-      actions += `
-        <form method="POST" action="/admin/users/role" style="display:inline">
-          <input type="hidden" name="username" value="${escHtml(u.username)}"/>
-          <select name="role" style="font-size:0.78rem;padding:2px 6px;width:auto">${roleOpts}</select>
-          <button type="submit" class="btn-sm">Set</button>
-        </form>`;
-
-      // Temporary elevation (moderators only, not already elevated)
-      if (storedRole === "moderator" && !isElevated) {
-        actions += `
-          <form method="POST" action="/admin/users/elevate" style="display:inline;margin-left:4px">
-            <input type="hidden" name="username" value="${escHtml(u.username)}"/>
-            <select name="hours" style="font-size:0.78rem;padding:2px 6px;width:auto">
-              <option value="1">1h</option>
-              <option value="4">4h</option>
-              <option value="8">8h</option>
-              <option value="24">24h</option>
-            </select>
-            <button type="submit" class="btn-sm">Elevate</button>
-          </form>`;
-      }
-      if (isElevated) {
-        actions += `
-          <form method="POST" action="/admin/users/revoke-elevation" style="display:inline;margin-left:4px">
-            <input type="hidden" name="username" value="${escHtml(u.username)}"/>
-            <button type="submit" class="btn-sm btn-danger">Revoke</button>
-          </form>`;
-      }
-
-      // Remove any non-self, non-reserved user
-      actions += `
-        <form method="POST" action="/admin/users/remove" style="display:inline;margin-left:4px"
-          onsubmit="return confirm('Remove user ${escHtml(u.username)}?')">
-          <input type="hidden" name="username" value="${escHtml(u.username)}"/>
-          <button type="submit" class="btn-sm btn-danger">Remove</button>
-        </form>`;
-    }
-
+  const rows = servers.map((s) => {
+    const sourceBadge = s.source === "env"
+      ? `<span class="badge badge-ok">Env</span>`
+      : `<span class="badge badge-pending">Runtime</span>`;
+    const removeBtn = s.source !== "env" && isAdmin
+      ? `<form method="POST" action="/admin/users/${encodeURIComponent(s.guildId)}/remove" style="margin:0"
+           onsubmit="return confirm('Remove server ${escHtml(s.guildId)}?')">
+           <button type="submit" class="btn-sm btn-danger">Remove</button>
+         </form>`
+      : `<span class="muted-note">—</span>`;
     return `
       <tr>
-        <td data-label="Username">${escHtml(u.username)}</td>
-        <td data-label="Role">${roleBadge(u)}</td>
-        <td data-label="Created" class="muted-note">${escHtml(u.createdAt ? u.createdAt.slice(0, 10) : "—")}</td>
-        <td data-label="Actions" class="actions-cell">${actions || "—"}</td>
+        <td data-label="Guild ID"><code>${escHtml(s.guildId)}</code></td>
+        <td data-label="Admin Role ID"><code>${escHtml(s.adminRoleId || "—")}</code></td>
+        <td data-label="Mod Role ID"><code>${escHtml(s.modRoleId || "—")}</code></td>
+        <td data-label="Source">${sourceBadge}</td>
+        <td data-label="Actions" class="actions-cell">${removeBtn}</td>
       </tr>`;
   }).join("");
 
-  const addUserHtml = currentRole === "admin" ? `
+  const addServerHtml = isAdmin ? `
     <section class="card" style="margin-top:32px">
-      <h2>Add User</h2>
+      <h2>Add Server</h2>
+      <p class="muted-note" style="margin-bottom:12px">Enter Discord snowflake IDs (17–20 digit numbers). Enable Developer Mode in Discord to right-click and copy IDs.</p>
       <form method="POST" action="/admin/users/add" class="inline-form">
         <div class="form-row">
           <div class="field">
-            <label>Username</label>
-            <input type="text" name="username" required pattern="[^\s]+" title="No spaces allowed"/>
+            <label>Guild ID <span class="req">*</span></label>
+            <input type="text" name="guildId" required pattern="\\d{17,20}" title="17-20 digit Discord snowflake"/>
           </div>
           <div class="field">
-            <label>Password</label>
-            <input type="password" name="password" required/>
+            <label>Admin Role ID</label>
+            <input type="text" name="adminRoleId" pattern="\\d{17,20}" title="17-20 digit Discord snowflake"/>
           </div>
           <div class="field">
-            <label>Role</label>
-            <select name="role">
-              <option value="moderator">Moderator</option>
-              <option value="admin">Admin</option>
-            </select>
+            <label>Mod Role ID</label>
+            <input type="text" name="modRoleId" pattern="\\d{17,20}" title="17-20 digit Discord snowflake"/>
           </div>
         </div>
-        <button type="submit" class="btn-primary">Add User</button>
+        <button type="submit" class="btn-primary">Add Server</button>
       </form>
     </section>` : "";
 
-  res.send(adminLayout("Users", `
+  res.send(adminLayout("Auth Servers", `
     ${flash(req)}
+    <p class="muted-note" style="margin-bottom:16px">Users must have the Admin or Mod role in at least one listed server to access this panel. Env-sourced servers cannot be removed here.</p>
     <table class="admin-table">
-      <thead><tr><th>Username</th><th>Role</th><th>Created</th><th>Actions</th></tr></thead>
-      <tbody>${rows || '<tr><td colspan="4" class="muted-note">No users.</td></tr>'}</tbody>
+      <thead><tr><th>Guild ID</th><th>Admin Role ID</th><th>Mod Role ID</th><th>Source</th><th>Actions</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="5" class="muted-note">No servers configured.</td></tr>'}</tbody>
     </table>
-    ${addUserHtml}
-    <section class="card" style="margin-top:24px">
-      <h2>Change My Password</h2>
-      <form method="POST" action="/admin/users/password" class="inline-form">
-        <div class="form-row">
-          <div class="field">
-            <label>New Password</label>
-            <input type="password" name="password" required/>
-          </div>
-          <div class="field">
-            <label>Confirm</label>
-            <input type="password" name="confirm" required/>
-          </div>
-        </div>
-        <button type="submit" class="btn-primary">Update Password</button>
-      </form>
-    </section>
-  `, req.session.username));
+    ${addServerHtml}
+  `, req.discordUser));
 });
 
 router.post("/users/add", requireAuth, requireAdmin, (req, res) => {
-  const { username, password, role } = req.body;
-  const assignedRole = role === "admin" ? "admin" : "moderator";
+  const { guildId, adminRoleId, modRoleId } = req.body;
   try {
-    if (!username || !password) throw new Error("Username and password are required.");
-    if (/\s/.test(username)) throw new Error("Username cannot contain spaces.");
-    addUser(username, password, assignedRole);
-    setFlash(req, "ok", `User '${username}' added as ${assignedRole}.`);
+    saveRuntimeAuthServer({
+      guildId: String(guildId || "").trim(),
+      adminRoleId: String(adminRoleId || "").trim() || null,
+      modRoleId: String(modRoleId || "").trim() || null,
+      addedBy: req.discordUser?.username || null,
+    });
+    setFlash(req, "ok", `Server ${guildId} added.`);
   } catch (err) {
     setFlash(req, "error", err.message);
   }
   res.redirect("/admin/users");
 });
 
-router.post("/users/remove", requireAuth, requireAdmin, (req, res) => {
-  const { username } = req.body;
-  if (username === "admin") {
-    setFlash(req, "error", "The admin account cannot be removed.");
-    return res.redirect("/admin/users");
-  }
-  if (username === req.session.username) {
-    setFlash(req, "error", "You cannot remove your own account.");
-    return res.redirect("/admin/users");
-  }
+router.post("/users/:guildId/remove", requireAuth, requireAdmin, (req, res) => {
+  const { guildId } = req.params;
   try {
-    removeUser(username);
-    setFlash(req, "ok", `User '${username}' removed.`);
-  } catch (err) {
-    setFlash(req, "error", err.message);
-  }
-  res.redirect("/admin/users");
-});
-
-router.post("/users/role", requireAuth, requireAdmin, (req, res) => {
-  const { username, role } = req.body;
-  if (username === "admin") {
-    setFlash(req, "error", "The admin account cannot be modified.");
-    return res.redirect("/admin/users");
-  }
-  if (username === req.session.username) {
-    setFlash(req, "error", "You cannot change your own role.");
-    return res.redirect("/admin/users");
-  }
-  try {
-    setUserRole(username, role);
-    setFlash(req, "ok", `'${username}' is now a ${role}.`);
-  } catch (err) {
-    setFlash(req, "error", err.message);
-  }
-  res.redirect("/admin/users");
-});
-
-router.post("/users/elevate", requireAuth, requireAdmin, (req, res) => {
-  const { username, hours } = req.body;
-  const h = Math.min(168, Math.max(1, parseInt(hours, 10) || 1));
-  try {
-    const until = elevateUser(username, h);
-    setFlash(req, "ok", `'${username}' elevated to admin until ${new Date(until).toLocaleString()}.`);
-  } catch (err) {
-    setFlash(req, "error", err.message);
-  }
-  res.redirect("/admin/users");
-});
-
-router.post("/users/revoke-elevation", requireAuth, requireAdmin, (req, res) => {
-  const { username } = req.body;
-  try {
-    revokeElevation(username);
-    setFlash(req, "ok", `Elevation revoked for '${username}'.`);
-  } catch (err) {
-    setFlash(req, "error", err.message);
-  }
-  res.redirect("/admin/users");
-});
-
-router.post("/users/password", requireAuth, (req, res) => {
-  const { password, confirm } = req.body;
-  if (!password || password !== confirm) {
-    setFlash(req, "error", "Passwords do not match.");
-    return res.redirect("/admin/users");
-  }
-  try {
-    changePassword(req.session.username, password);
-    setFlash(req, "ok", "Password updated.");
+    removeRuntimeAuthServer(guildId);
+    setFlash(req, "ok", `Server ${guildId} removed.`);
   } catch (err) {
     setFlash(req, "error", err.message);
   }
@@ -1254,7 +1111,7 @@ router.get("/applications/:track/:id", requireAuth, (req, res) => {
         <button type="submit" class="btn-sm btn-danger">Delete (permanent)</button>
       </form>
     </div>
-  `, req.session.username));
+  `, req.discordUser));
 });
 
 router.post("/applications/:track/:id", requireAuth, requireAdmin, (req, res) => {
@@ -1510,7 +1367,7 @@ router.get("/logs", requireAuth, (req, res) => {
 
     <h2 style="font-size:1.1rem;font-weight:700;margin-top:36px;margin-bottom:12px">Crash Logs <span class="muted-note">(20 most recent)</span></h2>
     ${crashHtml}
-  `, req.session.username));
+  `, req.discordUser));
 });
 
 module.exports = router;

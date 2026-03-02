@@ -46,7 +46,9 @@ const express = require("express");
 const session = require("express-session");
 const { google } = require("googleapis");
 const { COMMON_FIELDS, TRACK_QUESTIONS, TRACK_LABELS } = require("./questions");
-const { loadCustomQuestions, bootstrapAdminIfNeeded, seedQuestionsFromDefaults } = require("./auth");
+const crypto = require("node:crypto");
+const { loadCustomQuestions, migrateToDiscordAuth, seedQuestionsFromDefaults, setFlash, getAllAuthServers, getEffectiveRoleFromGuildRoles, isUserAuthorized, setSessionUser, setRoleCacheEntry } = require("./auth");
+const { buildAuthUrl, exchangeCode, fetchUser, fetchAllGuildRoles, DiscordOAuthError } = require("./discordOAuth");
 const adminRouter = require("./admin");
 
 function resolvePort() {
@@ -550,7 +552,7 @@ class FileSessionStore extends session.Store {
 
 // ── Express app ───────────────────────────────────────────────────────────────
 
-bootstrapAdminIfNeeded();
+migrateToDiscordAuth();
 seedQuestionsFromDefaults();
 
 const app = express();
@@ -571,6 +573,82 @@ app.use(session({
 }));
 
 app.use("/admin", adminRouter);
+
+// ── Discord OAuth2 routes ──────────────────────────────────────────────────────
+
+app.get("/auth/discord", (req, res) => {
+  const clientId = process.env.DISCORD_CLIENT_ID;
+  const clientSecret = process.env.DISCORD_OAUTH_CLIENT_SECRET;
+  const redirectUri = process.env.DISCORD_OAUTH_REDIRECT_URI;
+
+  if (!clientId || !clientSecret || !redirectUri) {
+    logWebError("oauth_config", new Error("Discord OAuth env vars not set"), {});
+    setFlash(req, "error", "Discord OAuth is not configured. Please contact the administrator.");
+    return res.redirect("/admin/login");
+  }
+
+  const state = crypto.randomBytes(32).toString("hex");
+  req.session.oauthState = state;
+
+  const returnTo = req.query.returnTo || "/admin/dashboard";
+  req.session.returnTo = returnTo.startsWith("/") && !returnTo.startsWith("//") ? returnTo : "/admin/dashboard";
+
+  const url = buildAuthUrl(clientId, redirectUri, state, ["identify", "guilds", "guilds.members.read"]);
+  res.redirect(url);
+});
+
+app.get("/auth/discord/callback", async (req, res) => {
+  const { code, state } = req.query;
+
+  if (!state || state !== req.session.oauthState) {
+    setFlash(req, "error", "Authentication failed. Please try again.");
+    return res.redirect("/admin/login");
+  }
+  delete req.session.oauthState;
+
+  if (!code) {
+    setFlash(req, "error", "Authentication was cancelled.");
+    return res.redirect("/admin/login");
+  }
+
+  const clientId = process.env.DISCORD_CLIENT_ID;
+  const clientSecret = process.env.DISCORD_OAUTH_CLIENT_SECRET;
+  const redirectUri = process.env.DISCORD_OAUTH_REDIRECT_URI;
+
+  try {
+    const tokens = await exchangeCode(code, clientId, clientSecret, redirectUri);
+    const user = await fetchUser(tokens.access_token);
+    const authServers = getAllAuthServers();
+    const guildIds = authServers.map((s) => s.guildId);
+    const guildRoles = await fetchAllGuildRoles(tokens.access_token, guildIds);
+
+    if (!isUserAuthorized(guildRoles, authServers)) {
+      logWebError("oauth_unauthorized", new Error("User lacks required role"), { discordId: user.id, username: user.username });
+      setFlash(req, "error", "You do not have the required Discord role to access this panel.");
+      return res.redirect("/admin/login");
+    }
+
+    const effectiveRole = getEffectiveRoleFromGuildRoles(guildRoles, authServers);
+    const discordUser = { id: user.id, username: user.username, avatar: user.avatar || null, effectiveRole };
+
+    const returnTo = req.session.returnTo || "/admin/dashboard";
+    const accessToken = tokens.access_token;
+
+    req.session.regenerate((err) => {
+      if (err) {
+        logWebError("oauth_session_regenerate", err, {});
+        return res.redirect("/admin/login");
+      }
+      setSessionUser(req.session, discordUser, accessToken);
+      setRoleCacheEntry(user.id, guildRoles);
+      res.redirect(returnTo);
+    });
+  } catch (err) {
+    logWebError("oauth_callback", err, { url: req.originalUrl });
+    setFlash(req, "error", "Authentication failed. Please try again.");
+    res.redirect("/admin/login");
+  }
+});
 
 app.get("/", (_req, res) => {
   res.send(indexPage());

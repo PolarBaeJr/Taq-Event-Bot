@@ -538,6 +538,33 @@ tbody.drag-drop-target,
   white-space: pre;
 }
 
+/* ── Discord login button ──────────────────────────────────────── */
+.discord-login-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: #5865F2;
+  color: #fff;
+  padding: 14px 28px;
+  border-radius: var(--radius, 6px);
+  font-size: 1rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.15s;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 8px;
+}
+.discord-login-btn:hover { background: #4752C4; }
+.discord-login-btn svg { flex-shrink: 0; }
+.login-note {
+  color: var(--muted, #888);
+  font-size: 0.85rem;
+  text-align: center;
+  margin-top: 16px;
+}
+
 /* ── Responsive ────────────────────────────────────────────────── */
 @media (max-width: 900px) {
   .admin-nav {
