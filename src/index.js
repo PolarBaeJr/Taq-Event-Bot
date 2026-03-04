@@ -2376,10 +2376,29 @@ async function maybeSendPendingReminders() {
       }) + 1;
       stateChanged = true;
     } catch (err) {
-      console.error(
-        `Failed sending reminder for application ${application.messageId || "unknown"}:`,
-        err.message
-      );
+      if (isDiscordUnknownChannelError(err)) {
+        logger.error(
+          "reminder_channel_not_found",
+          `Reminder target channel not found for application ${application.messageId || "unknown"} — closing to prevent retry loop.`,
+          {
+            messageId: application.messageId,
+            threadId: application.threadId,
+            channelId: application.channelId,
+            errorCode: err.code,
+          }
+        );
+        application.status = "closed";
+        application.adminDone = true;
+        application.closedAt = new Date(nowMs).toISOString();
+        application.closedBy = "bot_auto";
+        application.closeReason = "Reminder channel not found (Unknown Channel 10003) — auto-closed by reminder loop.";
+        stateChanged = true;
+      } else {
+        console.error(
+          `Failed sending reminder for application ${application.messageId || "unknown"}:`,
+          err.message
+        );
+      }
     }
   }
 
@@ -3752,6 +3771,10 @@ function isRetryableStartupError(err) {
     message.includes("network") ||
     message.includes("timed out")
   );
+}
+
+function isDiscordUnknownChannelError(err) {
+  return Number(err?.code) === 10003;
 }
 
 async function bootWithRetry() {
