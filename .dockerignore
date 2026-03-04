@@ -1,0 +1,16 @@
+node_modules
+.git
+.env
+.env.*
+.bot-state.json
+.bot-state.*.json
+service-account.json
+logs
+crashlog
+backups
+*.log
+*.pid
+.DS_Store
+test
+scripts
+.github
