@@ -10,6 +10,10 @@ services:
       NODE_ENV: production
       WEB_PORT: "3000"
       GOOGLE_SERVICE_ACCOUNT_KEY_FILE: ./service-account.json
+      HTTPS_KEY_FILE: ""
+      HTTPS_CERT_FILE: ""
+      HTTPS_KEY_PEM: ""
+      HTTPS_CERT_PEM: ""
     volumes:
       - ./.bot-state.json:/app/.bot-state.json
       - ./service-account.json:/app/service-account.json:ro
