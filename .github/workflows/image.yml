@@ -5,6 +5,13 @@ name: Image
 # Runs here rather than on the host on purpose: the host is a home machine, and
 # "docker build" there competes with the bot it is rebuilding. The dashboard's
 # "update image" button pulls the tag this produces.
+#
+# Each architecture builds on a runner of its own architecture, and a second job
+# stitches the two into one manifest list. The obvious alternative — one job with
+# QEMU and platforms: linux/amd64,linux/arm64 — is what this replaced: emulating
+# arm64 on an amd64 runner ran `npm ci` under QEMU and took over two hours, against
+# thirty-odd seconds for amd64 alone. GitHub's arm64 runners are free for public
+# repositories, so the emulator buys nothing here.
 
 on:
   push:
@@ -17,24 +24,43 @@ concurrency:
   group: image-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # Lowercase because a registry reference has to be, and the owner is not.
+  REGISTRY_IMAGE: ghcr.io/polarbaejr/taq-event-bot
+
 jobs:
-  publish:
-    runs-on: ubuntu-latest
+  build:
+    # No tags pushed here. Each leg pushes an untagged image and reports its digest;
+    # tagging happens once, in merge, so :latest never briefly points at a
+    # single-architecture image.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       packages: write
 
     steps:
+      # "linux/amd64" is not usable in an artifact name; "linux-amd64" is.
+      - name: Name this platform
+        run: |
+          platform=${{ matrix.platform }}
+          echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
+
       - name: Checkout
         uses: actions/checkout@v4
 
-      # arm64 is emulated here. The runner is amd64 and the host this deploys to may not
-      # be — an amd64-only image fails to pull on a Pi with "no matching manifest", which
-      # is a confusing way to find out.
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v5
         with:
-          platforms: arm64
+          images: ${{ env.REGISTRY_IMAGE }}
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
@@ -46,18 +72,89 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push
+      - name: Build and push by digest
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
-          push: true
-          platforms: linux/amd64,linux/arm64
-          # Lowercase because a registry reference has to be, and the owner is not.
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          # Scoped per architecture: one shared cache would have the two legs
+          # overwriting each other's layers every run.
+          cache-from: type=gha,scope=${{ env.PLATFORM_PAIR }}
+          cache-to: type=gha,mode=max,scope=${{ env.PLATFORM_PAIR }}
+
+      # The digest is the only thing merge needs, and an empty file named after it
+      # carries it more simply than any output plumbing between jobs.
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest='${{ steps.build.outputs.digest }}'
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ env.PLATFORM_PAIR }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    # Only reached when both legs succeeded, so a failed arm64 build leaves the
+    # previous :latest in place rather than replacing it with amd64 only.
+    runs-on: ubuntu-latest
+    needs: [build]
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # The same two tags the single-job workflow pushed. Kept literal rather than
+      # type=sha, which would have renamed the commit tag to sha-<...> and broken
+      # anything pinning the old form.
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY_IMAGE }}
           tags: |
-            ghcr.io/polarbaejr/taq-event-bot:latest
-            ghcr.io/polarbaejr/taq-event-bot:${{ github.sha }}
-          labels: |
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=${{ github.sha }}
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create the manifest list
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ env.REGISTRY_IMAGE }}@sha256:%s ' *)
+
+      # Fails the run if the list came out single-architecture, which is the whole
+      # bug this workflow exists to prevent.
+      - name: Check both architectures are present
+        run: |
+          docker buildx imagetools inspect '${{ env.REGISTRY_IMAGE }}:${{ steps.meta.outputs.version }}' \
+            | tee /tmp/inspect.txt
+          for want in linux/amd64 linux/arm64; do
+            grep -q "$want" /tmp/inspect.txt \
+              || { echo "::error::$want missing from the manifest list"; exit 1; }
+          done
