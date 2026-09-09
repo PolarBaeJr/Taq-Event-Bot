@@ -62,7 +62,24 @@ Create a `.env` file:
 | `MINECRAFT_CONSOLE_ROLE_IDS` | — | Discord role IDs allowed the same |
 | `MINECRAFT_CONSOLE_TIMEOUT_MS` | `8000` | Per-request timeout for the console |
 | `DEPLOY_USER_IDS` | falls back to `MINECRAFT_CONSOLE_USER_IDS` | Discord user IDs allowed to use the Deploy page |
-| `DEPLOY_LOG_FILE` | `logs/deploy-actions.log` | Where pulls and restarts are recorded |
+| `DEPLOY_LOG_FILE` | `logs/deploy-actions.log` | Where pulls, restarts and image updates are recorded |
+
+### Deploy page
+
+`/admin/deploy` ships what is on `main` and, where the bot runs in a container, keeps
+that container on the current image.
+
+- **Pull latest** — `git pull --ff-only`, reinstalling dependencies only when the
+  lockfile moved. A dirty tree makes it refuse rather than overwrite.
+- **Restart bot / dashboard** — pm2, falling back to `scripts/botctl.js`.
+- **Update image to latest** — `docker compose pull` then `up -d`, so the container comes
+  back on the image CI published. `.github/workflows/image.yml` builds
+  `ghcr.io/polarbaejr/taq-event-bot:latest` on every push to `main`.
+- **Build image here** — builds that same tag from the working tree, for a host that
+  would rather not wait for CI.
+
+Every action is written to `DEPLOY_LOG_FILE` with the Discord account that asked for it.
+The image controls hide themselves on a host with no Docker daemon.
 
 **Discord bot permissions required:** Read Message History, Send Messages, Add Reactions, Create Public Threads, Send Messages in Threads, Manage Threads, Manage Roles.
 

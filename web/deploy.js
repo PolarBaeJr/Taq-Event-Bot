@@ -26,6 +26,16 @@ const TARGETS = Object.freeze({
 
 const COMMAND_TIMEOUT_MS = 120000;
 
+// A build pulls a base image and runs npm ci; two minutes is a pull's budget, not a
+// build's.
+const IMAGE_TIMEOUT_MS = 900000;
+
+// The compose service and the tag it runs, from docker-compose.yml. Both are constants
+// here for the same reason the pm2 names are: a request must not be able to name a
+// container.
+const COMPOSE_SERVICE = "taq-event";
+const IMAGE_TAG = "ghcr.io/polarbaejr/taq-event-bot:latest";
+
 // run: handles run.
 //
 // execFile, not exec: an argument list cannot become a second command the way a shell string
@@ -206,11 +216,124 @@ async function restart(target, actor) {
   return { deferred: false, target: processName, result, fallback };
 }
 
+// docker: handles docker.
+//
+// "docker compose", not "docker-compose": the v1 script is gone from current installs,
+// and the subcommand form is what ships with the daemon.
+function docker(...args) {
+  return run("docker", args, { timeout: IMAGE_TIMEOUT_MS });
+}
+
+// dockerAvailable: whether there is a daemon to talk to at all.
+//
+// Asked before anything is offered, so a host running the bot under pm2 gets told the
+// image controls do not apply to it rather than a failed command.
+async function dockerAvailable() {
+  const probe = await run("docker", ["version", "--format", "{{.Server.Version}}"]);
+  return { ok: probe.ok, version: probe.stdout, error: probe.stderr };
+}
+
+// imageStatus: what is running, and what it was built from.
+//
+// The digest is the honest answer to "is this the latest image" — tags move, and two
+// containers on the same tag can be running different code. Compared against the local
+// copy of the tag, so a pull that has not been applied yet is visible.
+async function imageStatus() {
+  const daemon = await dockerAvailable();
+  if (!daemon.ok) {
+    return { available: false, error: daemon.error || "No Docker daemon on this host." };
+  }
+
+  const [container, tagged] = await Promise.all([
+    run("docker", [
+      "inspect",
+      COMPOSE_SERVICE,
+      "--format",
+      "{{.State.Status}}\t{{.Config.Image}}\t{{.Image}}\t{{.State.StartedAt}}",
+    ]),
+    run("docker", ["image", "inspect", IMAGE_TAG, "--format", "{{.Id}}\t{{.Created}}"]),
+  ]);
+
+  const [state, configImage, runningImageId, startedAt] = container.ok
+    ? container.stdout.split("\t")
+    : [];
+  const [localImageId, localCreated] = tagged.ok ? tagged.stdout.split("\t") : [];
+
+  return {
+    available: true,
+    daemonVersion: daemon.version,
+    service: COMPOSE_SERVICE,
+    tag: IMAGE_TAG,
+    running: Boolean(container.ok),
+    state: state || "not created",
+    configImage: configImage || "",
+    startedAt: startedAt || "",
+    runningImageId: runningImageId || "",
+    localImageId: localImageId || "",
+    localImageCreated: localCreated || "",
+    imagePresent: Boolean(tagged.ok),
+    // The one thing worth acting on: the tag on disk is newer than what is running.
+    stale: Boolean(container.ok && tagged.ok && runningImageId && localImageId
+      && runningImageId !== localImageId),
+  };
+}
+
+// updateImage: bring the container up to date with the image.
+//
+// mode "pull" takes the image CI published; mode "build" makes one here. Either way the
+// container is recreated afterwards, because a new image does nothing until something
+// runs it. Both are fixed argument lists — the only thing a request chooses is which of
+// these two words it sent.
+async function updateImage(mode, actor) {
+  if (mode !== "pull" && mode !== "build") {
+    throw new Error("Unknown image update mode.");
+  }
+
+  const before = await imageStatus();
+  if (!before.available) {
+    throw new Error(before.error);
+  }
+
+  const steps = [];
+  const fetched = mode === "pull"
+    ? await docker("compose", "pull", COMPOSE_SERVICE)
+    : await docker("compose", "build", "--pull", COMPOSE_SERVICE);
+  steps.push(fetched);
+
+  // Recreated even when the pull found nothing new: a container left stopped by a
+  // previous half-finished update should come back up, and up -d on an unchanged image
+  // is a no-op.
+  let recreated = null;
+  if (fetched.ok) {
+    recreated = await docker("compose", "up", "-d", COMPOSE_SERVICE);
+    steps.push(recreated);
+  }
+
+  const after = await imageStatus();
+  auditDeploy({
+    action: `image_${mode}`,
+    actor,
+    service: COMPOSE_SERVICE,
+    tag: IMAGE_TAG,
+    ok: fetched.ok && Boolean(recreated?.ok),
+    fromImage: before.runningImageId.slice(0, 19),
+    toImage: after.runningImageId.slice(0, 19),
+    failures: steps.filter((step) => !step.ok).map((step) => step.command),
+  });
+
+  return { mode, steps, status: after, ok: fetched.ok && Boolean(recreated?.ok) };
+}
+
 module.exports = {
   TARGETS,
   status,
   pull,
   restart,
   readDeployLog,
+  imageStatus,
+  updateImage,
+  dockerAvailable,
+  COMPOSE_SERVICE,
+  IMAGE_TAG,
   REPO_ROOT,
 };

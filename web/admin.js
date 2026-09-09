@@ -1664,8 +1664,14 @@ router.get("/deploy", requireAuth, requireAdmin, async (req, res) => {
   }
 
   let state;
+  let imageState;
   try {
     state = await deployer.status();
+    // Never fatal to the page: the repo half is useful on a host with no Docker at all.
+    imageState = await deployer.imageStatus().catch((error) => ({
+      available: false,
+      error: error?.message || String(error),
+    }));
   } catch (error) {
     return res.send(adminLayout("Deploy", `
       ${flash(req)}
@@ -1721,12 +1727,95 @@ router.get("/deploy", requireAuth, requireAdmin, async (req, res) => {
     <p class="muted-note">A pull runs <code>git pull --ff-only</code> and only reinstalls
       dependencies when the lockfile moved. Restarting the dashboard drops this page for a
       moment — that is expected.</p>
+    ${imagePanelHtml(imageState)}
     <h2 style="font-size:1.1rem;font-weight:700;margin-top:28px;margin-bottom:8px">Recent deploys</h2>
     <table class="admin-table">
       <thead><tr><th>When</th><th>Action</th><th>Who</th><th>Details</th></tr></thead>
       <tbody>${historyRows || '<tr><td colspan="4" class="muted-note">Nothing yet.</td></tr>'}</tbody>
     </table>
   `, req.discordUser));
+});
+
+// imagePanelHtml: the container image half of the Deploy page.
+//
+// Separate from the repo half because the two can disagree — main can be pulled while the
+// container still runs last week's image — and the page is only useful if it says which is
+// which. Hosts that run the bot under pm2 have no image at all, and get told so rather
+// than being handed a button that cannot work.
+function imagePanelHtml(image) {
+  const heading = `<h2 style="font-size:1.1rem;font-weight:700;margin-top:28px;margin-bottom:8px">Container image</h2>`;
+
+  if (!image || !image.available) {
+    return `${heading}
+      <p class="muted-note">No Docker daemon reachable from this host${
+        image?.error ? `: ${escHtml(image.error)}` : ""
+      }. The image controls only apply where the bot runs in a container — under pm2 the
+      pull and restart buttons above are the whole story.</p>`;
+  }
+
+  const badge = image.stale
+    ? `<span class="badge badge-pending" style="font-size:0.68rem">newer image on disk</span>`
+    : image.running
+      ? `<span class="badge badge-ok" style="font-size:0.68rem">running the current image</span>`
+      : `<span class="badge badge-pending" style="font-size:0.68rem">${escHtml(image.state)}</span>`;
+
+  const shortId = (id) => escHtml(String(id || "").replace(/^sha256:/, "").slice(0, 12) || "—");
+
+  return `${heading}
+    <p class="muted-note" style="margin-bottom:12px">
+      <code>${escHtml(image.tag)}</code> as service <strong>${escHtml(image.service)}</strong> ${badge}<br>
+      container ${escHtml(image.state)}${image.startedAt ? ` since ${escHtml(new Date(image.startedAt).toLocaleString())}` : ""}
+      — running image <code>${shortId(image.runningImageId)}</code>,
+      tag on disk <code>${shortId(image.localImageId)}</code>${
+        image.localImageCreated ? ` built ${escHtml(new Date(image.localImageCreated).toLocaleString())}` : ""
+      }<br>
+      <span class="muted-note">Docker ${escHtml(image.daemonVersion)}</span>
+    </p>
+    ${image.imagePresent ? "" : `<p class="muted-note">That tag is not on this host yet — pull it, or build one here.</p>`}
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin:16px 0">
+      <form method="POST" action="/admin/deploy/image" style="margin:0">
+        <input type="hidden" name="mode" value="pull"/>
+        <button type="submit">Update image to latest</button>
+      </form>
+      <form method="POST" action="/admin/deploy/image" style="margin:0">
+        <input type="hidden" name="mode" value="build"/>
+        <button type="submit">Build image here</button>
+      </form>
+    </div>
+    <p class="muted-note">Updating pulls <code>${escHtml(image.tag)}</code> and recreates the
+      container. Building makes that image from the working tree instead, for when CI has not
+      published one yet. Either way the container comes back on the new image — a pulled image
+      that nothing restarts changes nothing.</p>`;
+}
+
+router.post("/deploy/image", requireAuth, requireAdmin, async (req, res) => {
+  const problem = deployGateProblem(req);
+  if (problem) {
+    setFlash(req, "error", problem);
+    return res.redirect("/admin/deploy");
+  }
+
+  // Coerced to one of two words before it reaches the deployer, the same way the restart
+  // target is: the body chooses between fixed commands, never any part of one.
+  const mode = req.body?.mode === "build" ? "build" : "pull";
+  try {
+    const outcome = await deployer.updateImage(mode, deployActor(req));
+    const running = outcome.status?.running ? outcome.status.state : "not running";
+    req.session.deployResult = {
+      ok: outcome.ok,
+      summary: outcome.ok
+        ? `Image ${mode === "build" ? "built" : "pulled"} and container recreated — now ${running}.`
+        : `Image ${mode} did not finish; the container was left as it was.`,
+      steps: outcome.steps,
+    };
+  } catch (error) {
+    req.session.deployResult = {
+      ok: false,
+      summary: error?.message || String(error),
+      steps: [],
+    };
+  }
+  res.redirect("/admin/deploy");
 });
 
 router.post("/deploy/pull", requireAuth, requireAdmin, async (req, res) => {
