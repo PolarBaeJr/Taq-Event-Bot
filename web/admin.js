@@ -1457,7 +1457,8 @@ function consoleGateProblem(req) {
       + "for the web process, then restart it.";
   }
   if (!minecraftConsole.hasAllowlist()) {
-    return "Nobody is on the console allowlist. Add Discord IDs to MINECRAFT_CONSOLE_USER_IDS.";
+    return "Nobody is on the console allowlist. Add Discord IDs to MINECRAFT_CONSOLE_USER_IDS "
+      + "or a role id to MINECRAFT_CONSOLE_ROLE_IDS.";
   }
   if (!minecraftConsole.isAllowed({
     userId: req.discordUser?.id,
@@ -1619,23 +1620,46 @@ router.post("/console/run", requireAuth, requireAdmin, async (req, res) => {
 
 // ── Deploy ────────────────────────────────────────────────────────────────────
 
-// Who may ship code. Falls back to the console allowlist so there is one list to keep, and
-// fails closed when neither is set: an unset variable should not hand out a deploy button.
+// Who may ship code, by user id or by Discord role.
+//
+// Falls back to the console allowlist so there is one list to keep, and fails closed when
+// neither is set: an unset variable should not hand out a deploy button.
+//
+// The fallback is all-or-nothing across both DEPLOY_* variables rather than per-variable.
+// Setting DEPLOY_USER_IDS alone means "only these people ship code" — if the role half
+// still fell through to MINECRAFT_CONSOLE_ROLE_IDS, naming the people you trust would
+// quietly widen the gate to everyone holding the console role, which is the opposite of
+// what writing that list down looks like.
+function idList(raw) {
+  return String(raw || "").split(/[,\s]+/).filter(Boolean);
+}
+
 function deployAllowlist() {
-  const raw = process.env.DEPLOY_USER_IDS || process.env.MINECRAFT_CONSOLE_USER_IDS || "";
-  return raw.split(/[,\s]+/).filter(Boolean);
+  const ownUsers = idList(process.env.DEPLOY_USER_IDS);
+  const ownRoles = idList(process.env.DEPLOY_ROLE_IDS);
+  if (ownUsers.length > 0 || ownRoles.length > 0) {
+    return { userIds: ownUsers, roleIds: ownRoles };
+  }
+  return {
+    userIds: idList(process.env.MINECRAFT_CONSOLE_USER_IDS),
+    roleIds: idList(process.env.MINECRAFT_CONSOLE_ROLE_IDS),
+  };
 }
 
 function deployGateProblem(req) {
   const allowed = deployAllowlist();
-  if (allowed.length === 0) {
-    return "Nobody is allowed to deploy. Set DEPLOY_USER_IDS (or MINECRAFT_CONSOLE_USER_IDS) "
-      + "for the web process.";
+  if (allowed.userIds.length === 0 && allowed.roleIds.length === 0) {
+    return "Nobody is allowed to deploy. Set DEPLOY_USER_IDS or DEPLOY_ROLE_IDS (or the "
+      + "MINECRAFT_CONSOLE_* equivalents) for the web process.";
   }
-  if (!allowed.includes(String(req.discordUser?.id || ""))) {
-    return "Your Discord account is not on the deploy allowlist.";
+  if (allowed.userIds.includes(String(req.discordUser?.id || ""))) {
+    return null;
   }
-  return null;
+  const held = Array.isArray(req.discordUser?.roleIds) ? req.discordUser.roleIds : [];
+  if (held.some((roleId) => allowed.roleIds.includes(String(roleId)))) {
+    return null;
+  }
+  return "Your Discord account is not on the deploy allowlist.";
 }
 
 function deployActor(req) {

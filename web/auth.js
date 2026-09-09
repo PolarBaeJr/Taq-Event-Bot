@@ -195,6 +195,24 @@ function getEffectiveRoleFromGuildRoles(guildRoles, authServers) {
   return highestRole;
 }
 
+// flattenRoleIds: every role the user holds, across every guild, as one list.
+//
+// guildRoles is keyed by guild because effectiveRole is decided per guild. Allowlists
+// that name a role — the Minecraft console, the deploy gate — only ask "do you hold
+// this role", so they need it flat. Kept as one list rather than per-guild because a
+// role id is already unique across Discord.
+function flattenRoleIds(guildRoles) {
+  const out = [];
+  if (!guildRoles || typeof guildRoles.values !== "function") return out;
+  for (const entry of guildRoles.values()) {
+    for (const roleId of entry?.roles || []) {
+      const id = String(roleId || "").trim();
+      if (id && !out.includes(id)) out.push(id);
+    }
+  }
+  return out;
+}
+
 function isUserAuthorized(guildRoles, authServers) {
   return getEffectiveRoleFromGuildRoles(guildRoles, authServers) !== null;
 }
@@ -237,7 +255,7 @@ async function requireAuth(req, res, next) {
     return res.redirect("/admin/login");
   }
 
-  req.discordUser = { ...discordUser, effectiveRole, guildRoles };
+  req.discordUser = { ...discordUser, effectiveRole, guildRoles, roleIds: flattenRoleIds(guildRoles) };
   next();
 }
 
