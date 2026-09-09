@@ -56,6 +56,13 @@ Create a `.env` file:
 | `BACKUP_DIR` | `backups` | Backup directory |
 | `BACKUP_INTERVAL_MINUTES` | `360` | Backup interval |
 | `BACKUP_MAX_FILES` | `60` | Max backup files to keep |
+| `MINECRAFT_CONSOLE_URL` | — | TAqCore remote console, e.g. `http://100.83.62.68:8125` |
+| `MINECRAFT_CONSOLE_TOKEN` | — | Bearer token from `plugins/TAqCore/config.yml` |
+| `MINECRAFT_CONSOLE_USER_IDS` | — | Discord user IDs allowed to use `/mc` and the Console page |
+| `MINECRAFT_CONSOLE_ROLE_IDS` | — | Discord role IDs allowed the same |
+| `MINECRAFT_CONSOLE_TIMEOUT_MS` | `8000` | Per-request timeout for the console |
+| `DEPLOY_USER_IDS` | falls back to `MINECRAFT_CONSOLE_USER_IDS` | Discord user IDs allowed to use the Deploy page |
+| `DEPLOY_LOG_FILE` | `logs/deploy-actions.log` | Where pulls and restarts are recorded |
 
 **Discord bot permissions required:** Read Message History, Send Messages, Add Reactions, Create Public Threads, Send Messages in Threads, Manage Threads, Manage Roles.
 

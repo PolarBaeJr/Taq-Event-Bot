@@ -34,6 +34,8 @@ const OPTIONAL_SNOWFLAKE_LIST_ENV_KEYS = [
   "DISCORD_BUILDER_APPROVED_ROLE_IDS",
   "DISCORD_CMD_APPROVED_ROLE_IDS",
   "DISCORD_APPROVED_ROLE_IDS",
+  "MINECRAFT_CONSOLE_USER_IDS",
+  "MINECRAFT_CONSOLE_ROLE_IDS",
 ];
 
 const VALID_THREAD_ARCHIVE_MINUTES = new Set([60, 1440, 4320, 10080]);
@@ -323,7 +325,32 @@ function loadStartupConfig(options = {}) {
       integer: true,
       min: 1,
     }, errors),
+    minecraftConsoleUrl: normalizeString(env.MINECRAFT_CONSOLE_URL) || null,
+    minecraftConsoleToken: normalizeString(env.MINECRAFT_CONSOLE_TOKEN) || null,
+    minecraftConsoleUserIds: optionalSnowflakeListValues.MINECRAFT_CONSOLE_USER_IDS,
+    minecraftConsoleRoleIds: optionalSnowflakeListValues.MINECRAFT_CONSOLE_ROLE_IDS,
+    minecraftConsoleTimeoutMs: parseNumberEnv(
+      env,
+      "MINECRAFT_CONSOLE_TIMEOUT_MS",
+      8000,
+      { integer: true, min: 1000 },
+      errors
+    ),
   };
+
+  // The console runs commands as the server console, so a half-configured one is worth
+  // saying out loud rather than discovering when /mc answers "not configured".
+  if (config.minecraftConsoleUrl && !config.minecraftConsoleToken) {
+    warnings.push("MINECRAFT_CONSOLE_URL is set but MINECRAFT_CONSOLE_TOKEN is missing; /mc stays off.");
+  }
+  if (config.minecraftConsoleUrl && config.minecraftConsoleToken &&
+      config.minecraftConsoleUserIds.length === 0 &&
+      config.minecraftConsoleRoleIds.length === 0) {
+    warnings.push(
+      "Minecraft console is configured but nobody is allowlisted; set MINECRAFT_CONSOLE_USER_IDS " +
+      "or MINECRAFT_CONSOLE_ROLE_IDS or /mc will refuse everyone."
+    );
+  }
 
   if (config.dailyDigestEnabled && !Number.isInteger(config.dailyDigestHourUtc)) {
     warnings.push("Daily digest is enabled but DAILY_DIGEST_HOUR_UTC is invalid. Using fallback.");

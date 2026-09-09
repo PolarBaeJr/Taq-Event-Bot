@@ -16,6 +16,8 @@ const {
 } = require("discord.js");
 
 // Custom ID prefixes used to route button/select/modal interactions back to the right handler.
+const { formatConsoleBlock } = require("./minecraftConsole");
+
 const REACTION_ROLE_GUI_PREFIX = "rrgui";
 const REACTION_ROLE_GUI_ACTION_ADD = "add";
 const REACTION_ROLE_GUI_ACTION_REMOVE = "remove";
@@ -207,6 +209,10 @@ function createInteractionCommandHandler(options = {}) {
     typeof options.getApplicationDisplayId === "function"
       ? options.getApplicationDisplayId
       : (app) => app?.applicationId || app?.jobId || app?.messageId || "unknown";
+  const minecraftConsole =
+    options.minecraftConsole && typeof options.minecraftConsole.run === "function"
+      ? options.minecraftConsole
+      : null;
   const logger =
     options.logger &&
     typeof options.logger.error === "function" &&
@@ -947,6 +953,216 @@ function createInteractionCommandHandler(options = {}) {
       replied: Boolean(interaction?.replied),
       ...extra,
     };
+  }
+
+  // memberRoleIds: handles member role ids.
+  //
+  // A cached guild member hands back a role manager; a raw interaction payload hands back a
+  // plain array. Both shapes turn up, so both are read.
+  function memberRoleIds(interaction) {
+    const roles = interaction?.member?.roles;
+    if (Array.isArray(roles)) {
+      return roles.map((role) => String(role));
+    }
+    if (roles?.cache && typeof roles.cache.keys === "function") {
+      return [...roles.cache.keys()].map((role) => String(role));
+    }
+    return [];
+  }
+
+  // handleMinecraftConsoleCommand: handles handle minecraft console command.
+  //
+  // /mc reaches TAqCore's remote console over the tailnet. Two gates stand in front of it:
+  // the allowlist checked here, and the bearer token on the server, which also writes every
+  // command to its own audit log with the Discord user named as the actor. Replies are
+  // ephemeral because console output is not something to spray into a channel.
+  async function handleMinecraftConsoleCommand(interaction) {
+    const subcommand = interaction.options.getSubcommand(false) || "status";
+
+    if (!minecraftConsole || !minecraftConsole.isConfigured()) {
+      await interaction.reply({
+        content:
+          "The Minecraft console is not configured. Set `MINECRAFT_CONSOLE_URL` and " +
+          "`MINECRAFT_CONSOLE_TOKEN`, then restart the bot.",
+        ephemeral: true,
+      });
+      return;
+    }
+
+    if (!minecraftConsole.isAllowed({
+      userId: interaction.user.id,
+      roleIds: memberRoleIds(interaction),
+    })) {
+      const empty = !minecraftConsole.hasAllowlist();
+      await interaction.reply({
+        content: empty
+          ? "Nobody is on the console allowlist yet. Add IDs to `MINECRAFT_CONSOLE_USER_IDS` " +
+            "or `MINECRAFT_CONSOLE_ROLE_IDS`."
+          : "You are not on the Minecraft console allowlist.",
+        ephemeral: true,
+      });
+      logInteractionDebug(
+        "minecraft_console_denied",
+        "Console command refused by the allowlist.",
+        interaction,
+        { subcommand, allowlistEmpty: empty }
+      );
+      return;
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+
+    try {
+      if (subcommand === "status") {
+        const details = minecraftConsole.describe();
+        await minecraftConsole.health();
+        await interaction.editReply({
+          content: [
+            `Server console is up at \`${details.url}\`.`,
+            `Allowlist: ${details.allowedUserCount} user(s), ${details.allowedRoleCount} role(s).`,
+            details.deny.length > 0
+              ? `Refused from Discord: ${details.deny.map((entry) => `\`${entry}\``).join(", ")}.`
+              : "Nothing is refused before it reaches the server.",
+          ].join("\n"),
+        });
+        return;
+      }
+
+      if (subcommand === "tail") {
+        const requested = interaction.options.getInteger("lines");
+        const result = await minecraftConsole.tail({
+          limit: requested === null ? undefined : requested,
+        });
+        const block = formatConsoleBlock(result.lines);
+        await interaction.editReply({
+          content: block
+            ? `Last ${result.lines.length} console line(s):\n${block}`
+            : "The console buffer is empty.",
+          allowedMentions: { parse: [] },
+        });
+        return;
+      }
+
+      if (subcommand === "plugins") {
+        const listing = await minecraftConsole.plugins();
+        const loaded = listing.plugins
+          .map((entry) => `${entry.enabled ? "" : "✗ "}${entry.name} ${entry.version}`)
+          .join(", ");
+        const enabledCount = listing.plugins.filter((entry) => entry.enabled).length;
+        const pending = listing.pending.length > 0
+          ? `\nWaiting for the next restart: ${listing.pending.join(", ")}`
+          : "";
+        await interaction.editReply({
+          content:
+            `${enabledCount} of ${listing.plugins.length} plugins enabled ` +
+            `(✗ marks a disabled one).${pending}\n${formatConsoleBlock([loaded]) || "_(none)_"}`,
+          allowedMentions: { parse: [] },
+        });
+        return;
+      }
+
+      if (subcommand === "restart") {
+        if (interaction.options.getBoolean("confirm") !== true) {
+          await interaction.editReply({
+            content: "Restart cancelled — pass `confirm: True` to actually restart the server.",
+          });
+          return;
+        }
+
+        const actor = `discord:${interaction.user.username}(${interaction.user.id})`;
+        if (typeof logControlCommand === "function") {
+          try {
+            await logControlCommand("mc_restart", interaction);
+          } catch (error) {
+            // The server's own audit log is the record that matters; this one is a convenience.
+          }
+        }
+
+        // The server tears down its own listener on the way out, so a dropped connection here
+        // is the expected shape of success, not a failure worth reporting as one.
+        let dispatched = true;
+        let detail = "";
+        try {
+          const result = await minecraftConsole.run({
+            command: "restart",
+            actor,
+            force: true,
+          });
+          detail = result.output.length > 0 ? formatConsoleBlock(result.output) : "";
+        } catch (error) {
+          const message = error?.message || String(error);
+          dispatched = /Could not reach|did not answer/i.test(message);
+          if (!dispatched) detail = message;
+        }
+
+        logInteractionDebug(
+          "minecraft_console_restart",
+          "Server restart requested from Discord.",
+          interaction,
+          { dispatched }
+        );
+        await interaction.editReply({
+          content: dispatched
+            ? "Restart dispatched. The start script syncs the newest TAq plugin builds on the " +
+              `way back up, so give it a minute or two.\n${detail}`
+            : `Restart may not have gone through: ${detail}`,
+          allowedMentions: { parse: [] },
+        });
+        return;
+      }
+
+      if (subcommand === "run") {
+        const requested = interaction.options.getString("command") || "";
+        const actor = `discord:${interaction.user.username}(${interaction.user.id})`;
+        const result = await minecraftConsole.run({ command: requested, actor });
+        const block = formatConsoleBlock(result.output);
+
+        if (typeof logControlCommand === "function") {
+          try {
+            await logControlCommand(`mc_run: ${result.command}`, interaction);
+          } catch (error) {
+            logInteractionDebug(
+              "minecraft_console_control_log_failed",
+              "Console command ran but the control log write failed.",
+              interaction,
+              { command: result.command, error: error?.message || String(error) }
+            );
+          }
+        }
+        logInteractionDebug(
+          "minecraft_console_run",
+          "Console command dispatched.",
+          interaction,
+          { command: result.command, ok: result.ok, outputLines: result.output.length }
+        );
+
+        const status = result.ok ? "" : "\nThe server reported the command as unknown or failed.";
+        await interaction.editReply({
+          content: `\`/${result.command}\`${status}\n${block || "_(no console output)_"}`,
+          allowedMentions: { parse: [] },
+        });
+        return;
+      }
+
+      await interaction.editReply({
+        content: "Unknown `/mc` action. Use `run`, `tail`, `plugins`, `restart`, or `status`.",
+      });
+    } catch (error) {
+      logInteractionFailure(
+        "minecraft_console_failed",
+        "Console command failed.",
+        interaction,
+        error,
+        { subcommand }
+      );
+      const message = error?.message || String(error);
+      const reply = { content: `Console request failed: ${message}` };
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply(reply);
+      } else {
+        await interaction.reply({ ...reply, ephemeral: true });
+      }
+    }
   }
 
   // logInteractionDebug: handles log interaction debug.
@@ -1891,6 +2107,7 @@ function createInteractionCommandHandler(options = {}) {
       const isStop = interaction.commandName === "stop";
       const isRestart = interaction.commandName === "restart";
       const isLookup = interaction.commandName === "lookup";
+      const isMinecraftConsole = interaction.commandName === "mc";
       if (
         !isAccept &&
         !isDeny &&
@@ -1919,7 +2136,8 @@ function createInteractionCommandHandler(options = {}) {
         !isDebug &&
         !isStop &&
         !isRestart &&
-        !isLookup
+        !isLookup &&
+        !isMinecraftConsole
       ) {
         return;
       }
@@ -1938,6 +2156,11 @@ function createInteractionCommandHandler(options = {}) {
           content: buildUptimeMessage(),
           ephemeral: true,
         });
+        return;
+      }
+
+      if (isMinecraftConsole) {
+        await handleMinecraftConsoleCommand(interaction);
         return;
       }
 

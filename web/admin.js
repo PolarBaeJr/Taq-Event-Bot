@@ -31,6 +31,8 @@ const {
   getUniversalVoterIds,
   castWebVote,
 } = require("./auth");
+const { createMinecraftConsole, stripColorCodes } = require("../src/lib/minecraftConsole");
+const deployer = require("./deploy");
 
 const STATE_FILE = process.env.STATE_FILE || path.join(__dirname, "../.bot-state.json");
 const CONTROL_LOG_FILE = process.env.CONTROL_LOG_FILE || path.join(__dirname, "../logs/control-actions.log");
@@ -90,6 +92,8 @@ function adminLayout(title, body, discordUser) {
         <a href="/admin/applications">Applications</a>
         <a href="/admin/queue">Queue</a>
         <a href="/admin/logs">Logs</a>
+        <a href="/admin/console">Console</a>
+        <a href="/admin/deploy">Deploy</a>
         <a href="/admin/users">Servers</a>
       </nav>
       <div class="nav-footer">
@@ -1429,6 +1433,353 @@ router.get("/logs", requireAuth, (req, res) => {
     <h2 style="font-size:1.1rem;font-weight:700;margin-top:36px;margin-bottom:12px">Crash Logs <span class="muted-note">(20 most recent)</span></h2>
     ${crashHtml}
   `, req.discordUser));
+});
+
+// ── Minecraft console ─────────────────────────────────────────────────────────
+
+// The same client the Discord bot uses, pointed at TAqCore's remote console over the tailnet.
+// Two gates: the dashboard's own admin session, and the console allowlist on top of it — being
+// an admin here is not by itself permission to type at the server. Every command that does get
+// through is written to console-audit.log on the server with the Discord user named.
+const minecraftConsole = createMinecraftConsole({
+  baseUrl: process.env.MINECRAFT_CONSOLE_URL,
+  token: process.env.MINECRAFT_CONSOLE_TOKEN,
+  allowedUserIds: process.env.MINECRAFT_CONSOLE_USER_IDS,
+  allowedRoleIds: process.env.MINECRAFT_CONSOLE_ROLE_IDS,
+  maxLines: 400,
+});
+
+const CONSOLE_PAGE_LINES = 200;
+
+function consoleGateProblem(req) {
+  if (!minecraftConsole.isConfigured()) {
+    return "The console is not configured. Set MINECRAFT_CONSOLE_URL and MINECRAFT_CONSOLE_TOKEN "
+      + "for the web process, then restart it.";
+  }
+  if (!minecraftConsole.hasAllowlist()) {
+    return "Nobody is on the console allowlist. Add Discord IDs to MINECRAFT_CONSOLE_USER_IDS.";
+  }
+  if (!minecraftConsole.isAllowed({
+    userId: req.discordUser?.id,
+    roleIds: Array.isArray(req.discordUser?.roleIds) ? req.discordUser.roleIds : [],
+  })) {
+    return "Your Discord account is not on the console allowlist.";
+  }
+  return null;
+}
+
+router.get("/console", requireAuth, requireAdmin, async (req, res) => {
+  const problem = consoleGateProblem(req);
+  const result = req.session.consoleResult || null;
+  if (req.session.consoleResult) delete req.session.consoleResult;
+
+  if (problem) {
+    return res.send(adminLayout("Console", `
+      ${flash(req)}
+      <p class="muted-note">${escHtml(problem)}</p>
+    `, req.discordUser));
+  }
+
+  let head = 0;
+  let tailText = "";
+  let tailError = "";
+  try {
+    const tail = await minecraftConsole.tail({ limit: CONSOLE_PAGE_LINES });
+    head = tail.head;
+    tailText = tail.lines.map((line) => stripColorCodes(line.text)).join("\n");
+  } catch (error) {
+    tailError = error?.message || String(error);
+  }
+
+  let pluginsHtml = "";
+  try {
+    const listing = await minecraftConsole.plugins();
+    const rows = listing.plugins.map((entry) => `<tr>
+        <td>${escHtml(entry.name)}</td>
+        <td class="muted-note">${escHtml(entry.version)}</td>
+        <td>${entry.enabled
+          ? '<span class="badge badge-ok" style="font-size:0.68rem">enabled</span>'
+          : '<span class="badge badge-err" style="font-size:0.68rem">disabled</span>'}</td>
+      </tr>`).join("");
+    const pending = listing.pending.length > 0
+      ? `<p class="muted-note">Waiting for the next restart: ${listing.pending.map((name) => `<code>${escHtml(name)}</code>`).join(", ")}</p>`
+      : "";
+    pluginsHtml = `<details style="margin-top:20px">
+        <summary style="cursor:pointer">Plugins (${listing.plugins.length})</summary>
+        ${pending}
+        <table class="admin-table"><thead><tr><th>Plugin</th><th>Version</th><th>State</th></tr></thead>
+        <tbody>${rows}</tbody></table>
+      </details>`;
+  } catch (error) {
+    pluginsHtml = `<p class="muted-note" style="margin-top:20px">Could not read the plugin list: ${escHtml(error?.message || String(error))}</p>`;
+  }
+
+  const details = minecraftConsole.describe();
+  const resultHtml = result
+    ? `<div class="${result.ok ? "flash-ok" : "flash-error"}" style="margin-bottom:12px">
+         <strong>/${escHtml(result.command)}</strong>
+         ${result.ok ? "" : " — the server reported it as unknown or failed"}
+       </div>
+       ${result.output.length > 0
+         ? `<pre class="console-output" style="white-space:pre-wrap;font-size:0.78rem;background:#0d1117;color:#c9d1d9;padding:10px;border-radius:6px;max-height:220px;overflow:auto">${escHtml(result.output.map(stripColorCodes).join("\n"))}</pre>`
+         : `<p class="muted-note">No console output.</p>`}`
+    : "";
+
+  res.send(adminLayout("Console", `
+    ${flash(req)}
+    <p class="muted-note" style="margin-bottom:12px">
+      ${escHtml(details.url)} — every command is run as the server console and written to
+      console-audit.log with your Discord account named.
+      ${details.deny.length > 0 ? `Refused here: ${details.deny.map((entry) => `<code>${escHtml(entry)}</code>`).join(", ")}.` : ""}
+    </p>
+    ${resultHtml}
+    <form method="POST" action="/admin/console/run" style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+      <input type="text" name="command" placeholder="list" autocomplete="off" required
+             style="flex:1;min-width:220px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace"/>
+      <button type="submit">Run</button>
+    </form>
+    ${tailError ? `<p class="flash-error">Could not read the console: ${escHtml(tailError)}</p>` : ""}
+    <pre id="console-tail" data-head="${head}"
+         style="white-space:pre-wrap;font-size:0.78rem;background:#0d1117;color:#c9d1d9;padding:12px;border-radius:6px;height:60vh;overflow:auto;margin:0">${escHtml(tailText)}</pre>
+    <p class="muted-note" style="margin-top:8px">Live — new lines append every few seconds.</p>
+    ${pluginsHtml}
+    <script>
+      (function () {
+        var pre = document.getElementById("console-tail");
+        if (!pre) return;
+        pre.scrollTop = pre.scrollHeight;
+        var head = Number(pre.dataset.head || 0);
+        var stopped = false;
+        async function poll() {
+          if (stopped) return;
+          try {
+            var response = await fetch("/admin/console/tail.json?since=" + head, {
+              headers: { Accept: "application/json" },
+            });
+            if (response.status === 403) { stopped = true; return; }
+            if (response.ok) {
+              var payload = await response.json();
+              if (Array.isArray(payload.lines) && payload.lines.length > 0) {
+                var atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 20;
+                pre.textContent += (pre.textContent ? "\\n" : "") + payload.lines.join("\\n");
+                if (atBottom) pre.scrollTop = pre.scrollHeight;
+              }
+              if (typeof payload.head === "number") head = payload.head;
+            }
+          } catch (error) {
+            // A failed poll is not worth surfacing; the next one either works or the page is stale.
+          }
+          setTimeout(poll, 4000);
+        }
+        setTimeout(poll, 4000);
+      })();
+    </script>
+  `, req.discordUser));
+});
+
+router.get("/console/tail.json", requireAuth, requireAdmin, async (req, res) => {
+  const problem = consoleGateProblem(req);
+  if (problem) return res.status(403).json({ error: problem });
+
+  const since = Number(req.query.since);
+  try {
+    const tail = await minecraftConsole.tail({
+      since: Number.isFinite(since) ? since : 0,
+      limit: CONSOLE_PAGE_LINES,
+    });
+    res.json({
+      head: tail.head,
+      lines: tail.lines.map((line) => stripColorCodes(line.text)),
+    });
+  } catch (error) {
+    res.status(502).json({ error: error?.message || String(error) });
+  }
+});
+
+router.post("/console/run", requireAuth, requireAdmin, async (req, res) => {
+  const problem = consoleGateProblem(req);
+  if (problem) {
+    setFlash(req, "error", problem);
+    return res.redirect("/admin/console");
+  }
+
+  const actor = `web:${req.discordUser?.username || "unknown"}(${req.discordUser?.id || "?"})`;
+  try {
+    const result = await minecraftConsole.run({ command: req.body.command || "", actor });
+    req.session.consoleResult = {
+      command: result.command,
+      ok: result.ok,
+      output: result.output,
+    };
+  } catch (error) {
+    setFlash(req, "error", `Console request failed: ${error?.message || String(error)}`);
+  }
+  res.redirect("/admin/console");
+});
+
+// ── Deploy ────────────────────────────────────────────────────────────────────
+
+// Who may ship code. Falls back to the console allowlist so there is one list to keep, and
+// fails closed when neither is set: an unset variable should not hand out a deploy button.
+function deployAllowlist() {
+  const raw = process.env.DEPLOY_USER_IDS || process.env.MINECRAFT_CONSOLE_USER_IDS || "";
+  return raw.split(/[,\s]+/).filter(Boolean);
+}
+
+function deployGateProblem(req) {
+  const allowed = deployAllowlist();
+  if (allowed.length === 0) {
+    return "Nobody is allowed to deploy. Set DEPLOY_USER_IDS (or MINECRAFT_CONSOLE_USER_IDS) "
+      + "for the web process.";
+  }
+  if (!allowed.includes(String(req.discordUser?.id || ""))) {
+    return "Your Discord account is not on the deploy allowlist.";
+  }
+  return null;
+}
+
+function deployActor(req) {
+  return `web:${req.discordUser?.username || "unknown"}(${req.discordUser?.id || "?"})`;
+}
+
+function commandBlockHtml(steps) {
+  const shown = (Array.isArray(steps) ? steps : []).filter(Boolean);
+  if (shown.length === 0) return "";
+  const text = shown
+    .map((step) => `$ ${step.command}\n${[step.stdout, step.stderr].filter(Boolean).join("\n") || "(no output)"}`)
+    .join("\n\n");
+  return `<pre style="white-space:pre-wrap;font-size:0.78rem;background:#0d1117;color:#c9d1d9;padding:10px;border-radius:6px;max-height:320px;overflow:auto">${escHtml(text)}</pre>`;
+}
+
+router.get("/deploy", requireAuth, requireAdmin, async (req, res) => {
+  const problem = deployGateProblem(req);
+  const result = req.session.deployResult || null;
+  if (req.session.deployResult) delete req.session.deployResult;
+
+  if (problem) {
+    return res.send(adminLayout("Deploy", `
+      ${flash(req)}
+      <p class="muted-note">${escHtml(problem)}</p>
+    `, req.discordUser));
+  }
+
+  let state;
+  try {
+    state = await deployer.status();
+  } catch (error) {
+    return res.send(adminLayout("Deploy", `
+      ${flash(req)}
+      <p class="flash-error">Could not read the repository: ${escHtml(error?.message || String(error))}</p>
+    `, req.discordUser));
+  }
+
+  const behindNote = !state.upstreamKnown
+    ? `<span class="badge badge-pending" style="font-size:0.68rem">no upstream</span>`
+    : state.behind > 0
+      ? `<span class="badge badge-pending" style="font-size:0.68rem">${state.behind} commit(s) behind</span>`
+      : `<span class="badge badge-ok" style="font-size:0.68rem">up to date</span>`;
+
+  const historyRows = deployer.readDeployLog(15).map((entry) => `<tr>
+      <td class="muted-note" style="white-space:nowrap">${escHtml(entry.at ? new Date(entry.at).toLocaleString() : "—")}</td>
+      <td><strong>${escHtml(entry.action || "")}</strong>${entry.target ? ` <span class="muted-note">${escHtml(entry.target)}</span>` : ""}</td>
+      <td>${escHtml(entry.actor || "")}</td>
+      <td class="muted-note">${escHtml([
+        entry.from && entry.to ? `${entry.from} → ${entry.to}` : "",
+        entry.installedDependencies ? "npm ci" : "",
+        entry.usedFallback ? "botctl fallback" : "",
+        entry.deferred ? "deferred" : "",
+        entry.ok === false ? "FAILED" : "",
+      ].filter(Boolean).join(", "))}</td>
+    </tr>`).join("");
+
+  res.send(adminLayout("Deploy", `
+    ${flash(req)}
+    <p class="muted-note" style="margin-bottom:12px">
+      <code>${escHtml(deployer.REPO_ROOT)}</code> on <strong>${escHtml(state.branch)}</strong>
+      at <code>${escHtml(state.commit)}</code> ${behindNote}<br>
+      ${escHtml(state.subject)} — <span class="muted-note">${escHtml(state.author)}</span>
+    </p>
+    ${state.dirty ? `<div class="flash-error" style="margin-bottom:12px">
+      Working tree has local changes; a pull will refuse rather than overwrite them:
+      <code>${escHtml(state.dirtyFiles.slice(0, 8).join(" "))}</code>
+    </div>` : ""}
+    ${state.fetchError ? `<p class="muted-note">Fetch warning: ${escHtml(state.fetchError)}</p>` : ""}
+    ${result ? `<div class="${result.ok ? "flash-ok" : "flash-error"}" style="margin-bottom:12px">${escHtml(result.summary)}</div>${commandBlockHtml(result.steps)}` : ""}
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin:16px 0">
+      <form method="POST" action="/admin/deploy/pull" style="margin:0">
+        <button type="submit">Pull latest (fast-forward only)</button>
+      </form>
+      <form method="POST" action="/admin/deploy/restart" style="margin:0">
+        <input type="hidden" name="target" value="bot"/>
+        <button type="submit">Restart bot</button>
+      </form>
+      <form method="POST" action="/admin/deploy/restart" style="margin:0">
+        <input type="hidden" name="target" value="web"/>
+        <button type="submit">Restart dashboard</button>
+      </form>
+    </div>
+    <p class="muted-note">A pull runs <code>git pull --ff-only</code> and only reinstalls
+      dependencies when the lockfile moved. Restarting the dashboard drops this page for a
+      moment — that is expected.</p>
+    <h2 style="font-size:1.1rem;font-weight:700;margin-top:28px;margin-bottom:8px">Recent deploys</h2>
+    <table class="admin-table">
+      <thead><tr><th>When</th><th>Action</th><th>Who</th><th>Details</th></tr></thead>
+      <tbody>${historyRows || '<tr><td colspan="4" class="muted-note">Nothing yet.</td></tr>'}</tbody>
+    </table>
+  `, req.discordUser));
+});
+
+router.post("/deploy/pull", requireAuth, requireAdmin, async (req, res) => {
+  const problem = deployGateProblem(req);
+  if (problem) {
+    setFlash(req, "error", problem);
+    return res.redirect("/admin/deploy");
+  }
+
+  try {
+    const outcome = await deployer.pull(deployActor(req));
+    req.session.deployResult = {
+      ok: outcome.ok,
+      summary: outcome.ok
+        ? `Pulled to ${outcome.status.commit} — ${outcome.status.subject}`
+        : "Pull failed; nothing was restarted.",
+      steps: outcome.steps,
+    };
+  } catch (error) {
+    setFlash(req, "error", `Pull failed: ${error?.message || String(error)}`);
+  }
+  res.redirect("/admin/deploy");
+});
+
+router.post("/deploy/restart", requireAuth, requireAdmin, async (req, res) => {
+  const problem = deployGateProblem(req);
+  if (problem) {
+    setFlash(req, "error", problem);
+    return res.redirect("/admin/deploy");
+  }
+
+  const target = req.body.target === "web" ? "web" : "bot";
+  try {
+    const outcome = await deployer.restart(target, deployActor(req));
+    req.session.deployResult = outcome.deferred
+      ? {
+          ok: true,
+          summary: `Restarting ${outcome.target} in a couple of seconds — reload the page after that.`,
+          steps: [],
+        }
+      : {
+          ok: Boolean(outcome.result?.ok || outcome.fallback?.ok),
+          summary: outcome.result?.ok
+            ? `Restarted ${outcome.target}.`
+            : outcome.fallback?.ok
+              ? `pm2 was not available, so ${outcome.target} was restarted with botctl.`
+              : `Could not restart ${outcome.target}.`,
+          steps: [outcome.result, outcome.fallback].filter(Boolean),
+        };
+  } catch (error) {
+    setFlash(req, "error", `Restart failed: ${error?.message || String(error)}`);
+  }
+  res.redirect("/admin/deploy");
 });
 
 module.exports = router;

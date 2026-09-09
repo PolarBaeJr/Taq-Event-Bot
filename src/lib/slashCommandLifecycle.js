@@ -1543,6 +1543,54 @@ function createSlashCommandLifecycle(options = {}) {
             .setRequired(false)
         ),
       new SlashCommandBuilder()
+        .setName("mc")
+        .setDescription("Minecraft server console (allowlisted users only)")
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName("run")
+            .setDescription("Run a command as the server console")
+            .addStringOption((option) =>
+              option
+                .setName("command")
+                .setDescription("Command to run, with or without the leading slash")
+                .setRequired(true)
+            )
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName("tail")
+            .setDescription("Show the most recent server console output")
+            .addIntegerOption((option) =>
+              option
+                .setName("lines")
+                .setDescription("How many lines to show (default 20)")
+                .setMinValue(1)
+                .setMaxValue(60)
+                .setRequired(false)
+            )
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName("plugins")
+            .setDescription("List the plugins the server has loaded")
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName("restart")
+            .setDescription("Restart the Minecraft server (picks up newly built TAq plugins)")
+            .addBooleanOption((option) =>
+              option
+                .setName("confirm")
+                .setDescription("Yes, kick everyone and restart the server")
+                .setRequired(true)
+            )
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName("status")
+            .setDescription("Check whether the server console is reachable")
+        ),
+      new SlashCommandBuilder()
         .setName("stop")
         .setDescription("Stop the bot process"),
       new SlashCommandBuilder()

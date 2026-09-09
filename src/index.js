@@ -28,6 +28,7 @@ const { createApplicationFormUtils } = require("./lib/applicationFormUtils");
 const { createDebugAndFeedbackUtils } = require("./lib/debugAndFeedbackUtils");
 const { createPollingPipeline } = require("./lib/pollingPipeline");
 const { createInteractionCommandHandler } = require("./lib/interactionCommandHandler");
+const { createMinecraftConsole } = require("./lib/minecraftConsole");
 const { createDynamicMessageSystem } = require("./lib/dynamicMessageSystem");
 const { createApplicationDecisionUtils } = require("./lib/applicationDecisionUtils");
 const { createApplicationDecisionWorkflow } = require("./lib/applicationDecisionWorkflow");
@@ -3328,7 +3329,19 @@ reactionRoleManager = createReactionRoleManager({
   PermissionsBitField,
 });
 
+// The Minecraft server console, reached over the tailnet. Off unless the env names a URL and
+// a token, and it answers nobody who is not on the allowlist.
+const minecraftConsole = createMinecraftConsole({
+  baseUrl: config.minecraftConsoleUrl,
+  token: config.minecraftConsoleToken,
+  allowedUserIds: config.minecraftConsoleUserIds,
+  allowedRoleIds: config.minecraftConsoleRoleIds,
+  timeoutMs: config.minecraftConsoleTimeoutMs,
+  logger: logger.child({ component: "minecraft_console" }),
+});
+
 const onInteractionCreate = createInteractionCommandHandler({
+  minecraftConsole,
   PermissionsBitField,
   ChannelType,
   relayFeedbackCommand,
