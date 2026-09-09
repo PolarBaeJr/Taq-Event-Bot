@@ -1,5 +1,9 @@
 services:
   taq-event:
+    # Both on purpose: `compose up -d` after a `pull` runs the image CI published, and
+    # `compose build` still works on a machine that would rather build its own — it tags
+    # the result as this same name, so the rest of the file does not care which happened.
+    image: ghcr.io/polarbaejr/taq-event-bot:latest
     build: .
     container_name: taq-event
     restart: unless-stopped
