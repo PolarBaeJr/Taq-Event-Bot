@@ -263,6 +263,35 @@ function createMinecraftConsole(options = {}) {
     };
   }
 
+  // chat: handles chat.
+  //
+  // Game chat, joins, leaves and deaths after `since`, numbered by the server the same way
+  // console lines are. `head` is the number the next event will get.
+  async function chat(params = {}) {
+    const since = Number.isFinite(params.since) ? Math.max(0, Math.trunc(params.since)) : 0;
+    const payload = await request(`/chat?since=${since}`);
+    return {
+      head: Number.isFinite(payload.head) ? payload.head : 0,
+      events: Array.isArray(payload.events) ? payload.events : [],
+    };
+  }
+
+  // say: handles say.
+  //
+  // Shows a Discord message in game as `[Discord] author: content`. The server strips
+  // formatting codes and trims to chat length, so this only refuses what is plainly empty.
+  async function say(params = {}) {
+    const content = normalizeString(params.content);
+    if (!content) {
+      throw new Error("Nothing to say.");
+    }
+    await request("/chat", {
+      method: "POST",
+      body: JSON.stringify({ author: normalizeString(params.author) || "Discord", content }),
+    });
+    return true;
+  }
+
   return {
     isConfigured,
     hasAllowlist,
@@ -273,6 +302,8 @@ function createMinecraftConsole(options = {}) {
     tail,
     plugins,
     run,
+    chat,
+    say,
   };
 }
 

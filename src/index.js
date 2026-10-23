@@ -29,6 +29,7 @@ const { createDebugAndFeedbackUtils } = require("./lib/debugAndFeedbackUtils");
 const { createPollingPipeline } = require("./lib/pollingPipeline");
 const { createInteractionCommandHandler } = require("./lib/interactionCommandHandler");
 const { createMinecraftConsole } = require("./lib/minecraftConsole");
+const { createMinecraftChatBridge } = require("./lib/minecraftChatBridge");
 const { createDynamicMessageSystem } = require("./lib/dynamicMessageSystem");
 const { createApplicationDecisionUtils } = require("./lib/applicationDecisionUtils");
 const { createApplicationDecisionWorkflow } = require("./lib/applicationDecisionWorkflow");
@@ -3060,6 +3061,10 @@ const client = new Client({
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.GuildMessageReactions,
+    // Cross chat has to read what people type. Message Content is privileged, so it is only
+    // asked for when cross chat is configured: an unconfigured bot keeps logging in even if
+    // the intent is off in the developer portal.
+    ...(config.minecraftChatChannelId ? [GatewayIntentBits.MessageContent] : []),
   ],
   partials: [Partials.Channel, Partials.Message, Partials.Reaction],
 });
@@ -3340,6 +3345,15 @@ const minecraftConsole = createMinecraftConsole({
   logger: logger.child({ component: "minecraft_console" }),
 });
 
+// Cross chat between one channel and the game, over the same console connection.
+const minecraftChat = createMinecraftChatBridge({
+  minecraftConsole,
+  client,
+  channelId: config.minecraftChatChannelId,
+  intervalMs: config.minecraftChatPollMs,
+  logger: logger.child({ component: "minecraft_chat" }),
+});
+
 const onInteractionCreate = createInteractionCommandHandler({
   minecraftConsole,
   PermissionsBitField,
@@ -3529,6 +3543,16 @@ client.on("messageReactionRemove", async (reaction, user) => {
 
 client.on("interactionCreate", onInteractionCreate);
 
+client.on("messageCreate", async (message) => {
+  try {
+    await minecraftChat.handleMessage(message);
+  } catch (err) {
+    logger.error("minecraft_chat_message_failed", "Cross chat message handling failed.", {
+      error: err.message,
+    });
+  }
+});
+
 client.on("guildCreate", async (guild) => {
   try {
     await ensureLogsChannel(guild);
@@ -3681,6 +3705,8 @@ async function main() {
       });
     });
   }
+
+  minecraftChat.start();
 
   logger.info("startup_bot_ready", "Bot started. Polling for Google Form responses.");
   if (config.alertOnStartup) {

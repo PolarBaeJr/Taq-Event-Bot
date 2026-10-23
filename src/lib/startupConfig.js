@@ -23,6 +23,7 @@ const OPTIONAL_SNOWFLAKE_ENV_KEYS = [
   "DISCORD_BUG_CHANNEL_ID",
   "DISCORD_SUGGESTIONS_CHANNEL_ID",
   "ACCEPT_ANNOUNCE_CHANNEL_ID",
+  "MINECRAFT_CHAT_CHANNEL_ID",
   "DISCORD_TESTER_APPROVED_ROLE_ID",
   "DISCORD_BUILDER_APPROVED_ROLE_ID",
   "DISCORD_CMD_APPROVED_ROLE_ID",
@@ -336,6 +337,14 @@ function loadStartupConfig(options = {}) {
       { integer: true, min: 1000 },
       errors
     ),
+    minecraftChatChannelId: optionalSnowflakeValues.MINECRAFT_CHAT_CHANNEL_ID,
+    minecraftChatPollMs: parseNumberEnv(
+      env,
+      "MINECRAFT_CHAT_POLL_MS",
+      2000,
+      { integer: true, min: 500 },
+      errors
+    ),
   };
 
   // The console runs commands as the server console, so a half-configured one is worth
@@ -349,6 +358,12 @@ function loadStartupConfig(options = {}) {
     warnings.push(
       "Minecraft console is configured but nobody is allowlisted; set MINECRAFT_CONSOLE_USER_IDS " +
       "or MINECRAFT_CONSOLE_ROLE_IDS or /mc will refuse everyone."
+    );
+  }
+
+  if (config.minecraftChatChannelId && !(config.minecraftConsoleUrl && config.minecraftConsoleToken)) {
+    warnings.push(
+      "MINECRAFT_CHAT_CHANNEL_ID is set but the Minecraft console is not configured; cross chat stays off."
     );
   }
 

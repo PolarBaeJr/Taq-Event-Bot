@@ -61,6 +61,8 @@ Create a `.env` file:
 | `MINECRAFT_CONSOLE_USER_IDS` | — | Discord user IDs allowed to use `/mc` and the Console page |
 | `MINECRAFT_CONSOLE_ROLE_IDS` | — | Discord role IDs allowed the same |
 | `MINECRAFT_CONSOLE_TIMEOUT_MS` | `8000` | Per-request timeout for the console |
+| `MINECRAFT_CHAT_CHANNEL_ID` | — | Channel for Discord ↔ game cross chat. Needs the console configured and the **Message Content** intent enabled in the developer portal |
+| `MINECRAFT_CHAT_POLL_MS` | `2000` | How often game chat is checked for new lines |
 | `DEPLOY_USER_IDS` | falls back to `MINECRAFT_CONSOLE_USER_IDS` | Discord user IDs allowed to use the Deploy page |
 | `DEPLOY_LOG_FILE` | `logs/deploy-actions.log` | Where pulls, restarts and image updates are recorded |
 
