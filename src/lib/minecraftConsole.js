@@ -278,18 +278,63 @@ function createMinecraftConsole(options = {}) {
 
   // say: handles say.
   //
-  // Shows a Discord message in game as `[Discord] author: content`. The server strips
+  // Shows a Discord message in game as `[Discord] [rank] author: content`. The server strips
   // formatting codes and trims to chat length, so this only refuses what is plainly empty.
   async function say(params = {}) {
     const content = normalizeString(params.content);
     if (!content) {
       throw new Error("Nothing to say.");
     }
-    await request("/chat", {
+    const body = { author: normalizeString(params.author) || "Discord", content };
+    if (normalizeString(params.rank)) {
+      body.rank = normalizeString(params.rank);
+    }
+    if (/^#[0-9a-f]{6}$/i.test(normalizeString(params.rankColor))) {
+      body.rankColor = normalizeString(params.rankColor);
+    }
+    await request("/chat", { method: "POST", body: JSON.stringify(body) });
+    return true;
+  }
+
+  // claimLink: handles claim link.
+  //
+  // Trades a code a player got from /link in game for who they are. Throws with the
+  // server's own explanation when the code is wrong or expired.
+  async function claimLink(code) {
+    const payload = await request("/link", {
       method: "POST",
-      body: JSON.stringify({ author: normalizeString(params.author) || "Discord", content }),
+      body: JSON.stringify({ code: normalizeString(code) }),
+    });
+    if (!payload.uuid || !payload.player) {
+      throw new Error("The server did not say who that code belongs to.");
+    }
+    return { uuid: String(payload.uuid), player: String(payload.player) };
+  }
+
+  // offerLink: handles offer link.
+  //
+  // Tells the server about a code shown to someone in Discord, so /link <code> in game is
+  // accepted. The server answers through a `link` event on /chat.
+  async function offerLink(params = {}) {
+    await request("/link/offer", {
+      method: "POST",
+      body: JSON.stringify({
+        code: normalizeString(params.code),
+        discord: normalizeString(params.discord),
+      }),
     });
     return true;
+  }
+
+  // lookupPlayer: handles lookup player.
+  //
+  // Who a name belongs to, for staff linking by hand. Only players the server has seen.
+  async function lookupPlayer(name) {
+    const payload = await request(`/player?name=${encodeURIComponent(normalizeString(name))}`);
+    if (!payload.uuid || !payload.player) {
+      throw new Error("The server did not say who that is.");
+    }
+    return { uuid: String(payload.uuid), player: String(payload.player) };
   }
 
   return {
@@ -304,6 +349,9 @@ function createMinecraftConsole(options = {}) {
     run,
     chat,
     say,
+    claimLink,
+    offerLink,
+    lookupPlayer,
   };
 }
 

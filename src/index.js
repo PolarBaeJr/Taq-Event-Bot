@@ -30,6 +30,7 @@ const { createPollingPipeline } = require("./lib/pollingPipeline");
 const { createInteractionCommandHandler } = require("./lib/interactionCommandHandler");
 const { createMinecraftConsole } = require("./lib/minecraftConsole");
 const { createMinecraftChatBridge } = require("./lib/minecraftChatBridge");
+const { createMinecraftLinks } = require("./lib/minecraftLinks");
 const { createDynamicMessageSystem } = require("./lib/dynamicMessageSystem");
 const { createApplicationDecisionUtils } = require("./lib/applicationDecisionUtils");
 const { createApplicationDecisionWorkflow } = require("./lib/applicationDecisionWorkflow");
@@ -3349,7 +3350,12 @@ const minecraftConsole = createMinecraftConsole({
 const minecraftChat = createMinecraftChatBridge({
   minecraftConsole,
   client,
+  links: createMinecraftLinks({
+    file: config.minecraftLinksFile,
+    logger: logger.child({ component: "minecraft_links" }),
+  }),
   channelId: config.minecraftChatChannelId,
+  rankRoleIds: config.minecraftChatRankRoleIds,
   intervalMs: config.minecraftChatPollMs,
   logger: logger.child({ component: "minecraft_chat" }),
 });
@@ -3541,7 +3547,13 @@ client.on("messageReactionRemove", async (reaction, user) => {
   }
 });
 
-client.on("interactionCreate", onInteractionCreate);
+// /link and friends belong to cross chat; everything else goes to the main handler.
+client.on("interactionCreate", async (interaction) => {
+  if (await minecraftChat.handleInteraction(interaction).catch(() => false)) {
+    return;
+  }
+  return onInteractionCreate(interaction);
+});
 
 client.on("messageCreate", async (message) => {
   try {

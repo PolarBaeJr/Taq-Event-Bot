@@ -30,3 +30,5 @@ CLAUDE.md
 /.conductor/
 /.codex/
 /.conductor
+.minecraft-links.json
+data/

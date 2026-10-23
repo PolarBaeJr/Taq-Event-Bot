@@ -37,6 +37,7 @@ const OPTIONAL_SNOWFLAKE_LIST_ENV_KEYS = [
   "DISCORD_APPROVED_ROLE_IDS",
   "MINECRAFT_CONSOLE_USER_IDS",
   "MINECRAFT_CONSOLE_ROLE_IDS",
+  "MINECRAFT_CHAT_RANK_ROLE_IDS",
 ];
 
 const VALID_THREAD_ARCHIVE_MINUTES = new Set([60, 1440, 4320, 10080]);
@@ -338,6 +339,8 @@ function loadStartupConfig(options = {}) {
       errors
     ),
     minecraftChatChannelId: optionalSnowflakeValues.MINECRAFT_CHAT_CHANNEL_ID,
+    minecraftChatRankRoleIds: optionalSnowflakeListValues.MINECRAFT_CHAT_RANK_ROLE_IDS,
+    minecraftLinksFile: normalizeString(env.MINECRAFT_LINKS_FILE) || ".minecraft-links.json",
     minecraftChatPollMs: parseNumberEnv(
       env,
       "MINECRAFT_CHAT_POLL_MS",

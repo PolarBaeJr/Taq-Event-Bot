@@ -1591,6 +1591,36 @@ function createSlashCommandLifecycle(options = {}) {
             .setDescription("Check whether the server console is reachable")
         ),
       new SlashCommandBuilder()
+        .setName("link")
+        .setDescription("Link your Discord account to your Minecraft player for cross chat")
+        .addStringOption((option) =>
+          option
+            .setName("code")
+            .setDescription("Code from /link in game. Leave empty to get a code to type in game instead")
+            .setRequired(false)
+        ),
+      new SlashCommandBuilder()
+        .setName("unlink")
+        .setDescription("Unlink your Discord account from your Minecraft player"),
+      new SlashCommandBuilder()
+        .setName("forcelink")
+        .setDescription("Link someone's Discord account to a Minecraft player (console allowlist only)")
+        .addUserOption((option) =>
+          option.setName("user").setDescription("Discord member").setRequired(true)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("ign")
+            .setDescription("Their Minecraft name. They must have joined the server before")
+            .setRequired(true)
+        ),
+      new SlashCommandBuilder()
+        .setName("forceunlink")
+        .setDescription("Remove someone's Minecraft link (console allowlist only)")
+        .addUserOption((option) =>
+          option.setName("user").setDescription("Discord member").setRequired(true)
+        ),
+      new SlashCommandBuilder()
         .setName("stop")
         .setDescription("Stop the bot process"),
       new SlashCommandBuilder()

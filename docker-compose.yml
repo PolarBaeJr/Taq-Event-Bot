@@ -18,8 +18,11 @@ services:
       HTTPS_CERT_FILE: ""
       HTTPS_KEY_PEM: ""
       HTTPS_CERT_PEM: ""
+      # A folder, not a single-file mount, so it works before the file exists.
+      MINECRAFT_LINKS_FILE: data/minecraft-links.json
     volumes:
       - ./.bot-state.json:/app/.bot-state.json
       - ./service-account.json:/app/service-account.json:ro
       - ./logs:/app/logs
       - ./crashlog:/app/crashlog
+      - ./data:/app/data
