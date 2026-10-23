@@ -340,7 +340,6 @@ function loadStartupConfig(options = {}) {
     ),
     minecraftChatChannelId: optionalSnowflakeValues.MINECRAFT_CHAT_CHANNEL_ID,
     minecraftChatRankRoleIds: optionalSnowflakeListValues.MINECRAFT_CHAT_RANK_ROLE_IDS,
-    minecraftLinksFile: normalizeString(env.MINECRAFT_LINKS_FILE) || ".minecraft-links.json",
     minecraftChatPollMs: parseNumberEnv(
       env,
       "MINECRAFT_CHAT_POLL_MS",

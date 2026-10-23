@@ -64,16 +64,16 @@ Create a `.env` file:
 | `MINECRAFT_CHAT_CHANNEL_ID` | — | Channel for Discord ↔ game cross chat. Needs the console configured and the **Message Content** intent enabled in the developer portal |
 | `MINECRAFT_CHAT_POLL_MS` | `2000` | How often game chat is checked for new lines |
 | `MINECRAFT_CHAT_RANK_ROLE_IDS` | — | Roles that count as ranks in cross chat. Unset uses the highest role shown separately in the member list |
-| `MINECRAFT_LINKS_FILE` | `.minecraft-links.json` | Where Discord ↔ Minecraft account links are kept |
 
 ### Cross chat
 
 With `MINECRAFT_CHAT_CHANNEL_ID` set, that channel and game chat are bridged both ways.
-Linked accounts show their rank on both sides and their IGN in game.
+Linked accounts show their rank on both sides and their IGN in game. Links are saved on
+the Minecraft server, in `plugins/TAqCore/discord-links.yml`, the moment they change.
 
 - `/link` in game gives a code; `/link code:<code>` here claims it.
 - `/link` here gives a code; `/link <code>` in game claims it.
-- `/unlink` removes your own link.
+- `/unlink` here, or `/link remove` in game, removes your own link.
 - `/forcelink user ign` and `/forceunlink user` let anyone on the console allowlist fix links by hand.
 | `DEPLOY_USER_IDS` | falls back to `MINECRAFT_CONSOLE_USER_IDS` | Discord user IDs allowed to use the Deploy page |
 | `DEPLOY_LOG_FILE` | `logs/deploy-actions.log` | Where pulls, restarts and image updates are recorded |

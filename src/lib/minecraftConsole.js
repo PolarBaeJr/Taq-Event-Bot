@@ -278,14 +278,18 @@ function createMinecraftConsole(options = {}) {
 
   // say: handles say.
   //
-  // Shows a Discord message in game as `[Discord] [rank] author: content`. The server strips
-  // formatting codes and trims to chat length, so this only refuses what is plainly empty.
+  // Shows a Discord message in game as `[Discord] [rank] author: content`. With `discordId`,
+  // a linked sender appears under their player name instead. The server strips formatting
+  // codes and trims to chat length, so this only refuses what is plainly empty.
   async function say(params = {}) {
     const content = normalizeString(params.content);
     if (!content) {
       throw new Error("Nothing to say.");
     }
     const body = { author: normalizeString(params.author) || "Discord", content };
+    if (normalizeString(params.discordId)) {
+      body.discord = normalizeString(params.discordId);
+    }
     if (normalizeString(params.rank)) {
       body.rank = normalizeString(params.rank);
     }
@@ -296,45 +300,51 @@ function createMinecraftConsole(options = {}) {
     return true;
   }
 
-  // claimLink: handles claim link.
+  // linkRequest: handles link request.
   //
-  // Trades a code a player got from /link in game for who they are. Throws with the
-  // server's own explanation when the code is wrong or expired.
-  async function claimLink(code) {
-    const payload = await request("/link", {
-      method: "POST",
-      body: JSON.stringify({ code: normalizeString(code) }),
-    });
+  // Account links live on the server, in TAqCore's discord-links.yml, so a redeployed bot
+  // loses nothing. Every link call answers with the player it is about, and throws with
+  // the server's own explanation otherwise ("Not linked.", "That code is wrong...").
+  async function linkRequest(path, body) {
+    const payload = await request(path, { method: "POST", body: JSON.stringify(body) });
     if (!payload.uuid || !payload.player) {
-      throw new Error("The server did not say who that code belongs to.");
+      throw new Error("The server did not say which player that is.");
     }
     return { uuid: String(payload.uuid), player: String(payload.player) };
   }
 
+  // claimLink: handles claim link. Links a Discord user with a code from /link in game.
+  function claimLink(code, discordId) {
+    return linkRequest("/link", { code: normalizeString(code), discord: normalizeString(discordId) });
+  }
+
   // offerLink: handles offer link.
   //
-  // Tells the server about a code shown to someone in Discord, so /link <code> in game is
-  // accepted. The server answers through a `link` event on /chat.
+  // Tells the server about a code shown to someone in Discord, so /link <code> in game
+  // links them. The server says it worked through a `link` event on /chat.
   async function offerLink(params = {}) {
     await request("/link/offer", {
       method: "POST",
       body: JSON.stringify({
         code: normalizeString(params.code),
-        discord: normalizeString(params.discord),
+        discord: normalizeString(params.discordId),
+        name: normalizeString(params.name),
       }),
     });
     return true;
   }
 
-  // lookupPlayer: handles lookup player.
-  //
-  // Who a name belongs to, for staff linking by hand. Only players the server has seen.
-  async function lookupPlayer(name) {
-    const payload = await request(`/player?name=${encodeURIComponent(normalizeString(name))}`);
-    if (!payload.uuid || !payload.player) {
-      throw new Error("The server did not say who that is.");
-    }
-    return { uuid: String(payload.uuid), player: String(payload.player) };
+  // forceLink: handles force link. Staff only; the player must have joined before.
+  function forceLink(params = {}) {
+    return linkRequest("/link/force", {
+      discord: normalizeString(params.discordId),
+      player: normalizeString(params.player),
+    });
+  }
+
+  // unlink: handles unlink. Returns the player that was unlinked.
+  function unlink(discordId) {
+    return linkRequest("/link/remove", { discord: normalizeString(discordId) });
   }
 
   return {
@@ -351,7 +361,8 @@ function createMinecraftConsole(options = {}) {
     say,
     claimLink,
     offerLink,
-    lookupPlayer,
+    forceLink,
+    unlink,
   };
 }
 

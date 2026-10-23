@@ -14,19 +14,20 @@ const {
   rankOf,
 } = require("../src/lib/minecraftChatBridge");
 const { createMinecraftConsole } = require("../src/lib/minecraftConsole");
-const { createMinecraftLinks } = require("../src/lib/minecraftLinks");
-
-const fs = require("node:fs");
-const os = require("node:os");
-const path = require("node:path");
 
 const CHANNEL = "123456789012345678";
 
-// fakeConsole: answers chat() from a queue of payloads and records say() calls.
+// fakeConsole: answers chat() from a queue of payloads, records say() calls, and keeps
+// links the way the server does (Discord ID -> player).
 function fakeConsole(payloads = [], init = {}) {
   const said = [];
+  const links = new Map();
+  const notLinked = () => {
+    throw new Error("Not linked.");
+  };
   return {
     said,
+    links,
     isConfigured: () => init.configured !== false,
     chat: async () => {
       if (init.fail) {
@@ -34,17 +35,26 @@ function fakeConsole(payloads = [], init = {}) {
       }
       return payloads.shift() || { head: 1, events: [] };
     },
-    claimLink: async (code) => {
+    claimLink: async (code, discordId) => {
       if (code !== "ABC234") {
         throw new Error("That code is wrong or has expired.");
       }
-      return { uuid: "uuid-steve", player: "Steve" };
+      links.set(discordId, { uuid: "uuid-steve", player: "Steve" });
+      return links.get(discordId);
     },
     offerLink: async (params) => {
       said.push({ offer: params });
       return true;
     },
-    lookupPlayer: async (name) => ({ uuid: `uuid-${name.toLowerCase()}`, player: name }),
+    forceLink: async ({ discordId, player }) => {
+      links.set(discordId, { uuid: `uuid-${player.toLowerCase()}`, player });
+      return links.get(discordId);
+    },
+    unlink: async (discordId) => {
+      const link = links.get(discordId) || notLinked();
+      links.delete(discordId);
+      return link;
+    },
     isAllowed: ({ userId }) => userId === "staff",
     say: async (params) => {
       if (init.sayFails) {
@@ -78,11 +88,6 @@ function fakeClient(members = {}) {
       fetch: async () => ({ guild, send: async (payload) => sent.push(payload) }),
     },
   };
-}
-
-// memoryLinks: a links store with no file behind it.
-function memoryLinks() {
-  return createMinecraftLinks({});
 }
 
 // fakeInteraction: a slash command with the given options, recording its replies.
@@ -192,7 +197,13 @@ test("chat bridge sends channel messages into the game and ignores bots", async 
   };
   assert.equal(await bridge.handleMessage(human), true);
   assert.deepEqual(mc.said, [
-    { author: "Polar", content: "hello :wave: @Steve [attachment]", rank: undefined, rankColor: undefined },
+    {
+      author: "Polar",
+      discordId: undefined,
+      content: "hello :wave: @Steve [attachment]",
+      rank: undefined,
+      rankColor: undefined,
+    },
   ]);
 
   assert.equal(await bridge.handleMessage({ ...human, author: { bot: true } }), false);
@@ -219,18 +230,22 @@ test("chat bridge flags a message the server did not get", async () => {
 });
 
 test("linked players show their Discord rank both ways", async () => {
-  const links = memoryLinks();
-  links.set("user-1", { uuid: "uuid-steve", player: "Steve" });
   const mc = fakeConsole([
     { head: 1, events: [] },
-    { head: 2, events: [{ seq: 1, type: "chat", player: "Steve", uuid: "uuid-steve", text: "hi" }] },
+    {
+      head: 3,
+      events: [
+        { seq: 1, type: "chat", player: "Steve", uuid: "uuid-steve", discord: "user-1", text: "hi" },
+        { seq: 2, type: "chat", player: "Alex", uuid: "uuid-alex", discord: "", text: "yo" },
+      ],
+    },
   ]);
   const client = fakeClient({ "user-1": member([ADMIN, PINGS]) });
-  const bridge = createMinecraftChatBridge({ minecraftConsole: mc, client, links, channelId: CHANNEL });
+  const bridge = createMinecraftChatBridge({ minecraftConsole: mc, client, channelId: CHANNEL });
 
   await bridge.pollOnce();
   await bridge.pollOnce();
-  assert.equal(client.sent[0].content, "**\\[Admin\\] Steve**: hi");
+  assert.equal(client.sent[0].content, "**\\[Admin\\] Steve**: hi\n**Alex**: yo");
 
   await bridge.handleMessage({
     channelId: CHANNEL,
@@ -238,7 +253,14 @@ test("linked players show their Discord rank both ways", async () => {
     member: member([ADMIN, PINGS], { displayName: "Polar" }),
     content: "from discord",
   });
-  assert.deepEqual(mc.said[0], { author: "Steve", content: "from discord", rank: "Admin", rankColor: "#ff5555" });
+  // The server swaps in the linked IGN; the bot sends who it is and their rank.
+  assert.deepEqual(mc.said[0], {
+    author: "Polar",
+    discordId: "user-1",
+    content: "from discord",
+    rank: "Admin",
+    rankColor: "#ff5555",
+  });
 });
 
 test("rank is the highest hoisted role, or the highest configured one", () => {
@@ -247,14 +269,9 @@ test("rank is the highest hoisted role, or the highest configured one", () => {
   assert.equal(rankOf(member([PINGS])), null);
 });
 
-test("/link with a code from the game links the account", async () => {
-  const links = memoryLinks();
-  const bridge = createMinecraftChatBridge({
-    minecraftConsole: fakeConsole(),
-    client: fakeClient(),
-    links,
-    channelId: CHANNEL,
-  });
+test("/link with a code from the game links the account on the server", async () => {
+  const mc = fakeConsole();
+  const bridge = createMinecraftChatBridge({ minecraftConsole: mc, client: fakeClient(), channelId: CHANNEL });
 
   const bad = fakeInteraction("link", { code: "WRONG1" });
   assert.equal(await bridge.handleInteraction(bad), true);
@@ -262,22 +279,29 @@ test("/link with a code from the game links the account", async () => {
 
   const good = fakeInteraction("link", { code: "ABC234" });
   await bridge.handleInteraction(good);
-  assert.equal(links.get("user-1").player, "Steve");
+  assert.equal(mc.links.get("user-1").player, "Steve");
   assert.match(good.replies[0], /Linked to \*\*Steve\*\*/);
+
+  const unlink = fakeInteraction("unlink");
+  await bridge.handleInteraction(unlink);
+  assert.equal(mc.links.has("user-1"), false);
+  const again = fakeInteraction("unlink");
+  await bridge.handleInteraction(again);
+  assert.equal(again.replies[0], "Not linked.");
 });
 
 test("/link without a code finishes when the player types it in game", async () => {
-  const links = memoryLinks();
   const mc = fakeConsole([{ head: 1, events: [] }]);
   const client = fakeClient();
-  const bridge = createMinecraftChatBridge({ minecraftConsole: mc, client, links, channelId: CHANNEL });
+  const bridge = createMinecraftChatBridge({ minecraftConsole: mc, client, channelId: CHANNEL });
   await bridge.pollOnce();
 
   const interaction = fakeInteraction("link");
   await bridge.handleInteraction(interaction);
   const code = mc.said[0].offer.code;
   assert.match(code, /^[A-HJ-NP-Z2-9]{6}$/);
-  assert.equal(mc.said[0].offer.discord, "Polar");
+  assert.equal(mc.said[0].offer.discordId, "user-1");
+  assert.equal(mc.said[0].offer.name, "Polar");
   assert.match(interaction.replies[0], new RegExp(`/link ${code}`));
 
   mc.chat = async () => ({
@@ -285,51 +309,30 @@ test("/link without a code finishes when the player types it in game", async () 
     events: [{ seq: 1, type: "link", player: "Alex", uuid: "uuid-alex", text: code }],
   });
   await bridge.pollOnce();
-  assert.equal(links.get("user-1").player, "Alex");
   assert.match(interaction.replies[1], /Linked to \*\*Alex\*\*/);
   assert.equal(client.sent.length, 0);
 });
 
 test("/forcelink is for the allowlist only", async () => {
-  const links = memoryLinks();
-  const bridge = createMinecraftChatBridge({
-    minecraftConsole: fakeConsole(),
-    client: fakeClient(),
-    links,
-    channelId: CHANNEL,
-  });
+  const mc = fakeConsole();
+  const bridge = createMinecraftChatBridge({ minecraftConsole: mc, client: fakeClient(), channelId: CHANNEL });
   const target = { id: "user-2" };
 
   const refused = fakeInteraction("forcelink", { user: target, ign: "Alex" }, "nobody");
   await bridge.handleInteraction(refused);
-  assert.equal(links.get("user-2"), null);
+  assert.equal(mc.links.has("user-2"), false);
   assert.match(refused.replies[0], /not allowed/);
 
   await bridge.handleInteraction(fakeInteraction("forcelink", { user: target, ign: "Alex" }, "staff"));
-  assert.equal(links.get("user-2").uuid, "uuid-alex");
+  assert.equal(mc.links.get("user-2").uuid, "uuid-alex");
 
   await bridge.handleInteraction(fakeInteraction("forceunlink", { user: target }, "staff"));
-  assert.equal(links.get("user-2"), null);
+  assert.equal(mc.links.has("user-2"), false);
 });
 
 test("other commands are left for the main handler", async () => {
   const bridge = createMinecraftChatBridge({ minecraftConsole: fakeConsole(), client: fakeClient(), channelId: CHANNEL });
   assert.equal(await bridge.handleInteraction(fakeInteraction("mc")), false);
-});
-
-test("links persist, move with the player, and follow name changes", () => {
-  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "links-")), "links.json");
-  const links = createMinecraftLinks({ file });
-  links.set("user-1", { uuid: "uuid-steve", player: "Steve" });
-  links.set("user-2", { uuid: "uuid-steve", player: "Steve" });
-  assert.equal(links.get("user-1"), null);
-  links.updatePlayerName("uuid-steve", "Steve2");
-
-  const reloaded = createMinecraftLinks({ file });
-  assert.equal(reloaded.findByUuid("uuid-steve"), "user-2");
-  assert.equal(reloaded.get("user-2").player, "Steve2");
-  assert.equal(reloaded.remove("user-2").player, "Steve2");
-  assert.equal(reloaded.get("user-2"), null);
 });
 
 test("formatting helpers", () => {
@@ -368,6 +371,10 @@ test("minecraft console speaks the /chat endpoints", async () => {
   await mc.say({ author: "Polar", content: "hi", rankColor: "red" });
   assert.deepEqual(JSON.parse(calls[2].options.body), { author: "Polar", content: "hi" });
 
-  await mc.lookupPlayer("Steve Two").catch(() => {});
-  assert.equal(calls[3].url, "http://host:8125/player?name=Steve%20Two");
+  await mc.say({ author: "Polar", discordId: "123", content: "hi" });
+  assert.equal(JSON.parse(calls[3].options.body).discord, "123");
+
+  await mc.forceLink({ discordId: "123", player: "Steve" }).catch(() => {});
+  assert.equal(calls[4].url, "http://host:8125/link/force");
+  assert.deepEqual(JSON.parse(calls[4].options.body), { discord: "123", player: "Steve" });
 });

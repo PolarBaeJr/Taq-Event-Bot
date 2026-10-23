@@ -166,15 +166,16 @@ function memberRoleIds(member) {
 // Game to Discord polls /chat for numbered events and posts what is new; Discord to game
 // posts each message in the channel to /chat, which broadcasts it as [Discord] name: text.
 //
-// Linked accounts (see minecraftLinks) carry over both ways: a linked player's game chat
-// shows their Discord rank, and their Discord messages show in game under their IGN.
+// Linked accounts carry over both ways: a linked player's game chat shows their Discord
+// rank, and their Discord messages show in game under their IGN. The links themselves are
+// kept by the server; events name the linked Discord ID, and the server swaps in the IGN.
+// /link, /unlink and the staff force commands are handled here too.
 //
 // The server broadcasts Discord messages rather than chatting them, so they never come back
 // out of /chat, and messages from bots and webhooks are ignored here, so nothing loops.
 function createMinecraftChatBridge(options = {}) {
   const minecraftConsole = options.minecraftConsole;
   const client = options.client;
-  const links = options.links || null;
   const channelId = normalizeString(options.channelId);
   const rankRoleIds = new Set((options.rankRoleIds || []).map(String));
   const intervalMs = Number.isFinite(options.intervalMs)
@@ -208,10 +209,9 @@ function createMinecraftChatBridge(options = {}) {
     return channel;
   }
 
-  // rankForPlayer: handles rank for player. The Discord rank of whoever linked this UUID.
-  async function rankForPlayer(guild, uuid) {
-    const discordId = links?.findByUuid(uuid);
-    if (!discordId || !guild?.members?.fetch) {
+  // rankForMember: handles rank for member. The Discord rank of a linked account, by ID.
+  async function rankForMember(guild, discordId) {
+    if (!normalizeString(discordId) || !guild?.members?.fetch) {
       return null;
     }
     const member = await guild.members.fetch(discordId).catch(() => null);
@@ -220,8 +220,8 @@ function createMinecraftChatBridge(options = {}) {
 
   // completeLink: handles complete link.
   //
-  // A player typed a code from Discord's /link in game. Ties the two together and tells
-  // the Discord side, which is still waiting on its own ephemeral reply.
+  // A player typed a code from Discord's /link in game. The server has already saved the
+  // link; this tells the Discord side, which is still waiting on its ephemeral reply.
   async function completeLink(event) {
     const code = normalizeString(event.text).toUpperCase();
     const pending = pendingLinks.get(code);
@@ -229,10 +229,6 @@ function createMinecraftChatBridge(options = {}) {
       return;
     }
     pendingLinks.delete(code);
-    if (pending.expires < Date.now() || !links) {
-      return;
-    }
-    links.set(pending.discordId, { uuid: event.uuid, player: event.player });
     await pending.interaction
       ?.followUp?.({ content: `Linked to **${escapeMarkdown(event.player)}**.`, ephemeral: true })
       .catch(() => {});
@@ -273,11 +269,8 @@ function createMinecraftChatBridge(options = {}) {
           await completeLink(event);
           continue;
         }
-        let rank = null;
-        if (event.type === "chat" && links) {
-          links.updatePlayerName(event.uuid, event.player);
-          rank = (await rankForPlayer(channel.guild, event.uuid))?.name || null;
-        }
+        const rank =
+          event.type === "chat" ? (await rankForMember(channel.guild, event.discord))?.name || null : null;
         const line = formatEvent(event, rank);
         if (line) {
           lines.push(line);
@@ -322,12 +315,17 @@ function createMinecraftChatBridge(options = {}) {
     if (!content) {
       return false;
     }
-    const link = links?.get(message.author?.id);
-    const author = link?.player || displayNameOf(message.member, message.author);
+    const author = displayNameOf(message.member, message.author);
     const rank = rankOf(message.member, rankRoleIds);
 
     try {
-      await minecraftConsole.say({ author, content, rank: rank?.name, rankColor: rank?.color });
+      await minecraftConsole.say({
+        author,
+        discordId: message.author?.id,
+        content,
+        rank: rank?.name,
+        rankColor: rank?.color,
+      });
       return true;
     } catch (error) {
       logger?.warn?.("minecraft_chat_send_failed", "Could not send a Discord message to the game.", {
@@ -358,7 +356,7 @@ function createMinecraftChatBridge(options = {}) {
     if (!interaction?.isChatInputCommand?.() || !LINK_COMMANDS.has(interaction.commandName)) {
       return false;
     }
-    if (!isEnabled() || !links) {
+    if (!isEnabled()) {
       await reply(interaction, "Cross chat is not set up on this bot.");
       return true;
     }
@@ -370,8 +368,7 @@ function createMinecraftChatBridge(options = {}) {
       if (name === "link") {
         const code = normalizeString(interaction.options.getString("code"));
         if (code) {
-          const claim = await minecraftConsole.claimLink(code);
-          links.set(userId, claim);
+          const claim = await minecraftConsole.claimLink(code, userId);
           await reply(interaction, `Linked to **${escapeMarkdown(claim.player)}**.`);
           return true;
         }
@@ -385,7 +382,8 @@ function createMinecraftChatBridge(options = {}) {
         }
         await minecraftConsole.offerLink({
           code: fresh,
-          discord: displayNameOf(interaction.member, interaction.user),
+          discordId: userId,
+          name: displayNameOf(interaction.member, interaction.user),
         });
         pendingLinks.set(fresh, { discordId: userId, interaction, expires: now + LINK_TTL_MS });
         await reply(
@@ -397,11 +395,8 @@ function createMinecraftChatBridge(options = {}) {
       }
 
       if (name === "unlink") {
-        const removed = links.remove(userId);
-        await reply(
-          interaction,
-          removed ? `Unlinked from **${escapeMarkdown(removed.player)}**.` : "You are not linked."
-        );
+        const removed = await minecraftConsole.unlink(userId);
+        await reply(interaction, `Unlinked from **${escapeMarkdown(removed.player)}**.`);
         return true;
       }
 
@@ -413,8 +408,10 @@ function createMinecraftChatBridge(options = {}) {
       const target = interaction.options.getUser("user", true);
 
       if (name === "forcelink") {
-        const player = await minecraftConsole.lookupPlayer(interaction.options.getString("ign", true));
-        links.set(target.id, player);
+        const player = await minecraftConsole.forceLink({
+          discordId: target.id,
+          player: interaction.options.getString("ign", true),
+        });
         logger?.info?.("minecraft_link_forced", "Staff linked an account by hand.", {
           by: userId,
           discordId: target.id,
@@ -424,17 +421,12 @@ function createMinecraftChatBridge(options = {}) {
         return true;
       }
 
-      const removed = links.remove(target.id);
+      const removed = await minecraftConsole.unlink(target.id);
       logger?.info?.("minecraft_link_force_removed", "Staff removed a link by hand.", {
         by: userId,
         discordId: target.id,
       });
-      await reply(
-        interaction,
-        removed
-          ? `Unlinked <@${target.id}> from **${escapeMarkdown(removed.player)}**.`
-          : `<@${target.id}> is not linked.`
-      );
+      await reply(interaction, `Unlinked <@${target.id}> from **${escapeMarkdown(removed.player)}**.`);
       return true;
     } catch (error) {
       await reply(interaction, error?.message || "Something went wrong.").catch(() => {});

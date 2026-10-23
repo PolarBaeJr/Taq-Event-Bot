@@ -30,7 +30,6 @@ const { createPollingPipeline } = require("./lib/pollingPipeline");
 const { createInteractionCommandHandler } = require("./lib/interactionCommandHandler");
 const { createMinecraftConsole } = require("./lib/minecraftConsole");
 const { createMinecraftChatBridge } = require("./lib/minecraftChatBridge");
-const { createMinecraftLinks } = require("./lib/minecraftLinks");
 const { createDynamicMessageSystem } = require("./lib/dynamicMessageSystem");
 const { createApplicationDecisionUtils } = require("./lib/applicationDecisionUtils");
 const { createApplicationDecisionWorkflow } = require("./lib/applicationDecisionWorkflow");
@@ -3350,10 +3349,6 @@ const minecraftConsole = createMinecraftConsole({
 const minecraftChat = createMinecraftChatBridge({
   minecraftConsole,
   client,
-  links: createMinecraftLinks({
-    file: config.minecraftLinksFile,
-    logger: logger.child({ component: "minecraft_links" }),
-  }),
   channelId: config.minecraftChatChannelId,
   rankRoleIds: config.minecraftChatRankRoleIds,
   intervalMs: config.minecraftChatPollMs,
